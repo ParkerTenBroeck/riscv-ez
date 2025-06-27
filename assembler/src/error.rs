@@ -14,25 +14,36 @@ pub enum ErrorKind {
 }
 
 pub struct ErrorPart<'a> {
-    node: Option<NodeId>,
-    source_id: Option<SourceId>,
-    source: Option<Source<'a>>,
-    span: Option<Span>,
-    kind: ErrorKind,
-    msg: Option<String>,
+    pub node: Option<NodeId>,
+    pub source_id: Option<SourceId>,
+    pub source: Option<Source<'a>>,
+    pub span: Option<Span>,
+    pub kind: ErrorKind,
+    pub msg: Option<String>,
 }
 
 #[derive(Default)]
 pub struct FormattedError<'a> {
-    parts: Vec<ErrorPart<'a>>,
+    pub parts: Vec<ErrorPart<'a>>,
 }
 
 impl<'a> FormattedError<'a> {
-    pub fn new(context: &mut Context<'a>, node_id: NodeId, kind: ErrorKind, msg: impl Into<String>) -> Self {
+    pub fn new(
+        context: &mut Context<'a>,
+        node_id: NodeId,
+        kind: ErrorKind,
+        msg: impl Into<String>,
+    ) -> Self {
         Self::default().add(context, node_id, kind, msg)
     }
 
-    pub fn add(mut self, context: &mut Context<'a>, node_id: NodeId, kind: ErrorKind, msg: impl Into<String>) -> Self{
+    pub fn add(
+        mut self,
+        context: &mut Context<'a>,
+        node_id: NodeId,
+        kind: ErrorKind,
+        msg: impl Into<String>,
+    ) -> Self {
         let mut node_id = Some(node_id);
         let mut msg = Some(msg.into());
         let mut kind = kind;
@@ -46,7 +57,7 @@ impl<'a> FormattedError<'a> {
                 source: Some(src),
                 source_id: Some(node.source),
                 kind,
-                msg: msg.take()
+                msg: msg.take(),
             });
             kind = ErrorKind::From;
 
@@ -55,10 +66,17 @@ impl<'a> FormattedError<'a> {
 
         self
     }
-    
+
     pub fn add_sourceless(&self, kind: ErrorKind, msg: String) -> FormattedError<'a> {
         let mut s = Self::default();
-        s.parts.push(ErrorPart { node: None, source_id: None, source: None, span: None, kind, msg: Some(msg) });
+        s.parts.push(ErrorPart {
+            node: None,
+            source_id: None,
+            source: None,
+            span: None,
+            kind,
+            msg: Some(msg),
+        });
         s
     }
 }
@@ -72,35 +90,33 @@ const RESET: &str = "\x1b[0;22m";
 
 impl<'a> std::fmt::Display for FormattedError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        
-
         for part in self.parts.iter().rev() {
-
             match part.kind {
                 ErrorKind::Error => write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}")?,
-                ErrorKind::Warning => {
-                    write!(f, "{BOLD}{YELLOW}warning{RESET}{RESET}{BOLD}")?
-                }
+                ErrorKind::Warning => write!(f, "{BOLD}{YELLOW}warning{RESET}{RESET}{BOLD}")?,
                 ErrorKind::Info => write!(f, "{BOLD}{BLUE}info{RESET}{RESET}{BOLD}")?,
                 ErrorKind::From => write!(f, "{BOLD}{GREEN}from{RESET}{RESET}{GREEN}")?,
             }
 
-            if let Some(msg) = &part.msg{
+            if let Some(msg) = &part.msg {
                 write!(f, ": {msg}")?;
             }
 
-            let (Some(span), Some(source)) = (part.span, part.source)else{continue;};
+            let (Some(span), Some(source)) = (part.span, part.source) else {
+                continue;
+            };
 
-            let error_range =
-                span.offset as usize..(span.offset as usize + span.len as usize);
+            let error_range = span.offset as usize..(span.offset as usize + span.len as usize);
             let start = source.contents[..error_range.start]
                 .char_indices()
                 .rev()
                 .find_map(|c| (c.1 == '\n').then_some(c.0.saturating_add(1)))
                 .unwrap_or(0);
-            let to_end = (error_range.end < source.contents.len())
-                .then(|| &source.contents[error_range.end..])
-                .unwrap_or_default();
+            let to_end = if error_range.end < source.contents.len() {
+                &source.contents[error_range.end..]
+            } else {
+                Default::default()
+            };
             let end = error_range.end
                 + to_end
                     .chars()
@@ -154,16 +170,5 @@ impl<'a> std::fmt::Display for FormattedError<'a> {
             write!(f, "{RESET}")?
         }
         Ok(())
-        // if self.error.range.is_some() {
-
-        // } else {
-        //     writeln!(f, "{} |{RESET} {}", self.span.line, &line_contents)?;
-
-        //     write!(f, "{BLUE}{BOLD}{space} | ")?;
-        //     for _ in line_contents.chars() {
-        //         write!(f, " ")?;
-        //     }
-        //     writeln!(f, "~{RESET}")
-        // }
     }
 }

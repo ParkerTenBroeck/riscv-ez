@@ -9,7 +9,7 @@ pub enum TypeHint {
 }
 
 #[derive(Clone, Copy)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct Number<'a> {
     ptr: NonNull<u8>,
     len: u16,

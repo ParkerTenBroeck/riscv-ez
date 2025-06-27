@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-#[repr(packed(4))]
+#[repr(C, packed(4))]
 #[derive(Clone, Copy)]
 pub struct Sstr<'a> {
     size: u32,
@@ -100,7 +100,7 @@ impl<'a> std::cmp::PartialEq<Sstr<'a>> for str {
     }
 }
 
-impl<'a, 'b> std::cmp::PartialEq<Sstr<'a>> for &'b str {
+impl<'a> std::cmp::PartialEq<Sstr<'a>> for &str {
     fn eq(&self, other: &Sstr<'a>) -> bool {
         *self == other.as_str()
     }

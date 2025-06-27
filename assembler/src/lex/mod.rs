@@ -213,7 +213,6 @@ impl<'a> Iterator for Lexer<'a> {
                 State::Default => match eof_none!(c) {
                     '\n' => ret = Some(Ok(Token::NewLine)),
 
-
                     '#' => self.state = State::PreProcessorTag,
                     '|' => self.state = State::Or,
                     '^' => self.state = State::Xor,
@@ -335,7 +334,9 @@ impl<'a> Iterator for Lexer<'a> {
                     Some(c) if ident_continue(c) => {}
                     _ => unconsume_ret!(
                         self,
-                        Ok(Token::PreProcessorTag(&self.str[self.start.offset..self.current.offset]))
+                        Ok(Token::PreProcessorTag(
+                            &self.str[self.start.offset+"#".len()..self.current.offset]
+                        ))
                     ),
                 },
                 State::CharLiteral => match c {

@@ -27,12 +27,12 @@ impl Drop for SharedMem {
 
 pub trait MemoryMappedRegion {
     fn read(&self, addr: u32, buffer: &mut [u8]);
-    fn read_optional(&self, addr: u32, buffer: &mut [u8]) -> Result<(), ()> {
+    fn read_optional(&self, addr: u32, buffer: &mut [u8]) -> Result<(), PageNotPresent> {
         self.read(addr, buffer);
         Ok(())
     }
     fn write(&self, addr: u32, buffer: &[u8]);
-    fn write_optional(&self, addr: u32, buffer: &[u8]) -> Result<(), ()> {
+    fn write_optional(&self, addr: u32, buffer: &[u8]) -> Result<(), PageNotPresent> {
         self.write(addr, buffer);
         Ok(())
     }
@@ -47,6 +47,9 @@ pub struct Page {
 }
 
 impl Page {
+    ///
+    /// # Safety
+    ///
     pub const unsafe fn offset<T>(page: *mut Page, addr: u32) -> *mut T {
         unsafe {
             page.cast::<T>()
@@ -58,6 +61,8 @@ impl Page {
 struct EntryTable {
     entries: [AtomicPtr<Page>; 65536],
 }
+
+pub struct PageNotPresent;
 
 impl SharedMem {
     pub fn new() -> Arc<Self> {
@@ -71,15 +76,15 @@ impl SharedMem {
     }
 
     pub fn add_mapped_region(
-        mut self: &mut Arc<Self>,
+        self: &mut Arc<Self>,
         region_id: u16,
         handler: Arc<dyn MemoryMappedRegion>,
-    ) -> Result<(), ()> {
-        if let Some(s) = Arc::get_mut(&mut self) {
+    ) -> Result<(), PageNotPresent> {
+        if let Some(s) = Arc::get_mut(self) {
             s.map.insert(region_id, handler);
             Ok(())
         } else {
-            Err(())
+            Err(PageNotPresent)
         }
     }
 
@@ -129,7 +134,7 @@ impl SharedMem {
     }
 
     #[inline(always)]
-    pub fn write_optional<T: Pod>(&self, addr: u32, value: T) -> Result<(), ()> {
+    pub fn write_optional<T: Pod>(&self, addr: u32, value: T) -> Result<(), PageNotPresent> {
         const {
             assert!(std::mem::align_of::<T>() <= std::mem::align_of::<Page>());
             assert!(std::mem::size_of::<T>() <= std::mem::size_of::<Page>());
@@ -232,7 +237,7 @@ impl SharedMem {
 
     #[inline(never)]
     #[cold]
-    fn fail_write_optional<T: Pod>(&self, addr: u32, value: T) -> Result<(), ()> {
+    fn fail_write_optional<T: Pod>(&self, addr: u32, value: T) -> Result<(), PageNotPresent> {
         if let Some(handler) = self.map.get(&((addr >> 16) as u16)) {
             let slice = unsafe {
                 std::slice::from_raw_parts(
@@ -242,7 +247,7 @@ impl SharedMem {
             };
             handler.write_optional(addr, slice)
         } else {
-            Err(())
+            Err(PageNotPresent)
         }
     }
 }
@@ -281,5 +286,5 @@ pub fn test(mem: &SharedMem) -> u32 {
     for i in (0..10).step_by(4) {
         sum += mem.read::<u32>(i)
     }
-    return sum;
+    sum
 }

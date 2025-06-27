@@ -1,6 +1,5 @@
 use std::{
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64},
-    u32,
 };
 
 use mem::SharedMem;
@@ -65,13 +64,13 @@ macro_rules! rs2 {
 
 macro_rules! imm_u {
     ($ir:expr) => {
-        (($ir) & 0xfffff000)
+        ($ir) & 0xfffff000
     };
 }
 
 macro_rules! imm_i {
     ($ir:expr) => {
-        (($ir as i32 & (0b11111 << 20)) >> 20)
+        ($ir as i32 & (0b11111 << 20)) >> 20
     };
 }
 
@@ -166,10 +165,10 @@ impl RV32IMAState {
                         let cond = match func3!(ir) {
                             0b000 => rs1_get!() == rs2_get!(),
                             0b001 => rs1_get!() != rs2_get!(),
-                            0b100 => (rs1_get!() as i32) < rs2_get!() as i32,
-                            0b101 => (rs1_get!() as i32) >= rs2_get!() as i32,
-                            0b110 => rs1_get!() < rs2_get!(),
-                            0b111 => rs1_get!() >= rs2_get!(),
+                            0b100 => rs1_get!() < rs2_get!(),
+                            0b101 => rs1_get!() >= rs2_get!(),
+                            0b110 => (rs1_get!() as u32) < rs2_get!() as u32,
+                            0b111 => rs1_get!() as u32 >= rs2_get!() as u32,
                             _ => break 'skip_pc self.invalid_op_code(),
                         };
                         if cond {
@@ -312,6 +311,7 @@ impl RV32IMAState {
                     0b1001011 => {} // FNMSUB.S
                     0b1001111 => {} // FNMADD.S
                     0b1010011 => match func7!(ir) {
+                        0b0 => {}
                         _ => break 'skip_pc self.invalid_op_code(),
                     },
 
@@ -342,6 +342,6 @@ impl RV32IMAState {
     }
 
     fn ecall(&self, _mem: &SharedMem) {
-        println!("{:#?}", self);
+        println!("{self:#?}");
     }
 }
