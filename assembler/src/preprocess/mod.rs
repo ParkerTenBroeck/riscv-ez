@@ -7,22 +7,22 @@ use crate::{
 
 struct Stage<'a> {
     iter: Box<dyn PreProcessorIter<'a> + 'a>,
-    source: Option<NodeId>,
+    source: Option<NodeId<'a>>,
 }
 
 pub trait PreProcessorIter<'a> {
-    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<Token<'a>>>;
+    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<'a, Token<'a>>>;
 }
 
 impl<'a> Stage<'a> {}
 
 struct TokenIter<'a> {
-    toks: std::vec::IntoIter<Node<Token<'a>>>,
-    source: NodeId,
+    toks: std::vec::IntoIter<Node<'a, Token<'a>>>,
+    source: NodeId<'a>,
 }
 
-impl<'a> PreProcessorIter<'a> for TokenIter<'a>{
-    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<Token<'a>>> {
+impl<'a> PreProcessorIter<'a> for TokenIter<'a> {
+    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<'a, Token<'a>>> {
         let tok = self.toks.next()?;
 
         Some(pp.context.borrow_mut().parent_child(self.source, tok))
@@ -31,12 +31,12 @@ impl<'a> PreProcessorIter<'a> for TokenIter<'a>{
 
 struct FileIter<'a> {
     lex: Lexer<'a>,
-    source_id: SourceId,
-    include_location: Option<NodeId>,
+    source_id: SourceId<'a>,
+    include_location: Option<NodeId<'a>>,
 }
 
 impl<'a> PreProcessorIter<'a> for FileIter<'a> {
-    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<Token<'a>>> {
+    fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<'a, Token<'a>>> {
         for token in self.lex.by_ref() {
             match token {
                 Ok(ok) => {
@@ -64,7 +64,7 @@ pub struct PreProcessor<'a> {
     stack: Vec<Stage<'a>>,
     context: Rc<RefCell<Context<'a>>>,
     recursion_limit: usize,
-    defines: HashMap<&'a str, Vec<Node<Token<'a>>>>,
+    defines: HashMap<&'a str, Vec<Node<'a, Token<'a>>>>,
     line_begining: bool,
     previous_newline: bool,
 }
@@ -105,42 +105,46 @@ impl<'a> PreProcessor<'a> {
     pub fn begin(&mut self, path: impl Into<String>) {
         let result = self.context.borrow_mut().get_source_from_path(path);
         match result {
-            Ok((src, source_id)) => {
+            Ok(src) => {
                 self.add_stack(Stage {
                     iter: Box::new(FileIter {
                         lex: Lexer::new(src.contents),
                         include_location: None,
-                        source_id,
+                        source_id: src,
                     }),
                     source: None,
                 });
             }
             Err(error) => {
-                self.context.borrow_mut().report_error_hard(format!("Failed to load file '{error}'"));
+                self.context
+                    .borrow_mut()
+                    .report_error_hard(format!("Failed to load file '{error}'"));
             }
         }
     }
 
-    pub fn include(&mut self, path: impl Into<String>, source: NodeId) {
+    pub fn include(&mut self, path: impl Into<String>, source: NodeId<'a>) {
         let result = self.context.borrow_mut().get_source_from_path(path);
         match result {
-            Ok((src, source_id)) => {
+            Ok(src) => {
                 self.add_stack(Stage {
                     iter: Box::new(FileIter {
                         lex: Lexer::new(src.contents),
                         include_location: Some(source),
-                        source_id,
+                        source_id: src,
                     }),
                     source: Some(source),
                 });
             }
             Err(error) => {
-                self.context.borrow_mut().report_error(Node(format!("Failed to include file '{error}'"), source));
+                self.context
+                    .borrow_mut()
+                    .report_error(Node(format!("Failed to include file '{error}'"), source));
             }
         }
     }
 
-    fn stack_next(&mut self) -> Option<Node<Token<'a>>> {
+    fn stack_next(&mut self) -> Option<Node<'a, Token<'a>>> {
         while let Some(mut top) = self.stack.pop() {
             if let Some(next) = top.iter.next(self) {
                 self.stack.push(top);
@@ -152,7 +156,7 @@ impl<'a> PreProcessor<'a> {
         None
     }
 
-    fn handle_preprocessor_tag(&mut self, tag: &'a str, n: NodeId){
+    fn handle_preprocessor_tag(&mut self, tag: &'a str, n: NodeId<'a>) {
         match tag {
             "include" => match self.stack_next() {
                 Some(Node(Token::StringLiteral(str), node)) => self.include(str, node),
@@ -198,24 +202,26 @@ impl<'a> PreProcessor<'a> {
         }
     }
 
-    fn handle_identifier(&mut self, ident: &'a str, n: NodeId) -> bool{
-        if let Some(value) = self.defines.get(ident){
-            self.add_stack(Stage { 
-                iter: Box::new(TokenIter{
+    fn handle_identifier(&mut self, ident: &'a str, n: NodeId<'a>) -> bool {
+        if let Some(value) = self.defines.get(ident) {
+            self.add_stack(Stage {
+                iter: Box::new(TokenIter {
                     toks: value.clone().into_iter(),
-                    source: n
-                }), 
-                source: Some(n) 
+                    source: n,
+                }),
+                source: Some(n),
             });
             return false;
         }
         true
     }
 
-    fn next(&mut self) -> Option<Node<Token<'a>>> {
+    fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
         loop {
             match self.stack_next() {
-                Some(Node(Token::PreProcessorTag(tag), n)) if self.line_begining => self.handle_preprocessor_tag(tag, n),
+                Some(Node(Token::PreProcessorTag(tag), n)) if self.line_begining => {
+                    self.handle_preprocessor_tag(tag, n)
+                }
                 t @ Some(Node(Token::Ident(ident), n)) => {
                     if self.handle_identifier(ident, n) {
                         return t;
@@ -228,7 +234,7 @@ impl<'a> PreProcessor<'a> {
 }
 
 impl<'a> Iterator for PreProcessor<'a> {
-    type Item = Node<Token<'a>>;
+    type Item = Node<'a, Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next()

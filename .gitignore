@@ -2,3 +2,5 @@
 
 target
 *.asm
+.idea
+.vscode

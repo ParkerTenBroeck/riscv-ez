@@ -14,8 +14,8 @@ pub enum ErrorKind {
 }
 
 pub struct ErrorPart<'a> {
-    pub node: Option<NodeId>,
-    pub source_id: Option<SourceId>,
+    pub node: Option<NodeId<'a>>,
+    pub source_id: Option<SourceId<'a>>,
     pub source: Option<Source<'a>>,
     pub span: Option<Span>,
     pub kind: ErrorKind,
@@ -30,7 +30,7 @@ pub struct FormattedError<'a> {
 impl<'a> FormattedError<'a> {
     pub fn new(
         context: &mut Context<'a>,
-        node_id: NodeId,
+        node_id: NodeId<'a>,
         kind: ErrorKind,
         msg: impl Into<String>,
     ) -> Self {
@@ -40,7 +40,7 @@ impl<'a> FormattedError<'a> {
     pub fn add(
         mut self,
         context: &mut Context<'a>,
-        node_id: NodeId,
+        node_id: NodeId<'a>,
         kind: ErrorKind,
         msg: impl Into<String>,
     ) -> Self {
@@ -48,9 +48,9 @@ impl<'a> FormattedError<'a> {
         let mut msg = Some(msg.into());
         let mut kind = kind;
         while let Some(node) = node_id {
-            let node = context.get_node(node);
+            let node = *node;
 
-            let src = context.get_source_from_id(node.source);
+            let src = *node.source;
             self.parts.push(ErrorPart {
                 node: node_id,
                 span: Some(node.span),

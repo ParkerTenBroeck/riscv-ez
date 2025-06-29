@@ -1,4 +1,4 @@
-use crate::{assembler::translation::SectionData, lex::Number};
+use crate::lex::Number;
 
 pub enum Instruction<'a> {
     Rtype {
@@ -36,18 +36,6 @@ pub enum Instruction<'a> {
         immediate: Immediate<'a>,
         rd: Register,
     },
-}
-
-impl<'a> SectionData for Instruction<'a>{
-    type Context = ();
-
-    fn size(&self, ctx: &mut Self::Context) -> u64 {
-        todo!()
-    }
-
-    fn to_bytes(&self, buffer: &mut [u8], ctx: &mut Self::Context) {
-        todo!()
-    }
 }
 
 const fn rtype(opcode: u32, func3: u32, func7: u32) -> u32 {

@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, error::Error, num::NonZeroUsize};
-
+use std::rc::Rc;
+use bumpalo::Bump;
 use crate::{
     error::ErrorKind,
     lex::{Span, Spanned},
@@ -7,67 +8,19 @@ use crate::{
 
 use super::error::FormattedError;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct Node<T>(pub T, pub NodeId);
+#[derive(Clone, Copy, Debug)]
+pub struct Node<'a, T>(pub T, pub NodeId<'a>);
 
-impl<T> Node<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<U> {
+impl<'a, T> Node<'a, T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<'a, U> {
         Node(f(self.0), self.1)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct NodeId(NonZeroUsize);
+pub type NodeId<'a> = &'a NodeInfo<'a>;
+pub type SourceId<'a> = &'a Source<'a>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct SourceId(NonZeroUsize);
-
-pub type SourceSupplier = Box<dyn Fn(&str, &mut Context) -> Result<String, Box<dyn Error>>>;
-
-pub struct SourceStorage {
-    supplier: SourceSupplier,
-    storage: RefCell<Vec<(String, String)>>,
-    map: RefCell<HashMap<String, SourceId>>,
-}
-
-impl SourceStorage {
-    pub fn get_from_path<'a>(
-        &'a self,
-        path: String,
-        context: &mut Context,
-    ) -> Result<(Source<'a>, SourceId), Box<dyn Error>> {
-        let mut map = self.map.borrow_mut();
-        if let Some(id) = map.get(&path) {
-            Ok((self.get_from_id(*id), *id))
-        } else {
-            let mut s = self.storage.borrow_mut();
-            let id = NonZeroUsize::new(s.len() + 1).map(SourceId).unwrap();
-            s.push((path.clone(), (self.supplier)(&path, context)?));
-            map.insert(path, id);
-            drop(s);
-
-            Ok((self.get_from_id(id), id))
-        }
-    }
-
-    pub fn get_from_id<'a>(&'a self, id: SourceId) -> Source<'a> {
-        let l = &self.storage.borrow()[id.0.get() - 1];
-        unsafe {
-            Source {
-                path: std::mem::transmute::<&str, &str>(l.0.as_str()),
-                contents: std::mem::transmute::<&str, &str>(l.1.as_str()),
-            }
-        }
-    }
-
-    pub fn new(supplier: impl Fn(&str, &mut Context) -> Result<String, Box<dyn Error>> + 'static) -> Self {
-        Self {
-            supplier: Box::new(supplier),
-            storage: RefCell::default(),
-            map: RefCell::default(),
-        }
-    }
-}
+pub type SourceSupplier = Rc<dyn Fn(&str, &mut Context) -> Result<String, Box<dyn Error>>>;
 
 #[derive(Clone, Copy)]
 pub struct Source<'a> {
@@ -93,15 +46,16 @@ impl<'a> std::fmt::Debug for Source<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct NodeInfo {
+pub struct NodeInfo<'a> {
     pub span: Span,
-    pub source: SourceId,
-    pub parent: Option<NodeId>,
+    pub source: SourceId<'a>,
+    pub parent: Option<NodeId<'a>>,
 }
 
 pub struct Context<'a> {
-    storage: &'a SourceStorage,
-    nodes: Vec<NodeInfo>,
+    bump: &'a Bump,
+    supplier: SourceSupplier,
+    source_map: RefCell<HashMap<&'a str, SourceId<'a>>>,
     errors: Vec<FormattedError<'a>>,
 }
 
@@ -111,35 +65,52 @@ pub struct Functioninfo {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(storage: &'a mut SourceStorage) -> Self {
+    pub fn new(bump: &'a mut Bump, source_supplier: impl Fn(&str, &mut Context) -> Result<String, Box<dyn Error>> + 'static) -> Self {
+        
         Self {
-            storage,
-            nodes: Default::default(),
+            bump,
+            source_map: Default::default(),
+            supplier: Rc::new(source_supplier),
             errors: Default::default(),
         }
     }
 
-    pub fn get_source_from_path(&mut self, path: impl Into<String>) -> Result<(Source<'a>, SourceId), Box<dyn Error>> {
-        self.storage.get_from_path(path.into(), self)
+    pub fn get_source_from_path(
+        &mut self,
+        path: impl Into<String>,
+    ) -> Result<&'a Source<'a>, Box<dyn Error>> {
+        let path = path.into();
+        if let Some(id) = self.source_map.borrow().get(&path.as_str()) {
+            return Ok(*id)
+        }
+        let path = self.bump.alloc_str(&path);
+        let contents = self.supplier.clone()(&path, self)?;
+        let contents = self.bump.alloc_str(contents.as_str());
+        let source = self.bump.alloc(Source{ path, contents });
+        let mut map = self.source_map.borrow_mut();
+        map.insert(path, source);
+        drop(map);
+        Ok(source)
     }
 
     pub fn create_node<T>(
         &mut self,
-        source: SourceId,
+        source: SourceId<'a>,
         spanned: Spanned<T>,
-        parent: Option<NodeId>,
-    ) -> Node<T> {
-        Node(spanned.val, self.node(NodeInfo {
-            span: spanned.span,
-            source,
-            parent,
-        }))
+        parent: Option<NodeId<'a>>,
+    ) -> Node<'a, T> {
+        Node(
+            spanned.val,
+            self.node(NodeInfo {
+                span: spanned.span,
+                source,
+                parent,
+            }),
+        )
     }
 
-    fn node(&mut self, node: NodeInfo) -> NodeId{
-        let node_id = NonZeroUsize::new(self.nodes.len() + 1).map(NodeId).unwrap();
-        self.nodes.push(node);
-        node_id
+    fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
+        self.bump.alloc(node)
     }
 
     pub fn report(&mut self, error: impl FnOnce(&mut Context<'a>) -> FormattedError<'a>) {
@@ -152,27 +123,19 @@ impl<'a> Context<'a> {
             .push(FormattedError::default().add_sourceless(ErrorKind::Error, msg.into()));
     }
 
-    pub fn report_error(&mut self, error: Node<impl ToString>) {
+    pub fn report_error(&mut self, error: Node<'a, impl ToString>) {
         let error = FormattedError::new(self, error.1, ErrorKind::Error, error.0.to_string());
         self.errors.push(error);
     }
 
-    pub fn report_warning(&mut self, error: Node<impl ToString>) {
+    pub fn report_warning(&mut self, error: Node<'a, impl ToString>) {
         let error = FormattedError::new(self, error.1, ErrorKind::Warning, error.0.to_string());
         self.errors.push(error);
     }
 
-    pub fn report_info(&mut self, error: Node<impl ToString>) {
+    pub fn report_info(&mut self, error: Node<'a, impl ToString>) {
         let error = FormattedError::new(self, error.1, ErrorKind::Info, error.0.to_string());
         self.errors.push(error);
-    }
-
-    pub fn get_node(&self, arg: NodeId) -> NodeInfo {
-        self.nodes[arg.0.get() - 1]
-    }
-
-    pub fn get_source_from_id(&self, source: SourceId) -> Source<'a> {
-        self.storage.get_from_id(source)
     }
 
     pub fn print_errors(&self) {
@@ -184,9 +147,9 @@ impl<'a> Context<'a> {
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
-    
-    pub fn parent_child<T>(&mut self, parent: NodeId, child: Node<T>) -> Node<T> {
-        let mut node = self.get_node(child.1);
+
+    pub fn parent_child<T>(&mut self, parent: NodeId<'a>, child: Node<'a, T>) -> Node<'a, T> {
+        let mut node = *child.1;
         node.parent = Some(parent);
         Node(child.0, self.node(node))
     }

@@ -335,7 +335,7 @@ impl<'a> Iterator for Lexer<'a> {
                     _ => unconsume_ret!(
                         self,
                         Ok(Token::PreProcessorTag(
-                            &self.str[self.start.offset+"#".len()..self.current.offset]
+                            &self.str[self.start.offset + "#".len()..self.current.offset]
                         ))
                     ),
                 },
@@ -375,10 +375,14 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 State::SingleLine => match c {
                     Some('\n') => {
-                        ret = Some(Ok(Token::SingleLineComment(
-                            self.str[self.start.offset + 2 * '/'.len_utf8()..self.current.offset]
-                                .into(),
-                        )))
+                        unconsume_ret!(
+                            self,
+                            Ok(Token::SingleLineComment(
+                                self.str
+                                    [self.start.offset + 2 * '/'.len_utf8()..self.current.offset]
+                                    .into(),
+                            ))
+                        );
                     }
                     Some(_) => {}
                     None => {

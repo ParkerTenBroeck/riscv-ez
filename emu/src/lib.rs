@@ -1,6 +1,4 @@
-use std::{
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU64},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 
 use mem::SharedMem;
 

@@ -62,6 +62,7 @@ struct EntryTable {
     entries: [AtomicPtr<Page>; 65536],
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct PageNotPresent;
 
 impl SharedMem {

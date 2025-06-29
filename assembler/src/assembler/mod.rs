@@ -1,49 +1,65 @@
+pub mod context;
 pub mod instructions;
 pub mod translation;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use crate::{
-    assembler::{instructions::{Instruction, Register}, translation::{Label, Section, TranslationUnit}},
+    assembler::{
+        context::AssemblerContext,
+        translation::{Section},
+    },
     context::{Context, Node, NodeId},
-    error::{ErrorKind, FormattedError},
     lex::{Number, Token},
     preprocess::PreProcessor,
 };
-
-pub struct AssemblerContext<'a>{
-    context: Rc<RefCell<Context<'a>>>,
-    current_section: &'a str,
-}
 
 pub struct Assembler<'a> {
     context: AssemblerContext<'a>,
 
     preprocessor: PreProcessor<'a>,
-    peek: Option<Node<Token<'a>>>,
-    tu: TranslationUnit<'a, NodeId, Instruction<'a>>,
+    peek: Option<Node<'a, Token<'a>>>,
 }
 
-pub enum Argument<'a> {
-    Number(Number<'a>),
-    Ident(&'a str),
-    Register(Register),
-    Expression,
+#[derive(Clone, Debug)]
+pub enum Constant<'a> {
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+
+    F32(f32),
+    F64(f64),
+
+    StringLiteral(Cow<'a, str>),
+    CharLiteral(char),
+    Bool(bool),
+}
+
+#[derive(Clone, Debug)]
+pub enum ParsedArgument<'a> {
+    Label(&'a str, i64),
+    Register(u8),
+    Constant(Constant<'a>),
 }
 
 impl<'a> Assembler<'a> {
     pub fn new(context: Rc<RefCell<Context<'a>>>, preprocessor: PreProcessor<'a>) -> Self {
         Self {
-            context: AssemblerContext { context, current_section: "text" },
+            context: AssemblerContext::new(context),
             preprocessor,
-            tu: Default::default(),
             peek: None,
         }
     }
 
     pub fn assemble(&mut self, path: impl Into<String>) -> Vec<u8> {
         self.preprocessor.begin(path);
-        self.tu.sections.insert(
+        self.context.tu.sections.insert(
             "text",
             Section {
                 name: "text",
@@ -66,18 +82,170 @@ impl<'a> Assembler<'a> {
         Vec::new()
     }
 
-    fn next(&mut self) -> Option<Node<Token<'a>>> {
+    fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.peek.take().or_else(|| self.preprocessor.next())
     }
 
-    fn peek(&mut self) -> Option<Node<Token<'a>>> {
+    fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_none() {
             self.peek = self.preprocessor.next();
         }
         self.peek
     }
 
-    fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId){
+    fn parse_numeric_literal(&mut self, num: Number<'a>, n: NodeId<'a>) -> Node<'a, Constant<'a>> {
+        let (suffix, radix) = match num.get_hint() {
+            crate::lex::TypeHint::Float => (num.get_suffix().unwrap_or("f32"), 10),
+            crate::lex::TypeHint::Hex => (num.get_suffix().unwrap_or("i32"), 16),
+            crate::lex::TypeHint::Bin => (num.get_suffix().unwrap_or("i32"), 2),
+            crate::lex::TypeHint::Int => (num.get_suffix().unwrap_or("i32"), 10),
+        };
+
+        macro_rules! integer {
+            ($num:ty) => {
+                <$num>::from_str_radix(num.get_num(), radix)
+                    .inspect_err(|e| {
+                        self.context
+                            .context
+                            .borrow_mut()
+                            .report_error(Node(format!("Invalid numeric literal {e}"), n));
+                    })
+                    .unwrap_or(0)
+            };
+        }
+
+        macro_rules! float {
+            ($num:ty) => {
+                num.get_num()
+                    .parse()
+                    .inspect_err(|e| {
+                        self.context
+                            .context
+                            .borrow_mut()
+                            .report_error(Node(format!("Invalid numeric literal {e}"), n));
+                    })
+                    .unwrap_or(0.0)
+            };
+        }
+
+        Node(
+            match suffix {
+                "i8" => Constant::I8(integer!(i8)),
+                "i16" => Constant::I16(integer!(i16)),
+                "i32" => Constant::I32(integer!(i32)),
+                "i64" => Constant::I64(integer!(i64)),
+                "u8" => Constant::U8(integer!(u8)),
+                "u16" => Constant::U16(integer!(u16)),
+                "u32" => Constant::U32(integer!(u32)),
+                "u64" => Constant::U64(integer!(u64)),
+
+                "f32" => Constant::F32(float!(f32)),
+                "f64" => Constant::F64(float!(f64)),
+
+                suffix => {
+                    self.context
+                        .context
+                        .borrow_mut()
+                        .report_error(Node(format!("Unknown numeric suffix '{suffix}'"), n));
+                    Constant::I32(0)
+                }
+            },
+            n,
+        )
+    }
+
+    fn parse_argument(&mut self) -> Option<Node<'a, ParsedArgument<'a>>> {
+        match self.peek() {
+            Some(Node(Token::NumericLiteral(num), n)) => {
+                self.next();
+                Some(
+                    self.parse_numeric_literal(num, n)
+                        .map(ParsedArgument::Constant),
+                )
+            }
+            Some(Node(Token::Ident(str), n)) => {
+                self.next();
+                Some(Node(ParsedArgument::Label(str, 0), n))
+            }
+            Some(Node(Token::StringLiteral(str), n)) => {
+                self.next();
+                Some(Node(
+                    ParsedArgument::Constant(Constant::StringLiteral(
+                        self.parse_string_literal(str, n),
+                    )),
+                    n,
+                ))
+            }
+            Some(Node(Token::CharLiteral(str), n)) => {
+                self.next();
+                Some(Node(
+                    ParsedArgument::Constant(Constant::CharLiteral(
+                        self.parse_char_literal(str, n),
+                    )),
+                    n,
+                ))
+            }
+            Some(Node(Token::FalseLiteral, n)) => {
+                self.next();
+                Some(Node(ParsedArgument::Constant(Constant::Bool(false)), n))
+            }
+            Some(Node(Token::TrueLiteral, n)) => {
+                self.next();
+                Some(Node(ParsedArgument::Constant(Constant::Bool(true)), n))
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_char_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> char {
+        let mut chars = repr.chars();
+        if let Some(ok) = chars.next() {
+            if chars.next().is_some() {
+                self.context
+                    .context
+                    .borrow_mut()
+                    .report_error(Node("Char literal contains more than one char", n));
+            }
+            ok
+        } else {
+            self.context
+                .context
+                .borrow_mut()
+                .report_error(Node("Char literal empty", n));
+            '\0'
+        }
+    }
+
+    fn parse_string_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> Cow<'a, str> {
+        repr.into()
+    }
+
+    fn gather_arguments(
+        &mut self,
+        mnemonic: &'a str,
+        n: NodeId<'a>,
+    ) -> Result<Vec<Node<'a, ParsedArgument<'a>>>, ()> {
+        let mut args = Vec::new();
+        while !matches!(self.peek(), Some(Node(Token::NewLine, _)) | None) {
+            args.push(self.parse_argument().ok_or(())?);
+            match self.peek() {
+                Some(Node(Token::Comma, _)) => {
+                    self.next();
+                }
+                Some(Node(Token::NewLine, _)) | None => {}
+                Some(n) => {
+                    self.context
+                        .context
+                        .borrow_mut()
+                        .report_error(n.map(|t| format!("Expected comma found '{t:?}'")));
+                }
+            }
+        }
+        Ok(args)
+    }
+
+    fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
+        let args = self.gather_arguments(mnemonic, n);
         match mnemonic {
             "lui" => {}
             "auipc" => {}
@@ -101,9 +269,34 @@ impl<'a> Assembler<'a> {
             "sh" => {}
             "sw" => {}
 
-            ".section" => {
+            "addi" => {}
+            "li" => {}
+            "ecall" => {}
 
-            }
+            ".global" => {}
+            ".local" => {}
+            ".weak" => {}
+
+            ".space" => {}
+
+            ".string" => {}
+            ".stringz" => {}
+            ".data" => {}
+
+            ".u8" => {}
+            ".u16" => {}
+            ".u32" => {}
+            ".u64" => {}
+
+            ".i8" => {}
+            ".i16" => {}
+            ".i32" => {}
+            ".i64" => {}
+
+            ".f32" => {}
+            ".f64" => {}
+
+            ".section" => {}
 
             _ => self
                 .context
@@ -128,27 +321,7 @@ impl<'a> Assembler<'a> {
                 }
             }
             Some(Node(Token::Label(label), source)) => {
-                if let Some(previous) = self.tu.labels.get(label) {
-                    self.context.context.borrow_mut().report(|ctx| {
-                        FormattedError::default()
-                            .add(ctx, source, ErrorKind::Error, "Label bound more than once")
-                            .add(ctx, previous.source, ErrorKind::Info, "First bound here")
-                    });
-                    return;
-                }
-                self.tu.labels.insert(
-                    label,
-                    Label {
-                        source,
-                        section: self.context.current_section,
-                        offset: self.tu
-                            .sections
-                            .get(self.context.current_section)
-                            .map(|s| s.size)
-                            .unwrap_or(0),
-                        size: 0,
-                    },
-                );
+                self.context.add_label(label, source);
             }
             Some(unexpected) => self.context.context.borrow_mut().report_error(
                 unexpected.map(|t| format!("Unexpected token {t:?} expected identifier or label")),
