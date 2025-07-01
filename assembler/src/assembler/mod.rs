@@ -337,7 +337,7 @@ impl<'a> Assembler<'a> {
                     self.context.set_current_section(str);
                 }
                 rem => {
-                    todo!()
+                    todo!("{args:?}")
                 }
             },
             ".org" => {
@@ -370,7 +370,7 @@ impl<'a> Assembler<'a> {
                         }
                     },
                     rem => {
-                        todo!()
+                        todo!("{args:?}")
                     }
                 }
             }

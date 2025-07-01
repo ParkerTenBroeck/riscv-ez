@@ -109,29 +109,10 @@ impl<'a> Context<'a> {
         drop(map);
         Ok(source)
     }
-
-    // pub fn create_node<T>(
-    //     &mut self,
-    //     source: SourceId<'a>,
-    //     spanned: Spanned<T>,
-    //     parent: Option<NodeId<'a>>,
-    // ) -> Node<'a, T> {
-    //     Node(
-    //         spanned.val,
-    //         self.node(NodeInfo {
-    //             span: spanned.span,
-    //             source,
-    //             included_by: parent,
-    //             parent: None,
-    //         }),
-    //     )
-    // }
-    //
-    // pub fn parent_child<T>(&mut self, parent: NodeId<'a>, child: Node<'a, T>) -> Node<'a, T> {
-    //     let mut node = *child.1;
-    //     node.included_by = Some(parent);
-    //     Node(child.0, self.node(node))
-    // }
+    
+    pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a>{
+        
+    }
 
     pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
         self.bump.alloc(node)
