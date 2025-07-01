@@ -15,7 +15,6 @@ pub enum ErrorKind {
 
 pub struct ErrorPart<'a> {
     pub node: Option<NodeId<'a>>,
-    pub source_id: Option<SourceId<'a>>,
     pub source: Option<Source<'a>>,
     pub span: Option<Span>,
     pub kind: ErrorKind,
@@ -55,13 +54,12 @@ impl<'a> FormattedError<'a> {
                 node: node_id,
                 span: Some(node.span),
                 source: Some(src),
-                source_id: Some(node.source),
                 kind,
                 msg: msg.take(),
             });
             kind = ErrorKind::From;
 
-            node_id = node.parent;
+            node_id = node.invoked_by;
         }
 
         self
@@ -71,7 +69,6 @@ impl<'a> FormattedError<'a> {
         let mut s = Self::default();
         s.parts.push(ErrorPart {
             node: None,
-            source_id: None,
             source: None,
             span: None,
             kind,

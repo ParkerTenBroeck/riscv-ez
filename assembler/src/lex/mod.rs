@@ -75,7 +75,7 @@ enum State {
 
     Ident,
 
-    SingleLine,
+    SingleLine(u8),
     MultiLine(u16),
     MultiLineOpen1(u16),
     MultiLineClose1(u16),
@@ -213,6 +213,7 @@ impl<'a> Iterator for Lexer<'a> {
                 State::Default => match eof_none!(c) {
                     '\n' => ret = Some(Ok(Token::NewLine)),
 
+                    ';' => self.state = State::SingleLine(1),
                     '#' => self.state = State::PreProcessorTag,
                     '|' => self.state = State::Or,
                     '^' => self.state = State::Xor,
@@ -269,7 +270,7 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 State::Divide => match c {
                     Some('=') => ret = Some(Ok(Token::DivideEq)),
-                    Some('/') => self.state = State::SingleLine,
+                    Some('/') => self.state = State::SingleLine(2),
                     Some('*') => self.state = State::MultiLine(0),
                     _ => unconsume_ret!(self, Ok(Token::Slash)),
                 },
@@ -373,13 +374,12 @@ impl<'a> Iterator for Lexer<'a> {
                         EscapeReturn::Char => State::CharLiteral,
                     };
                 }
-                State::SingleLine => match c {
+                State::SingleLine(start) => match c {
                     Some('\n') => {
                         unconsume_ret!(
                             self,
                             Ok(Token::SingleLineComment(
-                                self.str
-                                    [self.start.offset + 2 * '/'.len_utf8()..self.current.offset]
+                                self.str[self.start.offset + start as usize..self.current.offset]
                                     .into(),
                             ))
                         );
@@ -387,7 +387,7 @@ impl<'a> Iterator for Lexer<'a> {
                     Some(_) => {}
                     None => {
                         ret = Some(Ok(Token::SingleLineComment(
-                            self.str[self.start.offset + 2 * '/'.len_utf8()..self.current.offset]
+                            self.str[self.start.offset + start as usize..self.current.offset]
                                 .into(),
                         )))
                     }

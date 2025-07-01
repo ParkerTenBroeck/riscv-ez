@@ -1,10 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, error::Error, num::NonZeroUsize};
-use std::rc::Rc;
-use bumpalo::Bump;
 use crate::{
     error::ErrorKind,
     lex::{Span, Spanned},
 };
+use bumpalo::Bump;
+use std::rc::Rc;
+use std::{cell::RefCell, collections::HashMap, error::Error, num::NonZeroUsize};
 
 use super::error::FormattedError;
 
@@ -49,7 +49,22 @@ impl<'a> std::fmt::Debug for Source<'a> {
 pub struct NodeInfo<'a> {
     pub span: Span,
     pub source: SourceId<'a>,
-    pub parent: Option<NodeId<'a>>,
+    pub included_by: Option<NodeId<'a>>,
+    pub invoked_by: Option<NodeId<'a>>,
+}
+
+impl<'a> PartialEq for Source<'a>{
+    fn eq(&self, other: &Self) -> bool {
+        if self as *const Self as usize == other as *const Self as usize { return true; };
+        self.path == other.path
+    }
+}
+
+impl<'a> PartialEq for NodeInfo<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        if self as *const Self as usize == other as *const Self as usize { return true; };
+        self.span == other.span && self.source == other.source && self.invoked_by == other.invoked_by && self.included_by == other.included_by
+    }
 }
 
 pub struct Context<'a> {
@@ -65,8 +80,10 @@ pub struct Functioninfo {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(bump: &'a mut Bump, source_supplier: impl Fn(&str, &mut Context) -> Result<String, Box<dyn Error>> + 'static) -> Self {
-        
+    pub fn new(
+        bump: &'a Bump,
+        source_supplier: impl Fn(&str, &mut Context) -> Result<String, Box<dyn Error>> + 'static,
+    ) -> Self {
         Self {
             bump,
             source_map: Default::default(),
@@ -81,35 +98,42 @@ impl<'a> Context<'a> {
     ) -> Result<&'a Source<'a>, Box<dyn Error>> {
         let path = path.into();
         if let Some(id) = self.source_map.borrow().get(&path.as_str()) {
-            return Ok(*id)
+            return Ok(*id);
         }
         let path = self.bump.alloc_str(&path);
         let contents = self.supplier.clone()(&path, self)?;
         let contents = self.bump.alloc_str(contents.as_str());
-        let source = self.bump.alloc(Source{ path, contents });
+        let source = self.bump.alloc(Source { path, contents });
         let mut map = self.source_map.borrow_mut();
         map.insert(path, source);
         drop(map);
         Ok(source)
     }
 
-    pub fn create_node<T>(
-        &mut self,
-        source: SourceId<'a>,
-        spanned: Spanned<T>,
-        parent: Option<NodeId<'a>>,
-    ) -> Node<'a, T> {
-        Node(
-            spanned.val,
-            self.node(NodeInfo {
-                span: spanned.span,
-                source,
-                parent,
-            }),
-        )
-    }
+    // pub fn create_node<T>(
+    //     &mut self,
+    //     source: SourceId<'a>,
+    //     spanned: Spanned<T>,
+    //     parent: Option<NodeId<'a>>,
+    // ) -> Node<'a, T> {
+    //     Node(
+    //         spanned.val,
+    //         self.node(NodeInfo {
+    //             span: spanned.span,
+    //             source,
+    //             included_by: parent,
+    //             parent: None,
+    //         }),
+    //     )
+    // }
+    //
+    // pub fn parent_child<T>(&mut self, parent: NodeId<'a>, child: Node<'a, T>) -> Node<'a, T> {
+    //     let mut node = *child.1;
+    //     node.included_by = Some(parent);
+    //     Node(child.0, self.node(node))
+    // }
 
-    fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
+    pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
         self.bump.alloc(node)
     }
 
@@ -146,11 +170,5 @@ impl<'a> Context<'a> {
 
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
-    }
-
-    pub fn parent_child<T>(&mut self, parent: NodeId<'a>, child: Node<'a, T>) -> Node<'a, T> {
-        let mut node = *child.1;
-        node.parent = Some(parent);
-        Node(child.0, self.node(node))
     }
 }

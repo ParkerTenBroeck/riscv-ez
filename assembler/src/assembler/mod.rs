@@ -5,10 +5,7 @@ pub mod translation;
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use crate::{
-    assembler::{
-        context::AssemblerContext,
-        translation::{Section},
-    },
+    assembler::{context::AssemblerContext, translation::Section},
     context::{Context, Node, NodeId},
     lex::{Number, Token},
     preprocess::PreProcessor,
@@ -21,7 +18,7 @@ pub struct Assembler<'a> {
     peek: Option<Node<'a, Token<'a>>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Constant<'a> {
     I8(i8),
     I16(i16),
@@ -36,9 +33,41 @@ pub enum Constant<'a> {
     F32(f32),
     F64(f64),
 
-    StringLiteral(Cow<'a, str>),
+    StringLiteral(&'a str),
     CharLiteral(char),
     Bool(bool),
+}
+
+pub enum ConvertResult<T> {
+    Success(T),
+    Lossy(T),
+    Failure,
+}
+
+impl<'a> Constant<'a> {
+    pub fn to_u32(&self) -> ConvertResult<u32> {
+        match *self {
+            Constant::I8(v) if v < 0 => ConvertResult::Lossy(v as u32),
+            Constant::I8(v) => ConvertResult::Success(v as u32),
+            Constant::I16(v) if v < 0 => ConvertResult::Lossy(v as u32),
+            Constant::I16(v) => ConvertResult::Success(v as u32),
+            Constant::I32(v) if v < 0 => ConvertResult::Lossy(v as u32),
+            Constant::I32(v) => ConvertResult::Success(v as u32),
+            Constant::I64(v) if v > u32::MAX as i64 => ConvertResult::Lossy(v as u32),
+            Constant::I64(v) if v < 0 => ConvertResult::Lossy(v as u32),
+            Constant::I64(v) => ConvertResult::Success(v as u32),
+            Constant::U8(v) => ConvertResult::Success(v as u32),
+            Constant::U16(v) => ConvertResult::Success(v as u32),
+            Constant::U32(v) => ConvertResult::Success(v),
+            Constant::U64(v) if v > u32::MAX as u64 => ConvertResult::Lossy(v as u32),
+            Constant::U64(v) => ConvertResult::Success(v as u32),
+            Constant::F32(_) => ConvertResult::Failure,
+            Constant::F64(_) => ConvertResult::Failure,
+            Constant::StringLiteral(_) => ConvertResult::Failure,
+            Constant::CharLiteral(_) => ConvertResult::Failure,
+            Constant::Bool(_) => ConvertResult::Failure,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -63,7 +92,7 @@ impl<'a> Assembler<'a> {
             "text",
             Section {
                 name: "text",
-                start: 0x4000,
+                start: None,
                 data: Vec::new(),
                 size: 0,
             },
@@ -216,7 +245,7 @@ impl<'a> Assembler<'a> {
         }
     }
 
-    fn parse_string_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> Cow<'a, str> {
+    fn parse_string_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> &'a str {
         repr.into()
     }
 
@@ -245,7 +274,9 @@ impl<'a> Assembler<'a> {
     }
 
     fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
-        let args = self.gather_arguments(mnemonic, n);
+        let Ok(args) = self.gather_arguments(mnemonic, n) else {
+            return;
+        };
         match mnemonic {
             "lui" => {}
             "auipc" => {}
@@ -279,9 +310,10 @@ impl<'a> Assembler<'a> {
 
             ".space" => {}
 
+            ".data" => {}
+
             ".string" => {}
             ".stringz" => {}
-            ".data" => {}
 
             ".u8" => {}
             ".u16" => {}
@@ -294,9 +326,54 @@ impl<'a> Assembler<'a> {
             ".i64" => {}
 
             ".f32" => {}
-            ".f64" => {}
+            ".f64" => {
+                for arg in args {
+                    if let Node(ParsedArgument::Constant(Constant::F32(a)), _) = arg {}
+                }
+            }
 
-            ".section" => {}
+            ".section" => match &args[..] {
+                [Node(ParsedArgument::Constant(Constant::StringLiteral(str)), _)] => {
+                    self.context.set_current_section(str);
+                }
+                rem => {
+                    todo!()
+                }
+            },
+            ".org" => {
+                let mut section = self.context.get_current_section();
+                if section.start.is_some() {
+                    self.context.context.borrow_mut().report_warning(Node(
+                        format!(
+                            "Section '{}' has already had org set",
+                            self.context.current_section
+                        ),
+                        n,
+                    ));
+                    section = self.context.get_current_section();
+                }
+                match &args[..] {
+                    [Node(ParsedArgument::Constant(constant), n)] => match constant.to_u32() {
+                        ConvertResult::Success(value) => section.start = Some(value),
+                        ConvertResult::Lossy(value) => {
+                            section.start = Some(value);
+                            self.context
+                                .context
+                                .borrow_mut()
+                                .report_warning(Node("Conversion to u32 is lossy", n));
+                        }
+                        ConvertResult::Failure => {
+                            self.context
+                                .context
+                                .borrow_mut()
+                                .report_error(Node("Argument not convertable to u32", n));
+                        }
+                    },
+                    rem => {
+                        todo!()
+                    }
+                }
+            }
 
             _ => self
                 .context

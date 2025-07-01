@@ -1,0 +1,16 @@
+[package]
+name = "gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = { version = "*", default-features = false }
+eframe = { version = "*", default-features = false, features = [
+    "default",
+    "default_fonts",
+    "glow",
+] }
+egui_dock = "*"
+assembler = {path = "../assembler"}
+poll-promise = "*"
+egui_ltreeview = "*"
