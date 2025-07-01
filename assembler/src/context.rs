@@ -53,17 +53,24 @@ pub struct NodeInfo<'a> {
     pub invoked_by: Option<NodeId<'a>>,
 }
 
-impl<'a> PartialEq for Source<'a>{
+impl<'a> PartialEq for Source<'a> {
     fn eq(&self, other: &Self) -> bool {
-        if self as *const Self as usize == other as *const Self as usize { return true; };
+        if self as *const Self as usize == other as *const Self as usize {
+            return true;
+        };
         self.path == other.path
     }
 }
 
 impl<'a> PartialEq for NodeInfo<'a> {
     fn eq(&self, other: &Self) -> bool {
-        if self as *const Self as usize == other as *const Self as usize { return true; };
-        self.span == other.span && self.source == other.source && self.invoked_by == other.invoked_by && self.included_by == other.included_by
+        if self as *const Self as usize == other as *const Self as usize {
+            return true;
+        };
+        self.span == other.span
+            && self.source == other.source
+            && self.invoked_by == other.invoked_by
+            && self.included_by == other.included_by
     }
 }
 
@@ -109,9 +116,36 @@ impl<'a> Context<'a> {
         drop(map);
         Ok(source)
     }
-    
-    pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a>{
-        
+
+    pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a> {
+        // TODO optimizing this might be something to do
+        fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
+            let mut nya = Some(start);
+            while let Some(thing) = nya {
+                thingies.push(thing);
+                nya = thing.invoked_by;
+            }
+        }
+        let mut lhs = Vec::new();
+        let mut rhs = Vec::new();
+        meow(&mut lhs, left);
+        meow(&mut rhs, right);
+
+        for (lhs, rhs) in lhs.iter().rev().zip(rhs.iter().rev()) {
+            if lhs != rhs {
+                if lhs.source != rhs.source {
+                    panic!("uhhhhhhh, {left:?}, {right:?}")
+                } else {
+                    return self.node(NodeInfo {
+                        span: lhs.span.combine(rhs.span),
+                        source: lhs.source,
+                        included_by: None,
+                        invoked_by: lhs.invoked_by,
+                    });
+                }
+            }
+        }
+        left
     }
 
     pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
@@ -123,23 +157,23 @@ impl<'a> Context<'a> {
         self.errors.push(error);
     }
 
-    pub fn report_error_hard(&mut self, msg: impl Into<String>) {
+    pub fn report_error_nodeless(&mut self, msg: impl Into<String>) {
         self.errors
             .push(FormattedError::default().add_sourceless(ErrorKind::Error, msg.into()));
     }
 
-    pub fn report_error(&mut self, error: Node<'a, impl ToString>) {
-        let error = FormattedError::new(self, error.1, ErrorKind::Error, error.0.to_string());
+    pub fn report_error(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = FormattedError::new(self, node, ErrorKind::Error, error.to_string());
         self.errors.push(error);
     }
 
-    pub fn report_warning(&mut self, error: Node<'a, impl ToString>) {
-        let error = FormattedError::new(self, error.1, ErrorKind::Warning, error.0.to_string());
+    pub fn report_warning(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = FormattedError::new(self, node, ErrorKind::Warning, error.to_string());
         self.errors.push(error);
     }
 
-    pub fn report_info(&mut self, error: Node<'a, impl ToString>) {
-        let error = FormattedError::new(self, error.1, ErrorKind::Info, error.0.to_string());
+    pub fn report_info(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = FormattedError::new(self, node, ErrorKind::Info, error.to_string());
         self.errors.push(error);
     }
 

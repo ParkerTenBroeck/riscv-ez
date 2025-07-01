@@ -1,11 +1,11 @@
+use crate::assembler::Assembler;
+use crate::context::Context;
+use crate::preprocess::PreProcessor;
+use bumpalo::Bump;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
-use bumpalo::Bump;
-use crate::assembler::Assembler;
-use crate::context::Context;
-use crate::preprocess::PreProcessor;
 
 pub mod assembler;
 pub mod context;
@@ -13,22 +13,20 @@ pub mod error;
 pub mod lex;
 pub mod preprocess;
 
-
-pub struct AssemblerResult{
+pub struct AssemblerResult {
     time: f64,
     allocated: usize,
     output: (),
-    result: Result<(), ()>
+    result: Result<(), ()>,
 }
 
 pub fn run(sources: HashMap<String, String>) -> AssemblerResult {
-
     let now = Instant::now();
     let mut bump = Bump::new();
     let context = Rc::new(RefCell::new(Context::new(&bump, move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
             Ok(contents.to_owned())
-        }else{
+        } else {
             Err(format!("No source found with path '{path}'").into())
         }
     })));
@@ -45,11 +43,11 @@ pub fn run(sources: HashMap<String, String>) -> AssemblerResult {
         elapsed,
         bump.allocated_bytes()
     );
-    
-    AssemblerResult{
+
+    AssemblerResult {
         allocated: bump.allocated_bytes(),
         time: elapsed,
         output: (),
-        result: Ok(())
+        result: Ok(()),
     }
 }

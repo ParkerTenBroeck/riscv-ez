@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::{Path};
+use crate::tabs::{Tab, code_editor};
 use egui::TextBuffer;
 use egui_dock::TabViewer;
 use egui_ltreeview::TreeViewState;
 use poll_promise::Promise;
-use crate::tabs::{code_editor, Tab};
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct ProjectFilePath {
@@ -28,22 +28,27 @@ impl ProjectFilePath {
     }
 }
 
-pub struct Context{
+pub struct Context {
     pub project: String,
     files: BTreeMap<ProjectFilePath, Option<Vec<u8>>>,
 }
 
 impl Context {
     pub fn source_map(&self) -> HashMap<String, String> {
-        self.files.iter().filter_map(|(k, e)| {
-            if k.file { return None; }
-            let e: String = String::from_utf8(e.as_ref()?.clone()).ok()?;
-            Some((k.path.clone(), e))
-        }).collect()
+        self.files
+            .iter()
+            .filter_map(|(k, e)| {
+                if k.file {
+                    return None;
+                }
+                let e: String = String::from_utf8(e.as_ref()?.clone()).ok()?;
+                Some((k.path.clone(), e))
+            })
+            .collect()
     }
 }
 
-impl Context{
+impl Context {
     pub fn new() -> Self {
         Self {
             project: "./test_files/".into(),
@@ -51,11 +56,12 @@ impl Context{
         }
     }
 
-    pub fn spawn<T: Send + 'static>(&mut self, task: impl Send  + 'static + FnOnce() -> T) -> Promise<T>{
+    pub fn spawn<T: Send + 'static>(
+        &mut self,
+        task: impl Send + 'static + FnOnce() -> T,
+    ) -> Promise<T> {
         let (sender, receiver) = Promise::new();
-        std::thread::spawn(||{
-            sender.send(task())
-        });
+        std::thread::spawn(|| sender.send(task()));
         receiver
     }
 
@@ -64,24 +70,49 @@ impl Context{
         self.files.iter().map(|i| i.0.clone()).collect()
     }
 
-    fn add_dir_rec(&mut self, path: impl AsRef<Path>){
-        for entry in std::fs::read_dir(path).into_iter().flatten().flatten(){
-            let Some(p) = entry.path().to_str().map(|path| path.strip_prefix(&self.project).map(|s| s.to_owned())).flatten() else {continue};
-            match entry.file_type(){
+    fn add_dir_rec(&mut self, path: impl AsRef<Path>) {
+        for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+            let Some(p) = entry
+                .path()
+                .to_str()
+                .map(|path| path.strip_prefix(&self.project).map(|s| s.to_owned()))
+                .flatten()
+            else {
+                continue;
+            };
+            match entry.file_type() {
                 Ok(ft) if ft.is_dir() => {
-                    self.files.insert(ProjectFilePath {path: p, file: false}, None);
+                    self.files.insert(
+                        ProjectFilePath {
+                            path: p,
+                            file: false,
+                        },
+                        None,
+                    );
                     self.add_dir_rec(entry.path());
                 }
                 Ok(ft) if ft.is_file() => {
-                    self.files.insert(ProjectFilePath {path: p, file: true}, None);
+                    self.files.insert(
+                        ProjectFilePath {
+                            path: p,
+                            file: true,
+                        },
+                        None,
+                    );
                 }
-                _ => continue
+                _ => continue,
             }
         }
     }
 
-    fn get_file(&mut self, path: &str) -> Option<&mut Vec<u8>>{
-        let nya = self.files.entry(ProjectFilePath{path: path.into(), file: false}).or_default();
+    fn get_file(&mut self, path: &str) -> Option<&mut Vec<u8>> {
+        let nya = self
+            .files
+            .entry(ProjectFilePath {
+                path: path.into(),
+                file: false,
+            })
+            .or_default();
         if nya.is_none() {
             *nya = std::fs::read(format!("{}/{path}", self.project)).ok();
         }
@@ -97,13 +128,13 @@ impl TabViewer for Context {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, title: &mut Tab) {
-        match title{
+        match title {
             Tab::CodeEditor(path) => {
                 let text = self.get_file(path);
                 if let Some(text) = text {
                     let mut str = Vec::new();
                     std::mem::swap(text, &mut str);
-                    match String::from_utf8(str){
+                    match String::from_utf8(str) {
                         Ok(mut str) => {
                             code_editor::show(ui, &mut str);
                             *text = str.into_bytes();

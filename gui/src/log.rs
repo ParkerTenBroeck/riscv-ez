@@ -1,5 +1,1 @@
-
-
-pub struct LogUi{
-    
-}
+pub struct LogUi {}

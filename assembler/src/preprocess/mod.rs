@@ -1,10 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::context::NodeInfo;
 use crate::{
     context::{Context, Node, NodeId, SourceId},
     lex::{Lexer, Token},
 };
-use crate::context::NodeInfo;
 
 struct TokenIter<'a> {
     toks: std::vec::IntoIter<Node<'a, Token<'a>>>,
@@ -15,12 +15,15 @@ impl<'a> PreProcessorIter<'a> for TokenIter<'a> {
     fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<'a, Token<'a>>> {
         let tok = self.toks.next()?;
 
-        Some(Node(tok.0, pp.context.borrow_mut().node(NodeInfo{
-            span: tok.1.span,
-            source: tok.1.source,
-            included_by: tok.1.included_by,
-            invoked_by: Some(self.source),
-        })))
+        Some(Node(
+            tok.0,
+            pp.context.borrow_mut().node(NodeInfo {
+                span: tok.1.span,
+                source: tok.1.source,
+                included_by: tok.1.included_by,
+                invoked_by: Some(self.source),
+            }),
+        ))
     }
 }
 
@@ -35,21 +38,27 @@ impl<'a> PreProcessorIter<'a> for FileIter<'a> {
         for token in self.lex.by_ref() {
             match token {
                 Ok(ok) => {
-                    return Some(Node(ok.val, pp.context.borrow_mut().node(NodeInfo{
-                        span: ok.span,
-                        source: self.source,
-                        included_by: self.include_location,
-                        invoked_by: None,
-                    })));
+                    return Some(Node(
+                        ok.val,
+                        pp.context.borrow_mut().node(NodeInfo {
+                            span: ok.span,
+                            source: self.source,
+                            included_by: self.include_location,
+                            invoked_by: None,
+                        }),
+                    ));
                 }
                 Err(err) => {
-                    let node = Node(err.val, pp.context.borrow_mut().node(NodeInfo{
+                    let n = pp.context.borrow_mut().node(NodeInfo {
                         span: err.span,
                         source: self.source,
                         included_by: self.include_location,
                         invoked_by: None,
-                    }));
-                    pp.context.borrow_mut().report_error(node);
+                    });
+                    pp.context.borrow_mut().report_error(
+                        n,
+                        err.val,
+                    );
                 }
             }
         }
@@ -74,7 +83,6 @@ struct FilterStage<'a> {
 pub trait PreProcessorFilter<'a> {
     fn next(&mut self, pp: &mut PreProcessor<'a>) -> Option<Node<'a, Token<'a>>>;
 }
-
 
 pub struct PreProcessor<'a> {
     producers: Vec<ProducerStage<'a>>,
@@ -102,15 +110,15 @@ impl<'a> PreProcessor<'a> {
     fn add_producer(&mut self, stage: ProducerStage<'a>) {
         if self.producers.len() > self.recursion_limit {
             if let Some(source) = stage.source {
-                self.context.borrow_mut().report_error(Node(
+                self.context.borrow_mut().report_error(
+                    source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for producers",
                         self.recursion_limit
                     ),
-                    source,
-                ));
+                );
             } else {
-                self.context.borrow_mut().report_error_hard(format!(
+                self.context.borrow_mut().report_error_nodeless(format!(
                     "Preprocessor stack recursion limit hit ({}) for producers",
                     self.recursion_limit
                 ));
@@ -123,15 +131,15 @@ impl<'a> PreProcessor<'a> {
     fn add_filter(&mut self, stage: FilterStage<'a>) {
         if self.filters.len() > self.recursion_limit {
             if let Some(source) = stage.source {
-                self.context.borrow_mut().report_error(Node(
+                self.context.borrow_mut().report_error(
+                    source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for filters",
                         self.recursion_limit
                     ),
-                    source,
-                ));
+                );
             } else {
-                self.context.borrow_mut().report_error_hard(format!(
+                self.context.borrow_mut().report_error_nodeless(format!(
                     "Preprocessor stack recursion limit hit ({}) for filters",
                     self.recursion_limit
                 ));
@@ -157,7 +165,7 @@ impl<'a> PreProcessor<'a> {
             Err(error) => {
                 self.context
                     .borrow_mut()
-                    .report_error_hard(format!("Failed to load file '{error}'"));
+                    .report_error_nodeless(format!("Failed to load file '{error}'"));
             }
         }
     }
@@ -178,7 +186,7 @@ impl<'a> PreProcessor<'a> {
             Err(error) => {
                 self.context
                     .borrow_mut()
-                    .report_error(Node(format!("Failed to include file '{error}'"), source));
+                    .report_error(source, format!("Failed to include file '{error}'"));
             }
         }
     }
@@ -199,28 +207,28 @@ impl<'a> PreProcessor<'a> {
         match tag {
             "include" => match self.stack_next() {
                 Some(Node(Token::StringLiteral(str), node)) => self.include(str, node),
-                Some(t) => self
+                Some(Node(t, n)) => self
                     .context
                     .borrow_mut()
-                    .report_error(t.map(|t| format!("Expected string found {t:?}"))),
+                    .report_error(n, format!("Expected string found {t:?}")),
                 None => self
                     .context
                     .borrow_mut()
-                    .report_error(Node("Expected string but found EOF", n)),
+                    .report_error(n, "Expected string but found EOF"),
             },
             "define" => {
                 let ident = match self.stack_next() {
                     Some(Node(Token::Ident(str), _)) => str,
-                    Some(t) => {
+                    Some(Node(t, n)) => {
                         self.context
                             .borrow_mut()
-                            .report_error(t.map(|t| format!("Expected ident found {t:?}")));
+                            .report_error(n, format!("Expected ident found {t:?}"));
                         return;
                     }
                     None => {
                         self.context
                             .borrow_mut()
-                            .report_error(Node("Expected ident but found EOF", n));
+                            .report_error(n, "Expected ident but found EOF");
                         return;
                     }
                 };
@@ -237,7 +245,7 @@ impl<'a> PreProcessor<'a> {
             unknown => self
                 .context
                 .borrow_mut()
-                .report_error(Node(format!("Unknown preprocessor tag '{unknown}'"), n)),
+                .report_error(n, format!("Unknown preprocessor tag '{unknown}'")),
         }
     }
 

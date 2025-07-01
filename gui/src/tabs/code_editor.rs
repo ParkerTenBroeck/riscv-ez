@@ -1,22 +1,50 @@
-use crate::tabs::Tab;
 use assembler::lex::Token;
 use eframe::emath::Align;
 use eframe::epaint::text::{LayoutJob, LayoutSection, TextFormat};
 use eframe::epaint::{Color32, Stroke};
-use egui::Ui;
-use egui::ahash::HashMap;
-use egui_dock::TabViewer;
-use std::collections::BTreeMap;
+use egui::scroll_area::ScrollBarVisibility;
+use egui::{ScrollArea, Ui};
+use std::fmt::Write;
 
 pub fn show(ui: &mut Ui, text: &mut String) {
-    egui::TextEdit::multiline(text)
-        .desired_width(f32::INFINITY)
-        .code_editor()
-        .desired_rows(1)
-        .layouter(&mut |ui: &egui::Ui, str, _w| {
-            ui.fonts(|f| f.layout_job(crate::tabs::code_editor::highlight(ui, str)))
-        })
-        .show(ui);
+    ScrollArea::both()
+        .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+        .show(ui, |ui| {
+            let mut string = String::new();
+            let rows = text.matches("\n").count() + 1;
+            let width = (rows as f32).log10().floor() as usize + 1;
+            for num in 1..=rows {
+                string
+                    .write_fmt(format_args!("{num: >width$}", width = width))
+                    .unwrap();
+                if num != rows {
+                    string.write_char('\n').unwrap();
+                }
+            }
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                egui::TextEdit::multiline(&mut string)
+                    .code_editor()
+                    .desired_rows(rows)
+                    .interactive(false)
+                    .desired_width(width as f32 * 14.0 * 0.5)
+                    .layouter(&mut |ui: &egui::Ui, str, _w| {
+                        ui.fonts(|f| {
+                            f.layout_job(LayoutJob::single_section(str.to_string(), COMMENT))
+                        })
+                    })
+                    .show(ui);
+
+                egui::TextEdit::multiline(text)
+                    .desired_width(f32::INFINITY)
+                    .code_editor()
+                    .desired_rows(rows)
+                    .layouter(&mut |ui: &egui::Ui, str, _w| {
+                        ui.fonts(|f| f.layout_job(highlight(ui, str)))
+                    })
+                    .show(ui);
+            })
+        });
 }
 
 const fn simple_format(color: Color32, underline: bool) -> TextFormat {
