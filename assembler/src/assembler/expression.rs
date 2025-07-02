@@ -1,16 +1,18 @@
-use std::ops::Index;
 use crate::assembler::Assembler;
+use crate::assembler::instructions::Register;
 use crate::context::{Node, NodeId};
 use crate::lex::{Number, Token};
+use std::ops::Index;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ExpressionType{
+pub enum ExpressionType {
     Unknown,
 
     String,
     CString,
 
     Indexed,
+    Register,
 
     Label,
 
@@ -31,27 +33,96 @@ pub enum ExpressionType{
     Char,
 }
 
-impl ExpressionType{
-    pub fn default_value<'a>(&self, node: NodeId<'a>) -> Expression<'a>{
+impl ExpressionType {
+    pub fn default_value<'a>(&self, node: NodeId<'a>) -> Expression<'a> {
         let ty = *self;
-        match self{
-            ExpressionType::Unknown => Expression{ ty, node, kind: Kind::Constant(Constant::I32(0)), },
-            ExpressionType::String => Expression{ ty, node, kind: Kind::Constant(Constant::String("")), },
-            ExpressionType::CString => Expression{ ty, node, kind: Kind::Constant(Constant::String("\0")), },
+        match self {
+            ExpressionType::Unknown => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::I32(0)),
+            },
+            ExpressionType::String => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::String("")),
+            },
+            ExpressionType::CString => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::String("\0")),
+            },
             ExpressionType::Indexed => todo!(),
-            ExpressionType::Label => Expression{ ty, node, kind: Kind::Ident(""), },
-            ExpressionType::I8 => Expression{ ty, node, kind: Kind::Constant(Constant::I8(0)), },
-            ExpressionType::I16 => Expression{ ty, node, kind: Kind::Constant(Constant::I16(0)), },
-            ExpressionType::I32 => Expression{ ty, node, kind: Kind::Constant(Constant::I32(0)), },
-            ExpressionType::I64 => Expression{ ty, node, kind: Kind::Constant(Constant::I16(0)), },
-            ExpressionType::U8 => Expression{ ty, node, kind: Kind::Constant(Constant::U8(0)), },
-            ExpressionType::U16 => Expression{ ty, node, kind: Kind::Constant(Constant::U16(0)), },
-            ExpressionType::U32 => Expression{ ty, node, kind: Kind::Constant(Constant::U32(0)), },
-            ExpressionType::U64 => Expression{ ty, node, kind: Kind::Constant(Constant::U64(0)), },
-            ExpressionType::F32 => Expression{ ty, node, kind: Kind::Constant(Constant::F32(0.0)), },
-            ExpressionType::F64 => Expression{ ty, node, kind: Kind::Constant(Constant::F64(0.0)), },
-            ExpressionType::Bool => Expression{ ty, node, kind: Kind::Constant(Constant::Bool(false)), },
-            ExpressionType::Char => Expression{ ty, node, kind: Kind::Constant(Constant::Char('\0')), },
+            ExpressionType::Register => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Register(Register(0)),
+            },
+            ExpressionType::Label => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Ident(""),
+            },
+            ExpressionType::I8 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::I8(0)),
+            },
+            ExpressionType::I16 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::I16(0)),
+            },
+            ExpressionType::I32 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::I32(0)),
+            },
+            ExpressionType::I64 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::I16(0)),
+            },
+            ExpressionType::U8 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::U8(0)),
+            },
+            ExpressionType::U16 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::U16(0)),
+            },
+            ExpressionType::U32 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::U32(0)),
+            },
+            ExpressionType::U64 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::U64(0)),
+            },
+            ExpressionType::F32 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::F32(0.0)),
+            },
+            ExpressionType::F64 => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::F64(0.0)),
+            },
+            ExpressionType::Bool => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::Bool(false)),
+            },
+            ExpressionType::Char => Expression {
+                ty,
+                node,
+                kind: ExpressionKind::Constant(Constant::Char('\0')),
+            },
         }
     }
 }
@@ -60,11 +131,11 @@ impl ExpressionType{
 pub struct Expression<'a> {
     pub ty: ExpressionType,
     pub node: NodeId<'a>,
-    pub kind: Kind<'a>,
+    pub kind: ExpressionKind<'a>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum BinOp{
+pub enum BinOp {
     Add,
     Sub,
     Mul,
@@ -74,22 +145,60 @@ pub enum BinOp{
     And,
     Xor,
     Or,
+    Shl,
+    Shr,
+
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Eq,
+    Ne,
+}
+
+impl BinOp {
+    pub fn precedence(&self) -> u32 {
+        match self {
+            BinOp::Add => 20 - 4,
+            BinOp::Sub => 20 - 4,
+
+            BinOp::Mul => 20 - 3,
+            BinOp::Div => 20 - 3,
+            BinOp::Rem => 20 - 3,
+
+            BinOp::Shl => 20 - 5,
+            BinOp::Shr => 20 - 5,
+
+            BinOp::Lt => 20 - 6,
+            BinOp::Lte => 20 - 6,
+            BinOp::Gt => 20 - 6,
+            BinOp::Gte => 20 - 6,
+
+            BinOp::Eq => 20 - 7,
+            BinOp::Ne => 20 - 7,
+
+            BinOp::And => 20 - 8,
+            BinOp::Xor => 20 - 9,
+            BinOp::Or => 20 - 10,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum UnOp{
+pub enum UnOp {
     Sub,
-    Not
+    Not,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Kind<'a>{
+pub enum ExpressionKind<'a> {
     Constant(Constant<'a>),
     Ident(&'a str),
+    Register(Register),
     BinOp(&'a Expression<'a>, BinOp, &'a Expression<'a>),
-    UnOp(BinOp, &'a Expression<'a>),
+    UnOp(UnOp, &'a Expression<'a>),
     Func(&'a str, &'a [Expression<'a>]),
-    Cast(&'a str, ExpressionType),
+    Cast(&'a str, ExpressionType, &'a Expression<'a>),
     Index(&'a Expression<'a>, &'a Expression<'a>),
 }
 
@@ -139,24 +248,18 @@ impl<'a> Constant<'a> {
             Constant::F32(_) => ConvertResult::Failure,
             Constant::F64(_) => ConvertResult::Failure,
             Constant::String(_) => ConvertResult::Failure,
-            Constant::Char(_) => ConvertResult::Failure,
-            Constant::Bool(_) => ConvertResult::Failure,
+            Constant::Char(char) => ConvertResult::Success(char as u32),
+            Constant::Bool(bool) => ConvertResult::Success(bool as u32),
         }
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ParsedArgument<'a> {
-    Label(&'a str, i64),
-    Register(u8),
-    Constant(Constant<'a>),
-}
-
-impl ExpressionType{
-    pub fn size(&self) -> Option<u32>{
-        match self{
+impl ExpressionType {
+    pub fn size(&self) -> Option<u32> {
+        match self {
             ExpressionType::Unknown => None,
             ExpressionType::Indexed => None,
+            ExpressionType::Register => None,
             ExpressionType::String => None,
             ExpressionType::CString => None,
             ExpressionType::Label => Some(4),
@@ -175,10 +278,11 @@ impl ExpressionType{
         }
     }
 
-    pub fn align(&self) -> u32{
-        match self{
+    pub fn align(&self) -> u32 {
+        match self {
             ExpressionType::Unknown => 0,
             ExpressionType::Indexed => 0,
+            ExpressionType::Register => 0,
             ExpressionType::String => 1,
             ExpressionType::CString => 1,
             ExpressionType::Label => 4,
@@ -197,9 +301,10 @@ impl ExpressionType{
         }
     }
 
-    pub fn numeric_suffix(&self) -> Option<&'static str>{
-        match self{
+    pub fn numeric_suffix(&self) -> Option<&'static str> {
+        match self {
             ExpressionType::Unknown => None,
+            ExpressionType::Register => None,
             ExpressionType::Indexed => None,
             ExpressionType::String => None,
             ExpressionType::CString => None,
@@ -219,9 +324,10 @@ impl ExpressionType{
         }
     }
 
-    pub fn is_integer(&self) -> bool{
-        match self{
+    pub fn is_integer(&self) -> bool {
+        match self {
             ExpressionType::Unknown => false,
+            ExpressionType::Register => false,
             ExpressionType::Indexed => false,
             ExpressionType::String => false,
             ExpressionType::CString => false,
@@ -243,33 +349,76 @@ impl ExpressionType{
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ArgumentsTypeHint<'a>{
+pub enum ArgumentsTypeHint<'a> {
     Mono(ExpressionType),
     Individual(&'a [ExpressionType]),
-    None
+    None,
 }
 
-impl<'a> Index<usize> for ArgumentsTypeHint<'a>{
+impl<'a> Index<usize> for ArgumentsTypeHint<'a> {
     type Output = ExpressionType;
 
     fn index(&self, index: usize) -> &Self::Output {
-        match self{
+        match self {
             ArgumentsTypeHint::Mono(ty) => ty,
             ArgumentsTypeHint::Individual(ty) => ty.get(index).unwrap_or(&ExpressionType::Unknown),
-            ArgumentsTypeHint::None => &ExpressionType::Unknown
+            ArgumentsTypeHint::None => &ExpressionType::Unknown,
         }
     }
 }
 
 impl<'a> Assembler<'a> {
-    fn parse_numeric_literal(&mut self, num: Number<'a>, n: NodeId<'a>, hint: ExpressionType) -> Constant<'a> {
+    fn parse_numeric_literal(
+        &mut self,
+        num: Number<'a>,
+        n: NodeId<'a>,
+        hint: ExpressionType,
+    ) -> Constant<'a> {
         let (suffix, radix) = match num.get_hint() {
-            crate::lex::TypeHint::Float if hint.is_integer() => (num.get_suffix().unwrap_or("f32"), 10),
-            crate::lex::TypeHint::Float => (num.get_suffix().unwrap_or(hint.numeric_suffix().unwrap_or("f32")), 10),
-            crate::lex::TypeHint::Hex => (num.get_suffix().unwrap_or(hint.is_integer().then(||hint.numeric_suffix()).flatten().unwrap_or("i32")), 16),
-            crate::lex::TypeHint::Bin => (num.get_suffix().unwrap_or(hint.is_integer().then(||hint.numeric_suffix()).flatten().unwrap_or("i32")), 2),
-            crate::lex::TypeHint::Int => (num.get_suffix().unwrap_or(hint.is_integer().then(||hint.numeric_suffix()).flatten().unwrap_or("i32")), 10),
-            crate::lex::TypeHint::Oct => (num.get_suffix().unwrap_or(hint.is_integer().then(||hint.numeric_suffix()).flatten().unwrap_or("i32")), 8),
+            crate::lex::TypeHint::Float if hint.is_integer() => {
+                (num.get_suffix().unwrap_or("f32"), 10)
+            }
+            crate::lex::TypeHint::Float => (
+                num.get_suffix()
+                    .unwrap_or(hint.numeric_suffix().unwrap_or("f32")),
+                10,
+            ),
+            crate::lex::TypeHint::Hex => (
+                num.get_suffix().unwrap_or(
+                    hint.is_integer()
+                        .then(|| hint.numeric_suffix())
+                        .flatten()
+                        .unwrap_or("i32"),
+                ),
+                16,
+            ),
+            crate::lex::TypeHint::Bin => (
+                num.get_suffix().unwrap_or(
+                    hint.is_integer()
+                        .then(|| hint.numeric_suffix())
+                        .flatten()
+                        .unwrap_or("i32"),
+                ),
+                2,
+            ),
+            crate::lex::TypeHint::Int => (
+                num.get_suffix().unwrap_or(
+                    hint.is_integer()
+                        .then(|| hint.numeric_suffix())
+                        .flatten()
+                        .unwrap_or("i32"),
+                ),
+                10,
+            ),
+            crate::lex::TypeHint::Oct => (
+                num.get_suffix().unwrap_or(
+                    hint.is_integer()
+                        .then(|| hint.numeric_suffix())
+                        .flatten()
+                        .unwrap_or("i32"),
+                ),
+                8,
+            ),
         };
 
         macro_rules! integer {
@@ -278,7 +427,6 @@ impl<'a> Assembler<'a> {
                     .inspect_err(|e| {
                         self.context
                             .context
-                            .borrow_mut()
                             .report_error(n, format!("Invalid numeric literal {e}"));
                     })
                     .unwrap_or(0)
@@ -292,7 +440,6 @@ impl<'a> Assembler<'a> {
                     .inspect_err(|e| {
                         self.context
                             .context
-                            .borrow_mut()
                             .report_error(n, format!("Invalid numeric literal {e}"));
                     })
                     .unwrap_or(0.0)
@@ -315,131 +462,190 @@ impl<'a> Assembler<'a> {
             suffix => {
                 self.context
                     .context
-                    .borrow_mut()
                     .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
-                Constant::I32(0)
+                if hint.numeric_suffix().is_some() {
+                    if let ExpressionKind::Constant(c) = hint.default_value(n).kind {
+                        c
+                    } else {
+                        Constant::I32(0)
+                    }
+                } else {
+                    Constant::I32(0)
+                }
             }
         }
     }
-    
-    fn parse_1(&mut self, hint: ExpressionType) -> Expression<'a>{
-        
-        let expr= match self.next(){
-            Some(Node(Token::Ident(ident), node)) => {
-                self.context.context.borrow_mut().report_error(node, format!("Unexpected identifier '{ident}'"));
-                hint.default_value(node)
-            }
-            Some(Node(Token::TrueLiteral, node)) => Expression{
+
+    fn parse_expr_1(&mut self, hint: ExpressionType) -> Expression<'a> {
+        let expr = match self.next() {
+            Some(Node(Token::Ident(ident), node)) => match self.peek() {
+                Some(Node(Token::LPar, lhs)) => {
+                    self.next();
+                    let args = self.parse_arguments(ArgumentsTypeHint::None, Some(Token::RPar));
+                    let rhs = match self.peek() {
+                        Some(Node(Token::RPar, node)) => {
+                            self.next();
+                            node
+                        }
+                        Some(Node(t, node)) => {
+                            self.context.context.report_error(
+                                node,
+                                format!("Unexpected token '{t:?}' expected ')'"),
+                            );
+                            lhs
+                        }
+                        None => {
+                            self.context
+                                .context
+                                .report_error_eof("Expected ')' but found eof");
+                            self.context.context.top_src_eof()
+                        }
+                    };
+                    let args_node = self.context.context.merge_nodes(lhs, rhs);
+                    self.func(ident, node, args, args_node)
+                }
+                _ => self.handle_ident(ident, node, hint),
+            },
+            Some(Node(Token::TrueLiteral, node)) => Expression {
                 ty: ExpressionType::Unknown,
-                kind: Kind::Constant(Constant::Bool(true)),
+                kind: ExpressionKind::Constant(Constant::Bool(true)),
                 node,
             },
-            Some(Node(Token::FalseLiteral, node)) => Expression{
+            Some(Node(Token::FalseLiteral, node)) => Expression {
                 ty: ExpressionType::Unknown,
-                kind: Kind::Constant(Constant::Bool(false)),
+                kind: ExpressionKind::Constant(Constant::Bool(false)),
                 node,
             },
-            Some(Node(Token::StringLiteral(str), node)) => Expression{
+            Some(Node(Token::StringLiteral(str), node)) => Expression {
                 ty: ExpressionType::Unknown,
-                kind: Kind::Constant(Constant::String(self.parse_string_literal(str, node))),
+                kind: ExpressionKind::Constant(Constant::String(
+                    self.parse_string_literal(str, node),
+                )),
                 node,
             },
-            Some(Node(Token::CharLiteral(str), node)) => Expression{
+            Some(Node(Token::CharLiteral(str), node)) => Expression {
                 ty: ExpressionType::Unknown,
-                kind: Kind::Constant(Constant::Char(self.parse_char_literal(str, node))),
+                kind: ExpressionKind::Constant(Constant::Char(self.parse_char_literal(str, node))),
                 node,
             },
-            Some(Node(Token::NumericLiteral(num), node)) => Expression{
+            Some(Node(Token::NumericLiteral(num), node)) => Expression {
                 ty: ExpressionType::Unknown,
-                kind: Kind::Constant(self.parse_numeric_literal(num, node, hint)),
+                kind: ExpressionKind::Constant(self.parse_numeric_literal(num, node, hint)),
                 node,
             },
             Some(Node(Token::LPar, lhs)) => {
-                let mut arg = self.parse_arg(hint);
-                match self.peek(){
+                let mut arg = self.parse_expr(hint);
+                match self.peek() {
                     Some(Node(Token::RPar, rhs)) => {
-                        arg.node = self.context.context.borrow_mut().merge_nodes(lhs, rhs);
+                        arg.node = self.context.context.merge_nodes(lhs, rhs);
                         self.next();
                     }
                     Some(Node(t, rhs)) => {
-                        self.context.context.borrow_mut().report_error(rhs, format!("Unexpected token '{t:?}'"));
-                        arg.node = self.context.context.borrow_mut().merge_nodes(lhs, rhs);
+                        self.context
+                            .context
+                            .report_error(rhs, format!("Unexpected token '{t:?}' expected ')'"));
+                        arg.node = self.context.context.merge_nodes(lhs, rhs);
                     }
                     None => {
-                        self.context.context.borrow_mut().report_error_eof("Expected rpar but found eof");
+                        self.context
+                            .context
+                            .report_error_eof("Expected ')' but found eof");
                     }
                 }
                 arg
             }
-            
+
             Some(Node(t, n)) => {
-                self.context.context.borrow_mut().report_error(n, format!("Unexpected token '{t:?}'"));
+                self.context
+                    .context
+                    .report_error(n, format!("Unexpected token '{t:?}'"));
                 hint.default_value(n)
             }
             None => {
-                self.context.context.borrow_mut().report_error_eof("Expected token but found eof");
-                hint.default_value(self.context.context.borrow_mut().top_src_eof())
+                self.context
+                    .context
+                    .report_error_eof("Expected token but found eof");
+                hint.default_value(self.context.context.top_src_eof())
             }
         };
-        
-        match self.peek(){
+
+        match self.peek() {
             Some(Node(Token::LBracket, node)) => {
                 self.next();
+                let rhs = self.parse_expr(hint);
+
+                let node = match self.peek() {
+                    Some(Node(Token::RBracket, node)) => {
+                        self.next();
+                        node
+                    }
+                    Some(Node(t, node)) => {
+                        self.context
+                            .context
+                            .report_error(node, format!("Unexpected token '{t:?}' expected ']'"));
+                        expr.node
+                    }
+                    None => {
+                        self.context
+                            .context
+                            .report_error_eof("Expected ']' but found eof");
+                        self.context.context.top_src_eof()
+                    }
+                };
+                return self.index(expr, rhs, node);
+            }
+            Some(Node(Token::Ident("as"), node)) => {
+                self.next();
+
+                let (node, ty) = match self.peek() {
+                    Some(Node(Token::Ident(ty), node)) => {
+                        self.next();
+                        (node, ty)
+                    }
+                    Some(Node(t, node)) => {
+                        self.context.context.report_error(
+                            node,
+                            format!("Unexpected token '{t:?}' expected identifier"),
+                        );
+                        (expr.node, "i32")
+                    }
+                    None => {
+                        self.context
+                            .context
+                            .report_error_eof("Expected identifier but found eof");
+                        (self.context.context.top_src_eof(), "i32")
+                    }
+                };
+                return self.cast(expr, ty, node);
             }
             _ => {}
         }
-        
-        
+
         expr
     }
-    
-    fn parse_arg(&mut self, hint: ExpressionType) -> Expression<'a>{
-        todo!()
+
+    fn parse_expr_2(&mut self, hint: ExpressionType) -> Expression<'a> {
+        self.parse_expr_1(hint)
     }
 
-    fn parse_argument(&mut self, hint: ExpressionType) -> Option<Node<'a, ParsedArgument<'a>>> {
+    fn parse_expr_3(&mut self, hint: ExpressionType) -> Expression<'a> {
         match self.peek() {
-            Some(Node(Token::NumericLiteral(num), n)) => {
+            Some(Node(Token::Minus, node)) => {
                 self.next();
-                todo!()
-                
-                // Some(
-                //     self.parse_numeric_literal(num, n, hint)
-                //         .map(ParsedArgument::Constant),
-                // )
+                let expr = self.parse_expr_3(hint);
+                self.unop(UnOp::Sub, node, expr)
             }
-            Some(Node(Token::Ident(str), n)) => {
+            Some(Node(Token::LogicalNot, node)) => {
                 self.next();
-                Some(Node(ParsedArgument::Label(str, 0), n))
+                let expr = self.parse_expr_3(hint);
+                self.unop(UnOp::Not, node, expr)
             }
-            Some(Node(Token::StringLiteral(str), n)) => {
-                self.next();
-                Some(Node(
-                    ParsedArgument::Constant(Constant::String(
-                        self.parse_string_literal(str, n),
-                    )),
-                    n,
-                ))
-            }
-            Some(Node(Token::CharLiteral(str), n)) => {
-                self.next();
-                Some(Node(
-                    ParsedArgument::Constant(Constant::Char(
-                        self.parse_char_literal(str, n),
-                    )),
-                    n,
-                ))
-            }
-            Some(Node(Token::FalseLiteral, n)) => {
-                self.next();
-                Some(Node(ParsedArgument::Constant(Constant::Bool(false)), n))
-            }
-            Some(Node(Token::TrueLiteral, n)) => {
-                self.next();
-                Some(Node(ParsedArgument::Constant(Constant::Bool(true)), n))
-            }
-            _ => None,
+            _ => self.parse_expr_2(hint),
         }
+    }
+
+    fn parse_expr(&mut self, hint: ExpressionType) -> Expression<'a> {
+        self.parse_expr_3(hint)
     }
 
     fn parse_char_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> char {
@@ -448,15 +654,11 @@ impl<'a> Assembler<'a> {
             if chars.next().is_some() {
                 self.context
                     .context
-                    .borrow_mut()
                     .report_error(n, "Char literal contains more than one char");
             }
             ok
         } else {
-            self.context
-                .context
-                .borrow_mut()
-                .report_error(n, "Char literal empty");
+            self.context.context.report_error(n, "Char literal empty");
             '\0'
         }
     }
@@ -465,28 +667,161 @@ impl<'a> Assembler<'a> {
         repr.into()
     }
 
-    pub(super) fn gather_arguments(
+    pub(super) fn parse_arguments(
         &mut self,
-        mnemonic: &'a str,
-        n: NodeId<'a>,
         hint: ArgumentsTypeHint<'_>,
-    ) -> Result<Vec<Node<'a, ParsedArgument<'a>>>, ()> {
+        closing: Option<Token<'a>>,
+    ) -> Vec<Expression<'a>> {
         let mut args = Vec::new();
-        while !matches!(self.peek(), Some(Node(Token::NewLine, _)) | None) {
-            args.push(self.parse_argument(hint[args.len()]).ok_or(())?);
+        match self.peek() {
+            Some(Node(Token::NewLine, _)) | None if closing.is_none() => return args,
+            Some(Node(t, _)) if Some(t) == closing => return args,
+            _ => {}
+        }
+        loop {
+            args.push(self.parse_expr(hint[args.len()]));
             match self.peek() {
                 Some(Node(Token::Comma, _)) => {
                     self.next();
                 }
-                Some(Node(Token::NewLine, _)) | None => {}
+                Some(Node(Token::NewLine, _)) | None if closing.is_none() => return args,
+                Some(Node(t, _)) if Some(t) == closing => return args,
                 Some(Node(t, n)) => {
                     self.context
                         .context
-                        .borrow_mut()
                         .report_error(n, format!("Expected comma found '{t:?}'"));
+                }
+                None => {
+                    self.context
+                        .context
+                        .report_error_eof("Expected comma found eof");
+                    return args;
                 }
             }
         }
-        Ok(args)
+    }
+
+    fn handle_ident(
+        &mut self,
+        ident: &'a str,
+        node: NodeId<'a>,
+        hint: ExpressionType,
+    ) -> Expression<'a> {
+        fn reg(node: NodeId, reg: u8) -> Expression {
+            Expression {
+                node,
+                kind: ExpressionKind::Register(Register(reg)),
+                ty: ExpressionType::Register,
+            }
+        }
+        match ident {
+            "x0" | "zero" => reg(node, 0),
+            "x1" | "ra" => reg(node, 1),
+            "x2" | "sp" => reg(node, 2),
+            "x3" | "gp" => reg(node, 3),
+            "x4" | "tp" => reg(node, 4),
+            "x5" | "t0" => reg(node, 5),
+            "x6" | "t1" => reg(node, 6),
+            "x7" | "t2" => reg(node, 7),
+            "x8" | "s0" | "fp" => reg(node, 8),
+            "x9" | "s1" => reg(node, 9),
+            "x10" | "a0" => reg(node, 10),
+            "x11" | "a1" => reg(node, 11),
+            "x12" | "a2" => reg(node, 12),
+            "x13" | "a3" => reg(node, 13),
+            "x14" | "a4" => reg(node, 14),
+            "x15" | "a5" => reg(node, 15),
+            "x16" | "a6" => reg(node, 16),
+            "x17" | "a7" => reg(node, 17),
+            "x18" | "s2" => reg(node, 18),
+            "x19" | "s3" => reg(node, 19),
+            "x20" | "s4" => reg(node, 20),
+            "x21" | "s5" => reg(node, 21),
+            "x22" | "s6" => reg(node, 22),
+            "x23" | "s7" => reg(node, 23),
+            "x24" | "s8" => reg(node, 24),
+            "x25" | "s9" => reg(node, 25),
+            "x26" | "s10" => reg(node, 26),
+            "x27" | "s11" => reg(node, 27),
+            "x28" | "t3" => reg(node, 28),
+            "x29" | "t4" => reg(node, 29),
+            "x30" | "t5" => reg(node, 30),
+            "x31" | "t6" => reg(node, 31),
+
+            _ => {
+                self.context
+                    .context
+                    .report_error(node, format!("Unexpected identifier '{ident}'"));
+                hint.default_value(node)
+            }
+        }
+    }
+
+    fn func(
+        &mut self,
+        func: &'a str,
+        func_node: NodeId<'a>,
+        args: Vec<Expression<'a>>,
+        args_node: NodeId<'a>,
+    ) -> Expression<'a> {
+        Expression {
+            ty: ExpressionType::Unknown,
+            node: self.context.context.merge_nodes(func_node, args_node),
+            kind: ExpressionKind::Func(func, self.context.context.alloc_slice(&args[..])),
+        }
+    }
+
+    fn index(
+        &mut self,
+        lhs: Expression<'a>,
+        rhs: Expression<'a>,
+        closing: NodeId<'a>,
+    ) -> Expression<'a> {
+        Expression {
+            ty: ExpressionType::Indexed,
+            node: self.context.context.merge_nodes(lhs.node, closing),
+            kind: ExpressionKind::Index(
+                self.context.context.alloc(lhs),
+                self.context.context.alloc(rhs),
+            ),
+        }
+    }
+
+    fn cast(&mut self, expr: Expression<'a>, ty: &'a str, node_id: NodeId<'a>) -> Expression<'a> {
+        Expression {
+            ty: ExpressionType::Unknown,
+            node: self.context.context.merge_nodes(expr.node, node_id),
+            kind: ExpressionKind::Cast(
+                ty,
+                ExpressionType::Unknown,
+                self.context.context.alloc(expr),
+            ),
+        }
+    }
+
+    fn unop(&mut self, op: UnOp, node: NodeId<'a>, expr: Expression<'a>) -> Expression<'a> {
+        Expression {
+            ty: expr.ty,
+            node: self.context.context.merge_nodes(node, expr.node),
+            kind: ExpressionKind::UnOp(op, self.context.context.alloc(expr)),
+        }
+    }
+
+    fn binop(
+        &mut self,
+        op: BinOp,
+        node: NodeId<'a>,
+        lhs: Expression<'a>,
+        rhs: Expression<'a>,
+    ) -> Expression<'a> {
+        Expression {
+            ty: ExpressionType::Unknown,
+            node: self.context.context.merge_nodes(lhs.node, rhs.node),
+            kind: ExpressionKind::BinOp(
+                self.context.context.alloc(lhs),
+                op,
+                self.context.context.alloc(rhs),
+            ),
+        }
     }
 }

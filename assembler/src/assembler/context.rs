@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::{cell::RefCell, rc::Rc};
 
 pub struct AssemblerContext<'a> {
-    pub context: Rc<RefCell<Context<'a>>>,
+    pub context: Rc<Context<'a>>,
     pub current_section: &'a str,
     pub current_label: &'a str,
     pub tu: TranslationUnit<'a, NodeId<'a>, SectionData<'a>>,
@@ -38,7 +38,7 @@ impl<'a> SectionData<'a> {
 }
 
 impl<'a> AssemblerContext<'a> {
-    pub fn new(context: Rc<RefCell<Context<'a>>>) -> Self {
+    pub fn new(context: Rc<Context<'a>>) -> Self {
         AssemblerContext {
             context,
             current_label: "",
@@ -86,7 +86,7 @@ impl<'a> AssemblerContext<'a> {
 
     pub fn add_label(&mut self, label: &'a str, source: NodeId<'a>) {
         if let Some(previous) = self.tu.labels.get(label) {
-            self.context.borrow_mut().report(|ctx| {
+            self.context.report(|ctx| {
                 FormattedError::default()
                     .add(ctx, source, ErrorKind::Error, "Label bound more than once")
                     .add(ctx, previous.source, ErrorKind::Info, "First bound here")

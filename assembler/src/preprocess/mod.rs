@@ -17,7 +17,7 @@ impl<'a> PreProcessorIter<'a> for TokenIter<'a> {
 
         Some(Node(
             tok.0,
-            pp.context.borrow_mut().node(NodeInfo {
+            pp.context.node(NodeInfo {
                 span: tok.1.span,
                 source: tok.1.source,
                 included_by: tok.1.included_by,
@@ -40,7 +40,7 @@ impl<'a> PreProcessorIter<'a> for FileIter<'a> {
                 Ok(ok) => {
                     return Some(Node(
                         ok.val,
-                        pp.context.borrow_mut().node(NodeInfo {
+                        pp.context.node(NodeInfo {
                             span: ok.span,
                             source: self.source,
                             included_by: self.include_location,
@@ -49,16 +49,13 @@ impl<'a> PreProcessorIter<'a> for FileIter<'a> {
                     ));
                 }
                 Err(err) => {
-                    let n = pp.context.borrow_mut().node(NodeInfo {
+                    let n = pp.context.node(NodeInfo {
                         span: err.span,
                         source: self.source,
                         included_by: self.include_location,
                         invoked_by: None,
                     });
-                    pp.context.borrow_mut().report_error(
-                        n,
-                        err.val,
-                    );
+                    pp.context.report_error(n, err.val);
                 }
             }
         }
@@ -87,7 +84,7 @@ pub trait PreProcessorFilter<'a> {
 pub struct PreProcessor<'a> {
     producers: Vec<ProducerStage<'a>>,
     filters: Vec<FilterStage<'a>>,
-    context: Rc<RefCell<Context<'a>>>,
+    context: Rc<Context<'a>>,
     recursion_limit: usize,
     defines: HashMap<&'a str, Vec<Node<'a, Token<'a>>>>,
     line_beginning: bool,
@@ -95,7 +92,7 @@ pub struct PreProcessor<'a> {
 }
 
 impl<'a> PreProcessor<'a> {
-    pub fn new(info: Rc<RefCell<Context<'a>>>) -> Self {
+    pub fn new(info: Rc<Context<'a>>) -> Self {
         Self {
             producers: Vec::new(),
             filters: Vec::new(),
@@ -110,7 +107,7 @@ impl<'a> PreProcessor<'a> {
     fn add_producer(&mut self, stage: ProducerStage<'a>) {
         if self.producers.len() > self.recursion_limit {
             if let Some(source) = stage.source {
-                self.context.borrow_mut().report_error(
+                self.context.report_error(
                     source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for producers",
@@ -118,7 +115,7 @@ impl<'a> PreProcessor<'a> {
                     ),
                 );
             } else {
-                self.context.borrow_mut().report_error_nodeless(format!(
+                self.context.report_error_nodeless(format!(
                     "Preprocessor stack recursion limit hit ({}) for producers",
                     self.recursion_limit
                 ));
@@ -131,7 +128,7 @@ impl<'a> PreProcessor<'a> {
     fn add_filter(&mut self, stage: FilterStage<'a>) {
         if self.filters.len() > self.recursion_limit {
             if let Some(source) = stage.source {
-                self.context.borrow_mut().report_error(
+                self.context.report_error(
                     source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for filters",
@@ -139,7 +136,7 @@ impl<'a> PreProcessor<'a> {
                     ),
                 );
             } else {
-                self.context.borrow_mut().report_error_nodeless(format!(
+                self.context.report_error_nodeless(format!(
                     "Preprocessor stack recursion limit hit ({}) for filters",
                     self.recursion_limit
                 ));
@@ -155,8 +152,8 @@ impl<'a> PreProcessor<'a> {
         self.producers.clear();
         self.line_beginning = true;
         self.previous_newline = true;
-        
-        let result = self.context.borrow_mut().get_source_from_path(path);
+
+        let result = self.context.get_source_from_path(path);
         match result {
             Ok(src) => {
                 self.add_producer(ProducerStage {
@@ -171,16 +168,15 @@ impl<'a> PreProcessor<'a> {
             }
             Err(error) => {
                 self.context
-                    .borrow_mut()
                     .report_error_nodeless(format!("Failed to load file '{error}'"));
-                
+
                 None
             }
         }
     }
 
     pub fn include(&mut self, path: impl Into<String>, source: NodeId<'a>) {
-        let result = self.context.borrow_mut().get_source_from_path(path);
+        let result = self.context.get_source_from_path(path);
         match result {
             Ok(src) => {
                 self.add_producer(ProducerStage {
@@ -194,7 +190,6 @@ impl<'a> PreProcessor<'a> {
             }
             Err(error) => {
                 self.context
-                    .borrow_mut()
                     .report_error(source, format!("Failed to include file '{error}'"));
             }
         }
@@ -218,11 +213,9 @@ impl<'a> PreProcessor<'a> {
                 Some(Node(Token::StringLiteral(str), node)) => self.include(str, node),
                 Some(Node(t, n)) => self
                     .context
-                    .borrow_mut()
                     .report_error(n, format!("Expected string found {t:?}")),
                 None => self
                     .context
-                    .borrow_mut()
                     .report_error(n, "Expected string but found EOF"),
             },
             "define" => {
@@ -230,14 +223,11 @@ impl<'a> PreProcessor<'a> {
                     Some(Node(Token::Ident(str), _)) => str,
                     Some(Node(t, n)) => {
                         self.context
-                            .borrow_mut()
                             .report_error(n, format!("Expected ident found {t:?}"));
                         return;
                     }
                     None => {
-                        self.context
-                            .borrow_mut()
-                            .report_error(n, "Expected ident but found EOF");
+                        self.context.report_error(n, "Expected ident but found EOF");
                         return;
                     }
                 };
@@ -253,7 +243,6 @@ impl<'a> PreProcessor<'a> {
 
             unknown => self
                 .context
-                .borrow_mut()
                 .report_error(n, format!("Unknown preprocessor tag '{unknown}'")),
         }
     }

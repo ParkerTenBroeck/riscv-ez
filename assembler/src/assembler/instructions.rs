@@ -1,5 +1,6 @@
 use crate::lex::Number;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Instruction<'a> {
     Rtype {
         opcode: RTypeOpCode,
@@ -43,6 +44,7 @@ const fn rtype(opcode: u32, func3: u32, func7: u32) -> u32 {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum RTypeOpCode {
     Slli = rtype(0b0010011, 0b001, 0b0000000),
     Srli = rtype(0b0010011, 0b101, 0b0000000),
@@ -77,6 +79,7 @@ const fn isbtype(opcode: u32, func3: u32, func7: u32) -> u32 {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ITypeOpCode {
     Jalr,
 
@@ -109,6 +112,7 @@ pub enum ITypeOpCode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum STypeOpCode {
     Sb,
     Sh,
@@ -116,6 +120,7 @@ pub enum STypeOpCode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BTypeOpCode {
     Beq,
     Bne,
@@ -126,18 +131,22 @@ pub enum BTypeOpCode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum UTypeOpCode {
     Lui,
     Auipc,
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum JTypeOpCode {
     Jal,
 }
 
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Register(pub u8);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Immediate<'a> {
     Label(&'a str),
     Number(Number<'a>),

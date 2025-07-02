@@ -28,7 +28,7 @@ pub struct FormattedError<'a> {
 
 impl<'a> FormattedError<'a> {
     pub fn new(
-        context: &mut Context<'a>,
+        context: &Context<'a>,
         node_id: NodeId<'a>,
         kind: ErrorKind,
         msg: impl Into<String>,
@@ -38,7 +38,7 @@ impl<'a> FormattedError<'a> {
 
     pub fn add(
         mut self,
-        context: &mut Context<'a>,
+        context: &Context<'a>,
         node_id: NodeId<'a>,
         kind: ErrorKind,
         msg: impl Into<String>,

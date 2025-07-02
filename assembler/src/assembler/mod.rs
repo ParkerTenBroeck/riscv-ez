@@ -5,13 +5,15 @@ pub mod translation;
 
 use std::{cell::RefCell, rc::Rc};
 
+use crate::assembler::expression::{
+    ArgumentsTypeHint,
+};
 use crate::{
     assembler::{context::AssemblerContext, translation::Section},
     context::{Context, Node, NodeId},
     lex::Token,
     preprocess::PreProcessor,
 };
-use crate::assembler::expression::{ArgumentsTypeHint, Constant, ConvertResult, ParsedArgument};
 
 pub struct Assembler<'a> {
     context: AssemblerContext<'a>,
@@ -22,7 +24,7 @@ pub struct Assembler<'a> {
 }
 
 impl<'a> Assembler<'a> {
-    pub fn new(context: Rc<RefCell<Context<'a>>>, preprocessor: PreProcessor<'a>) -> Self {
+    pub fn new(context: Rc<Context<'a>>, preprocessor: PreProcessor<'a>) -> Self {
         Self {
             context: AssemblerContext::new(context),
             preprocessor,
@@ -32,10 +34,10 @@ impl<'a> Assembler<'a> {
     }
 
     pub fn assemble(&mut self, path: impl Into<String>) -> Vec<u8> {
-        if let Some(src) = self.preprocessor.begin(path){
-            self.context.context.borrow_mut().set_top_level_src(src);
+        if let Some(src) = self.preprocessor.begin(path) {
+            self.context.context.set_top_level_src(src);
         }
-        
+
         self.context.tu.sections.insert(
             "text",
             Section {
@@ -76,14 +78,14 @@ impl<'a> Assembler<'a> {
 
     fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         let start = self.peek();
-        let Ok(args) = self.gather_arguments(mnemonic, n, ArgumentsTypeHint::None) else {
-            return;
-        };
+        let args = self.parse_arguments(ArgumentsTypeHint::None, None);
         let args_node = self
             .context
             .context
-            .borrow_mut()
             .merge_nodes(start.unwrap().1, self.last.unwrap().1);
+        self.context
+            .context
+            .report_error(args_node, format!("{args:?}"));
 
         match mnemonic {
             "lui" => {}
@@ -134,65 +136,59 @@ impl<'a> Assembler<'a> {
             ".i64" => {}
 
             ".f32" => {}
-            ".f64" => {
-                for arg in args {
-                    if let Node(ParsedArgument::Constant(Constant::F32(a)), _) = arg {}
-                }
-            }
+            ".f64" => {}
 
-            ".section" => match &args[..] {
-                [Node(ParsedArgument::Constant(Constant::String(str)), _)] => {
-                    self.context.set_current_section(str);
-                }
-                rem => {
-                    self.context
-                        .context
-                        .borrow_mut()
-                        .report_error(args_node, "Invalid arguments {rem:?}");
-                }
-            },
-            ".org" => {
-                let mut section = self.context.get_current_section();
-                if section.start.is_some() {
-                    self.context.context.borrow_mut().report_warning(
-                        n,
-                        format!(
-                            "Section '{}' has already had org set",
-                            self.context.current_section
-                        ),
-                    );
-                    section = self.context.get_current_section();
-                }
-                match &args[..] {
-                    [Node(ParsedArgument::Constant(constant), n)] => match constant.to_u32() {
-                        ConvertResult::Success(value) => section.start = Some(value),
-                        ConvertResult::Lossy(value) => {
-                            section.start = Some(value);
-                            self.context
-                                .context
-                                .borrow_mut()
-                                .report_warning(n, "Conversion to u32 is lossy");
-                        }
-                        ConvertResult::Failure => {
-                            self.context
-                                .context
-                                .borrow_mut()
-                                .report_error(n, "Argument not convertable to u32");
-                        }
-                    },
-                    rem => {
-                        self.context
-                            .context
-                            .borrow_mut()
-                            .report_error(args_node, "Invalid arguments {rem:?}");
-                    }
-                }
-            }
-
+            // ".section" => match &args[..] {
+            //     [Node(ParsedArgument::Constant(Constant::String(str)), _)] => {
+            //         self.context.set_current_section(str);
+            //     }
+            //     rem => {
+            //         self.context
+            //             .context
+            //             .borrow_mut()
+            //             .report_error(args_node, "Invalid arguments {rem:?}");
+            //     }
+            // },
+            // ".org" => {
+            //     let mut section = self.context.get_current_section();
+            //     if section.start.is_some() {
+            //         self.context.context.borrow_mut().report_warning(
+            //             n,
+            //             format!(
+            //                 "Section '{}' has already had org set",
+            //                 self.context.current_section
+            //             ),
+            //         );
+            //         section = self.context.get_current_section();
+            //     }
+            //     match &args[..] {
+            //         [Node(ParsedArgument::Constant(constant), n)] => match constant.to_u32() {
+            //             ConvertResult::Success(value) => section.start = Some(value),
+            //             ConvertResult::Lossy(value) => {
+            //                 section.start = Some(value);
+            //                 self.context
+            //                     .context
+            //                     .borrow_mut()
+            //                     .report_warning(n, "Conversion to u32 is lossy");
+            //             }
+            //             ConvertResult::Failure => {
+            //                 self.context
+            //                     .context
+            //                     .borrow_mut()
+            //                     .report_error(n, "Argument not convertable to u32");
+            //             }
+            //         },
+            //         rem => {
+            //             self.context
+            //                 .context
+            //                 .borrow_mut()
+            //                 .report_error(args_node, "Invalid arguments {rem:?}");
+            //         }
+            //     }
+            // }
             _ => self
                 .context
                 .context
-                .borrow_mut()
                 .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'")),
         }
     }
@@ -207,7 +203,6 @@ impl<'a> Assembler<'a> {
                         Some(Node(t, n)) => self
                             .context
                             .context
-                            .borrow_mut()
                             .report_error(n, format!("Unexpected token '{t:?}' at end of line")),
                     }
                     self.next();
@@ -216,7 +211,7 @@ impl<'a> Assembler<'a> {
             Some(Node(Token::Label(label), source)) => {
                 self.context.add_label(label, source);
             }
-            Some(Node(t, n)) => self.context.context.borrow_mut().report_error(
+            Some(Node(t, n)) => self.context.context.report_error(
                 n,
                 format!("Unexpected token {t:?} expected identifier or label"),
             ),

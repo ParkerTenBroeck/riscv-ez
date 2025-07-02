@@ -108,8 +108,6 @@ fn highlight(ui: &Ui, str: &str) -> LayoutJob {
                     Token::LogicalAnd => PUNC,
                     Token::LogicalOr => PUNC,
                     Token::LogicalNot => PUNC,
-                    Token::Dec => PUNC,
-                    Token::Inc => PUNC,
                     Token::Comma => PUNC,
                     Token::LessThan => PUNC,
                     Token::LessThanEq => PUNC,
@@ -166,6 +164,14 @@ fn highlight(ui: &Ui, str: &str) -> LayoutJob {
             leading_space: 0.0,
             byte_range,
             format,
+        });
+    }
+
+    if start < str.len() {
+        layout_job.sections.push(LayoutSection {
+            leading_space: 0.0,
+            byte_range: start..str.len(),
+            format: simple_format(Color32::TRANSPARENT, false),
         });
     }
 
