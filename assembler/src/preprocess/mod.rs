@@ -149,7 +149,13 @@ impl<'a> PreProcessor<'a> {
         }
     }
 
-    pub fn begin(&mut self, path: impl Into<String>) {
+    pub fn begin(&mut self, path: impl Into<String>) -> Option<SourceId<'a>> {
+        self.defines.clear();
+        self.filters.clear();
+        self.producers.clear();
+        self.line_beginning = true;
+        self.previous_newline = true;
+        
         let result = self.context.borrow_mut().get_source_from_path(path);
         match result {
             Ok(src) => {
@@ -161,11 +167,14 @@ impl<'a> PreProcessor<'a> {
                     }),
                     source: None,
                 });
+                Some(src)
             }
             Err(error) => {
                 self.context
                     .borrow_mut()
                     .report_error_nodeless(format!("Failed to load file '{error}'"));
+                
+                None
             }
         }
     }

@@ -93,12 +93,12 @@ enum State {
     NumericDecimal,
     NumericDecimalNumberE,
     NumericDecimalNumberENumber,
-    NumericBinStart,
-    NumericHexStart,
+    
+    NumericBaseStart,
     NumericDecimalNumberEPM,
-    NumericBin,
-    NumericHex,
+    NumericBase,
     NumericSuffix,
+    
     PreProcessorTag,
 }
 
@@ -449,11 +449,18 @@ impl<'a> Iterator for Lexer<'a> {
                 State::NumericStartZero => match c {
                     Some('b') => {
                         self.numeric_start = processing.offset;
-                        self.state = State::NumericBinStart;
+                        self.state = State::NumericBaseStart;
+                        self.type_hint = TypeHint::Bin;
+                    }
+                    Some('o') => {
+                        self.numeric_start = processing.offset;
+                        self.state = State::NumericBaseStart;
+                        self.type_hint = TypeHint::Oct;
                     }
                     Some('x') => {
                         self.numeric_start = processing.offset;
-                        self.state = State::NumericHexStart;
+                        self.state = State::NumericBaseStart;
+                        self.type_hint = TypeHint::Hex;
                     }
                     Some('0'..='9') => {
                         self.state = State::NumericStart;
@@ -542,34 +549,22 @@ impl<'a> Iterator for Lexer<'a> {
                         );
                     }
                 },
-                State::NumericBinStart => match c {
-                    Some('0'..='1') => {
-                        self.state = State::NumericBin;
+                State::NumericBaseStart => match c {
+                    Some('0'..='9' | 'a'..='z' | 'A'..='Z') => {
+                        self.state = State::NumericBase;
                     }
                     Some('_') => {}
-                    Some(c @ '2'..='9') => {
-                        err_ret_state = State::NumericBin;
-                        error_meta = Some(Span::start_end(self.current, processing));
-                        update_start_on_error = false;
-                        ret = Some(Err(LexError::InvalidBase2Digit(c)))
-                    }
                     _ => {
                         consume = false;
                         ret = Some(Err(LexError::NoNumberAfterBasePrefix))
                     }
                 },
-                State::NumericBin => match c {
-                    Some('0'..='1') => {}
+                State::NumericBase => match c {
+                    Some('0'..='9') => {}
                     Some('_') => {}
-                    Some(c @ '2'..='9') => {
-                        err_ret_state = State::NumericBin;
-                        error_meta = Some(Span::start_end(self.current, processing));
-                        update_start_on_error = false;
-                        ret = Some(Err(LexError::InvalidBase2Digit(c)))
-                    }
+                    Some('a'..='f' | 'A'..='F') if self.type_hint == TypeHint::Hex => {}
                     Some('a'..='z' | 'A'..='Z') => {
                         self.suffix_start = self.current.offset;
-                        self.type_hint = TypeHint::Bin;
                         self.state = State::NumericSuffix;
                     }
                     _ => {
@@ -577,37 +572,7 @@ impl<'a> Iterator for Lexer<'a> {
                         ret = Some(
                             Number::new(
                                 &self.str[self.numeric_start..self.current.offset],
-                                TypeHint::Bin,
-                            )
-                            .map(Token::NumericLiteral)
-                            .map_err(LexError::NumberParseError),
-                        );
-                    }
-                },
-                State::NumericHexStart => match c {
-                    Some('0'..='9' | 'a'..='f' | 'A'..='F') => {
-                        self.state = State::NumericHex;
-                    }
-                    Some('_') => {}
-                    _ => {
-                        consume = false;
-                        ret = Some(Err(LexError::NoNumberAfterBasePrefix))
-                    }
-                },
-                State::NumericHex => match c {
-                    Some('0'..='9' | 'a'..='f' | 'A'..='F') => {}
-                    Some('_') => {}
-                    Some('g'..='z' | 'G'..='Z') => {
-                        self.suffix_start = self.current.offset;
-                        self.type_hint = TypeHint::Hex;
-                        self.state = State::NumericSuffix;
-                    }
-                    _ => {
-                        consume = false;
-                        ret = Some(
-                            Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
-                                TypeHint::Hex,
+                                self.type_hint,
                             )
                             .map(Token::NumericLiteral)
                             .map_err(LexError::NumberParseError),
@@ -615,7 +580,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 },
                 State::NumericSuffix => match c {
-                    Some('0'..='9') => {}
+                    Some('0'..='9' | 'a'..='z' | 'A'..='Z' | '_') => {}
                     _ => {
                         consume = false;
                         let len = self.suffix_start - self.numeric_start;

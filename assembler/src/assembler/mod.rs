@@ -3,14 +3,15 @@ mod expression;
 pub mod instructions;
 pub mod translation;
 
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     assembler::{context::AssemblerContext, translation::Section},
     context::{Context, Node, NodeId},
-    lex::{Number, Token},
+    lex::Token,
     preprocess::PreProcessor,
 };
+use crate::assembler::expression::{ArgumentsTypeHint, Constant, ConvertResult, ParsedArgument};
 
 pub struct Assembler<'a> {
     context: AssemblerContext<'a>,
@@ -18,65 +19,6 @@ pub struct Assembler<'a> {
     preprocessor: PreProcessor<'a>,
     peek: Option<Node<'a, Token<'a>>>,
     last: Option<Node<'a, Token<'a>>>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Constant<'a> {
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-
-    F32(f32),
-    F64(f64),
-
-    StringLiteral(&'a str),
-    CharLiteral(char),
-    Bool(bool),
-}
-
-pub enum ConvertResult<T> {
-    Success(T),
-    Lossy(T),
-    Failure,
-}
-
-impl<'a> Constant<'a> {
-    pub fn to_u32(&self) -> ConvertResult<u32> {
-        match *self {
-            Constant::I8(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I8(v) => ConvertResult::Success(v as u32),
-            Constant::I16(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I16(v) => ConvertResult::Success(v as u32),
-            Constant::I32(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I32(v) => ConvertResult::Success(v as u32),
-            Constant::I64(v) if v > u32::MAX as i64 => ConvertResult::Lossy(v as u32),
-            Constant::I64(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I64(v) => ConvertResult::Success(v as u32),
-            Constant::U8(v) => ConvertResult::Success(v as u32),
-            Constant::U16(v) => ConvertResult::Success(v as u32),
-            Constant::U32(v) => ConvertResult::Success(v),
-            Constant::U64(v) if v > u32::MAX as u64 => ConvertResult::Lossy(v as u32),
-            Constant::U64(v) => ConvertResult::Success(v as u32),
-            Constant::F32(_) => ConvertResult::Failure,
-            Constant::F64(_) => ConvertResult::Failure,
-            Constant::StringLiteral(_) => ConvertResult::Failure,
-            Constant::CharLiteral(_) => ConvertResult::Failure,
-            Constant::Bool(_) => ConvertResult::Failure,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum ParsedArgument<'a> {
-    Label(&'a str, i64),
-    Register(u8),
-    Constant(Constant<'a>),
 }
 
 impl<'a> Assembler<'a> {
@@ -90,7 +32,10 @@ impl<'a> Assembler<'a> {
     }
 
     pub fn assemble(&mut self, path: impl Into<String>) -> Vec<u8> {
-        self.preprocessor.begin(path);
+        if let Some(src) = self.preprocessor.begin(path){
+            self.context.context.borrow_mut().set_top_level_src(src);
+        }
+        
         self.context.tu.sections.insert(
             "text",
             Section {
@@ -131,7 +76,7 @@ impl<'a> Assembler<'a> {
 
     fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         let start = self.peek();
-        let Ok(args) = self.gather_arguments(mnemonic, n) else {
+        let Ok(args) = self.gather_arguments(mnemonic, n, ArgumentsTypeHint::None) else {
             return;
         };
         let args_node = self
@@ -196,7 +141,7 @@ impl<'a> Assembler<'a> {
             }
 
             ".section" => match &args[..] {
-                [Node(ParsedArgument::Constant(Constant::StringLiteral(str)), _)] => {
+                [Node(ParsedArgument::Constant(Constant::String(str)), _)] => {
                     self.context.set_current_section(str);
                 }
                 rem => {

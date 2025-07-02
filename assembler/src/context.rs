@@ -79,6 +79,8 @@ pub struct Context<'a> {
     supplier: SourceSupplier,
     source_map: RefCell<HashMap<&'a str, SourceId<'a>>>,
     errors: Vec<FormattedError<'a>>,
+    top_src: SourceId<'a>,
+    top_src_eof: NodeId<'a>,
 }
 
 #[derive(Debug, Default)]
@@ -96,6 +98,19 @@ impl<'a> Context<'a> {
             source_map: Default::default(),
             supplier: Rc::new(source_supplier),
             errors: Default::default(),
+            top_src: &Source{
+                path: "<INVALID>",
+                contents: "<INVALID>",
+            },
+            top_src_eof: &const{NodeInfo{
+                span: Span::empty(),
+                source: &Source{
+                    path: "<INVALID>",
+                    contents: "<INVALID>",
+                },
+                included_by: None,
+                invoked_by: None,
+            }}
         }
     }
 
@@ -147,6 +162,10 @@ impl<'a> Context<'a> {
         }
         left
     }
+    
+    pub fn top_src_eof(&self) -> NodeId<'a>{
+        self.top_src_eof
+    }
 
     pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
         self.bump.alloc(node)
@@ -175,6 +194,31 @@ impl<'a> Context<'a> {
     pub fn report_info(&mut self, node: NodeId<'a>, error: impl ToString) {
         let error = FormattedError::new(self, node, ErrorKind::Info, error.to_string());
         self.errors.push(error);
+    }
+
+    pub fn report_error_eof(&mut self, error: impl ToString) {
+        let error = FormattedError::new(self, self.top_src_eof, ErrorKind::Error, error.to_string());
+        self.errors.push(error);
+    }
+
+    pub fn report_warning_eof(&mut self, error: impl ToString) {
+        let error = FormattedError::new(self, self.top_src_eof, ErrorKind::Warning, error.to_string());
+        self.errors.push(error);
+    }
+
+    pub fn report_info_eof(&mut self, error: impl ToString) {
+        let error = FormattedError::new(self, self.top_src_eof, ErrorKind::Info, error.to_string());
+        self.errors.push(error);
+    }
+    
+    pub fn set_top_level_src(&mut self, src: SourceId<'a>){
+        self.top_src = src;
+        self.top_src_eof = self.node(NodeInfo{
+            span: src.eof(),
+            source: src,
+            included_by: None,
+            invoked_by: None,
+        })
     }
 
     pub fn print_errors(&self) {

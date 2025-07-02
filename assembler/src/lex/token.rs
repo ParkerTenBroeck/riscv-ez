@@ -91,8 +91,18 @@ pub struct Span {
     pub offset: u32,
     pub len: u32,
 }
+
 impl Span {
-    pub(crate) fn start_end(start: super::Position, end: super::Position) -> Self {
+    pub const fn empty() -> Span {
+        Span{
+            line: 0,
+            col: 0,
+            offset: 0,
+            len: 0,
+        }
+    }
+    
+    pub fn start_end(start: super::Position, end: super::Position) -> Self {
         Span {
             line: start.line as u32,
             col: start.col as u32,

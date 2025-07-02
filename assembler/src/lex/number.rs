@@ -5,6 +5,7 @@ pub enum TypeHint {
     Float,
     Hex,
     Bin,
+    Oct,
     Int,
 }
 

@@ -71,7 +71,7 @@ impl eframe::App for MyApp {
                     if ui.button("assemble").clicked() {
                         let sources = self.context.source_map();
                         _ = self.context.spawn(|| {
-                            assembler::run(sources);
+                            assembler::assemble_and_link(sources, vec!["test.asm"]);
                         });
                     }
 
