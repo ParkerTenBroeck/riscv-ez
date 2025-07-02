@@ -570,7 +570,7 @@ impl<'a> Assembler<'a> {
         };
 
         match self.peek() {
-            Some(Node(Token::LBracket, node)) => {
+            Some(Node(Token::LBracket, _)) => {
                 self.next();
                 let rhs = self.parse_expr(hint);
 
@@ -594,7 +594,7 @@ impl<'a> Assembler<'a> {
                 };
                 return self.index(expr, rhs, node);
             }
-            Some(Node(Token::Ident("as"), node)) => {
+            Some(Node(Token::Ident("as"), _)) => {
                 self.next();
 
                 let (node, ty) = match self.peek() {
@@ -624,8 +624,42 @@ impl<'a> Assembler<'a> {
         expr
     }
 
-    fn parse_expr_2(&mut self, hint: ExpressionType) -> Expression<'a> {
-        self.parse_expr_1(hint)
+    fn parse_expr_2(&mut self, hint: ExpressionType, min_prec: u32) -> Expression<'a> {
+        let mut lhs = self.parse_expr_1(hint);
+        loop{
+            let op = match self.peek(){
+                Some(Node(Token::Plus, _)) if BinOp::Add.precedence() >= min_prec => BinOp::Add,
+                Some(Node(Token::Minus, _)) if BinOp::Sub.precedence() >= min_prec => BinOp::Sub,
+                
+                Some(Node(Token::Star, _)) if BinOp::Mul.precedence() >= min_prec => BinOp::Mul,
+                Some(Node(Token::Slash, _)) if BinOp::Div.precedence() >= min_prec => BinOp::Div,
+                Some(Node(Token::Percent, _)) if BinOp::Rem.precedence() >= min_prec => BinOp::Rem,
+                
+                Some(Node(Token::LogicalOr, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
+                Some(Node(Token::BitwiseXor, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
+                
+                Some(Node(Token::Ampersand, _)) if BinOp::And.precedence() >= min_prec => BinOp::And,
+                Some(Node(Token::LogicalAnd, _)) if BinOp::And.precedence() >= min_prec => BinOp::And,
+                
+                Some(Node(Token::BitwiseXor, _)) if BinOp::Xor.precedence() >= min_prec => BinOp::Xor,
+
+                Some(Node(Token::ShiftLeft, _)) if BinOp::Shl.precedence() >= min_prec => BinOp::Shl,
+                Some(Node(Token::ShiftRight, _)) if BinOp::Shr.precedence() >= min_prec => BinOp::Shr,
+                
+                Some(Node(Token::GreaterThan, _)) if BinOp::Gt.precedence() >= min_prec => BinOp::Gt,
+                Some(Node(Token::GreaterThanEq, _)) if BinOp::Gte.precedence() >= min_prec => BinOp::Gte,
+                Some(Node(Token::LessThan, _)) if BinOp::Lt.precedence() >= min_prec => BinOp::Lt,
+                Some(Node(Token::LessThanEq, _)) if BinOp::Lte.precedence() >= min_prec => BinOp::Lte,
+                Some(Node(Token::Equals, _)) if BinOp::Eq.precedence() >= min_prec => BinOp::Eq,
+                Some(Node(Token::NotEquals, _)) if BinOp::Ne.precedence() >= min_prec => BinOp::Ne,
+                _ => break,
+            };
+            self.next();
+            
+            let rhs = self.parse_expr_2(hint, op.precedence()+1);
+            lhs = self.binop(op, lhs, rhs);
+        };
+        lhs
     }
 
     fn parse_expr_3(&mut self, hint: ExpressionType) -> Expression<'a> {
@@ -640,7 +674,7 @@ impl<'a> Assembler<'a> {
                 let expr = self.parse_expr_3(hint);
                 self.unop(UnOp::Not, node, expr)
             }
-            _ => self.parse_expr_2(hint),
+            _ => self.parse_expr_2(hint, 0),
         }
     }
 
@@ -810,7 +844,6 @@ impl<'a> Assembler<'a> {
     fn binop(
         &mut self,
         op: BinOp,
-        node: NodeId<'a>,
         lhs: Expression<'a>,
         rhs: Expression<'a>,
     ) -> Expression<'a> {

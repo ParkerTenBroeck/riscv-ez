@@ -85,7 +85,7 @@ impl<'a> Assembler<'a> {
             .merge_nodes(start.unwrap().1, self.last.unwrap().1);
         self.context
             .context
-            .report_error(args_node, format!("{args:?}"));
+            .report_error(args_node, format!("{args:#?}"));
 
         match mnemonic {
             "lui" => {}
