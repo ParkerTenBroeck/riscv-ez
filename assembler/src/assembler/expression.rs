@@ -391,50 +391,6 @@ impl<'a> Constant<'a> {
 }
 
 impl ExpressionType {
-    pub fn size(&self) -> Option<u32> {
-        match self {
-            ExpressionType::Any => None,
-            ExpressionType::Indexed => None,
-            ExpressionType::Register => None,
-            ExpressionType::String => None,
-            ExpressionType::Label => Some(4),
-            ExpressionType::I8 => Some(1),
-            ExpressionType::I16 => Some(2),
-            ExpressionType::I32 => Some(4),
-            ExpressionType::I64 => Some(8),
-            ExpressionType::U8 => Some(1),
-            ExpressionType::U16 => Some(2),
-            ExpressionType::U32 => Some(4),
-            ExpressionType::U64 => Some(8),
-            ExpressionType::F32 => Some(4),
-            ExpressionType::F64 => Some(8),
-            ExpressionType::Bool => Some(1),
-            ExpressionType::Char => Some(4),
-        }
-    }
-
-    pub fn align(&self) -> u32 {
-        match self {
-            ExpressionType::Any => 0,
-            ExpressionType::Indexed => 0,
-            ExpressionType::Register => 0,
-            ExpressionType::String => 1,
-            ExpressionType::Label => 4,
-            ExpressionType::I8 => 1,
-            ExpressionType::I16 => 2,
-            ExpressionType::I32 => 4,
-            ExpressionType::I64 => 8,
-            ExpressionType::U8 => 1,
-            ExpressionType::U16 => 2,
-            ExpressionType::U32 => 4,
-            ExpressionType::U64 => 8,
-            ExpressionType::F32 => 4,
-            ExpressionType::F64 => 8,
-            ExpressionType::Bool => 1,
-            ExpressionType::Char => 4,
-        }
-    }
-
     pub fn numeric_suffix(&self) -> Option<&'static str> {
         match self {
             ExpressionType::Any => None,
