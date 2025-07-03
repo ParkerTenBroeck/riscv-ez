@@ -52,24 +52,26 @@ impl<'a> AssemblerContext<'a> {
         self.tu.sections.entry(section).or_insert(Section {
             name: section,
             start: None,
-            size: 0,
             data: vec![],
+            fixer_uppers: vec![],
         });
     }
 
-    pub fn add_instruction(&mut self, instruction: Instruction<'a>) {
-        self.add_data(SectionData::Instruction(instruction))
-    }
-
-    pub fn add_data(&mut self, data: SectionData<'a>) {
-        let size = data.get_size(self);
-        let section = self.get_current_section();
-        section.size += size;
-        section.data.push(data);
-
+    pub fn add_data(&mut self, size: u32) -> &mut [u8]{
         if let Some(label) = self.tu.labels.get_mut(self.current_label) {
             label.size += size;
         }
+        let current_section = self.get_current_section();
+        
+        
+        let start = current_section.data.len();
+        let size = start + size as usize;
+        current_section.data.resize(size, 0);
+        &mut current_section.data[start..size]
+    }
+    
+    pub fn add_fixer_upper(&mut self, offset: u32){
+        
     }
 
     pub fn get_current_section(&mut self) -> &mut Section<'a, SectionData<'a>> {
@@ -79,8 +81,8 @@ impl<'a> AssemblerContext<'a> {
             .or_insert(Section {
                 name: self.current_section,
                 start: None,
-                size: 0,
                 data: Vec::new(),
+                fixer_uppers: vec![],
             })
     }
 
@@ -103,7 +105,7 @@ impl<'a> AssemblerContext<'a> {
                     .tu
                     .sections
                     .get(self.current_section)
-                    .map(|s| s.size)
+                    .map(|s| s.data.len() as u32)
                     .unwrap_or(0),
                 size: 0,
             },

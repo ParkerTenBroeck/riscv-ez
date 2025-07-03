@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-pub struct TranslationUnit<'a, S, D> {
-    pub sections: HashMap<&'a str, Section<'a, D>>,
+pub struct TranslationUnit<'a, S, F> {
+    pub sections: HashMap<&'a str, Section<'a, F>>,
     pub labels: HashMap<&'a str, Label<'a, S>>,
 }
 
@@ -21,9 +21,15 @@ pub struct Label<'a, S> {
     pub size: u32,
 }
 
-pub struct Section<'a, D> {
+pub struct FixerUpper<F>{
+    f: F,
+    offset: u32,
+    size: u32,
+}
+
+pub struct Section<'a, F> {
     pub name: &'a str,
     pub start: Option<u32>,
-    pub size: u32,
-    pub data: Vec<D>,
+    pub data: Vec<u8>,
+    pub fixer_uppers: Vec<FixerUpper<F>>
 }

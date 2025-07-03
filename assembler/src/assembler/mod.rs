@@ -4,7 +4,7 @@ pub mod instructions;
 pub mod translation;
 
 use std::{cell::RefCell, rc::Rc};
-
+use std::fmt::{format, Write};
 use crate::assembler::expression::{
     ArgumentsTypeHint,
 };
@@ -44,7 +44,7 @@ impl<'a> Assembler<'a> {
                 name: "text",
                 start: None,
                 data: Vec::new(),
-                size: 0,
+                fixer_uppers: Vec::new()
             },
         );
 
@@ -83,9 +83,6 @@ impl<'a> Assembler<'a> {
             .context
             .context
             .merge_nodes(start.unwrap().1, self.last.unwrap().1);
-        self.context
-            .context
-            .report_error(args_node, format!("{args:#?}"));
 
         match mnemonic {
             "lui" => {}
@@ -114,6 +111,29 @@ impl<'a> Assembler<'a> {
             "li" => {}
             "ecall" => {}
 
+
+            ".info" => {
+                let mut msg = String::new();
+                for arg in args{
+                    msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
+                }
+                self.context.context.report_info(args_node, format!("{msg}"))
+            }
+            ".warning" => {
+                let mut msg = String::new();
+                for arg in args{
+                    msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
+                }
+                self.context.context.report_warning(args_node, format!("{msg}"))
+            }
+            ".error" => {
+                let mut msg = String::new();
+                for arg in args{
+                    msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
+                }
+                self.context.context.report_error(args_node, format!("{msg}"))
+            }
+
             ".global" => {}
             ".local" => {}
             ".weak" => {}
@@ -125,7 +145,9 @@ impl<'a> Assembler<'a> {
             ".string" => {}
             ".stringz" => {}
 
-            ".u8" => {}
+            ".u8" => {
+                
+            }
             ".u16" => {}
             ".u32" => {}
             ".u64" => {}
