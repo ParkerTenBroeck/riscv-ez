@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-pub struct TranslationUnit<'a, S, F> {
-    pub sections: HashMap<&'a str, Section<'a, F>>,
+pub struct TranslationUnit<'a, S> {
+    pub sections: HashMap<&'a str, Section<'a>>,
     pub labels: HashMap<&'a str, Label<'a, S>>,
 }
 
-impl<'a, S, D> Default for TranslationUnit<'a, S, D> {
+impl<'a, S> Default for TranslationUnit<'a, S> {
     fn default() -> Self {
         Self {
             sections: Default::default(),
@@ -19,17 +19,32 @@ pub struct Label<'a, S> {
     pub section: &'a str,
     pub offset: u32,
     pub size: u32,
+    pub align: u32,
 }
 
-pub struct FixerUpper<F>{
-    f: F,
+pub enum RelationKind {
+    Size,
+    Align,
+    PcRel,
+    Absolute,
+}
+
+pub enum RelocationBitPattern {
+    Full,
+}
+
+pub struct Relocation<'a> {
+    label: &'a str,
+    bits: RelocationBitPattern,
+    kind: RelationKind,
     offset: u32,
     size: u32,
 }
 
-pub struct Section<'a, F> {
+pub struct Section<'a> {
     pub name: &'a str,
     pub start: Option<u32>,
     pub data: Vec<u8>,
-    pub fixer_uppers: Vec<FixerUpper<F>>
+    pub align: u32,
+    pub fixer_uppers: Vec<Relocation<'a>>,
 }

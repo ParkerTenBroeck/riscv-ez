@@ -1,12 +1,12 @@
-use std::fmt::{format, Display, Formatter};
 use crate::assembler::Assembler;
 use crate::assembler::instructions::Register;
 use crate::context::{Node, NodeId};
 use crate::lex::{Number, Token};
+use std::fmt::{Display, Formatter, format};
 use std::ops::Index;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ExpressionType {
+pub enum ValueType {
     Any,
 
     String,
@@ -33,58 +33,61 @@ pub enum ExpressionType {
     Char,
 }
 
-impl Display for ExpressionType {
+impl Display for ValueType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self{
-            ExpressionType::Any => write!(f, "any"),
-            ExpressionType::String => write!(f, "string"),
-            ExpressionType::Indexed => write!(f, "indexed"),
-            ExpressionType::Register => write!(f, "register"),
-            ExpressionType::Label => write!(f, "label"),
-            ExpressionType::I8 => write!(f, "i8"),
-            ExpressionType::I16 => write!(f, "i16"),
-            ExpressionType::I32 => write!(f, "i32"),
-            ExpressionType::I64 => write!(f, "i64"),
-            ExpressionType::U8 => write!(f, "u8"),
-            ExpressionType::U16 => write!(f, "u16"),
-            ExpressionType::U32 => write!(f, "u32"),
-            ExpressionType::U64 => write!(f, "u64"),
-            ExpressionType::F32 => write!(f, "f32"),
-            ExpressionType::F64 => write!(f, "f64"),
-            ExpressionType::Bool => write!(f, "bool"),
-            ExpressionType::Char => write!(f, "char"),
+        match self {
+            ValueType::Any => write!(f, "any"),
+            ValueType::String => write!(f, "string"),
+            ValueType::Indexed => write!(f, "indexed"),
+            ValueType::Register => write!(f, "register"),
+            ValueType::Label => write!(f, "label"),
+            ValueType::I8 => write!(f, "i8"),
+            ValueType::I16 => write!(f, "i16"),
+            ValueType::I32 => write!(f, "i32"),
+            ValueType::I64 => write!(f, "i64"),
+            ValueType::U8 => write!(f, "u8"),
+            ValueType::U16 => write!(f, "u16"),
+            ValueType::U32 => write!(f, "u32"),
+            ValueType::U64 => write!(f, "u64"),
+            ValueType::F32 => write!(f, "f32"),
+            ValueType::F64 => write!(f, "f64"),
+            ValueType::Bool => write!(f, "bool"),
+            ValueType::Char => write!(f, "char"),
         }
     }
 }
 
-impl ExpressionType {
+impl ValueType {
     pub fn default_value<'a>(&self) -> Value<'a> {
         match self {
-            ExpressionType::Any => Value::Constant(Constant::I32(0)),
-            ExpressionType::String => Value::Constant(Constant::String("")),
-            ExpressionType::Indexed => Value::LabelRegisterOffset(Register(0), LabelUse{
+            ValueType::Any => Value::Constant(Constant::I32(0)),
+            ValueType::String => Value::Constant(Constant::String("")),
+            ValueType::Indexed => Value::LabelRegisterOffset(
+                Register(0),
+                LabelUse {
+                    ident: "",
+                    offset: 0,
+                    meta: LabelMeta::PcRel,
+                },
+            ),
+            ValueType::Register => Value::Register(Register(0)),
+            ValueType::Label => Value::Label(LabelUse {
                 ident: "",
                 offset: 0,
                 meta: LabelMeta::PcRel,
             }),
-            ExpressionType::Register => Value::Register(Register(0)),
-            ExpressionType::Label => Value::Label(LabelUse{
-                ident: "",
-                offset: 0,
-                meta: LabelMeta::PcRel,
-            }),
-            ExpressionType::I8 => Value::Constant(Constant::I8(0)),
-            ExpressionType::I16 => Value::Constant(Constant::I16(0)),
-            ExpressionType::I32 => Value::Constant(Constant::I32(0)),
-            ExpressionType::I64 => Value::Constant(Constant::I16(0)),
-            ExpressionType::U8 => Value::Constant(Constant::U8(0)),
-            ExpressionType::U16 => Value::Constant(Constant::U16(0)),
-            ExpressionType::U32 => Value::Constant(Constant::U32(0)),
-            ExpressionType::U64 => Value::Constant(Constant::U64(0)),
-            ExpressionType::F32 => Value::Constant(Constant::F32(0.0)),
-            ExpressionType::F64 => Value::Constant(Constant::F64(0.0)),
-            ExpressionType::Bool => Value::Constant(Constant::Bool(false)),
-            ExpressionType::Char => Value::Constant(Constant::Char('\0')),
+            ValueType::I8 => Value::Constant(Constant::I8(0)),
+            ValueType::I16 => Value::Constant(Constant::I16(0)),
+            ValueType::I32 => Value::Constant(Constant::I32(0)),
+            ValueType::I64 => Value::Constant(Constant::I16(0)),
+            ValueType::U8 => Value::Constant(Constant::U8(0)),
+            ValueType::U16 => Value::Constant(Constant::U16(0)),
+            ValueType::U32 => Value::Constant(Constant::U32(0)),
+            ValueType::U64 => Value::Constant(Constant::U64(0)),
+            ValueType::F32 => Value::Constant(Constant::F32(0.0)),
+            ValueType::F64 => Value::Constant(Constant::F64(0.0)),
+            ValueType::Bool => Value::Constant(Constant::Bool(false)),
+            ValueType::Char => Value::Constant(Constant::Char('\0')),
         }
     }
 }
@@ -146,11 +149,11 @@ pub enum UnOp {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum LabelMeta{
+pub enum LabelMeta {
     PcRel,
     Absolute,
     Size,
-    Unset
+    Unset,
 }
 
 impl LabelMeta {
@@ -159,14 +162,10 @@ impl LabelMeta {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Expression<'a> {
-    pub node: NodeId<'a>,
-    pub value: Value<'a>,
-}
+type Expression<'a> = Node<'a, Value<'a>>;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct LabelUse<'a>{
+pub struct LabelUse<'a> {
     ident: &'a str,
     offset: i32,
     meta: LabelMeta,
@@ -174,7 +173,7 @@ pub struct LabelUse<'a>{
 
 impl<'a> LabelUse<'a> {
     fn new(ident: &'a str) -> LabelUse {
-        LabelUse{
+        LabelUse {
             ident,
             offset: 0,
             meta: LabelMeta::Unset,
@@ -182,7 +181,7 @@ impl<'a> LabelUse<'a> {
     }
 }
 
-impl<'a> Display for LabelUse<'a>{
+impl<'a> Display for LabelUse<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.meta {
             LabelMeta::PcRel => write!(f, "pc_rel(")?,
@@ -194,7 +193,7 @@ impl<'a> Display for LabelUse<'a>{
         if self.offset != 0 {
             write!(f, "+{}", self.offset)?;
         }
-        if !self.meta.is_unset(){
+        if !self.meta.is_unset() {
             write!(f, ")")?;
         }
         Ok(())
@@ -202,7 +201,7 @@ impl<'a> Display for LabelUse<'a>{
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Value<'a>{
+pub enum Value<'a> {
     Constant(Constant<'a>),
     Label(LabelUse<'a>),
     LabelRegisterOffset(Register, LabelUse<'a>),
@@ -210,7 +209,7 @@ pub enum Value<'a>{
     Register(Register),
 }
 
-impl<'a> Display for Value<'a>{
+impl<'a> Display for Value<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
             Value::Constant(c) => write!(f, "{}", c),
@@ -220,22 +219,22 @@ impl<'a> Display for Value<'a>{
                     write!(f, "(")?;
                 }
                 write!(f, "{}", l)?;
-                if l.meta.is_unset() && l.offset != 0{
+                if l.meta.is_unset() && l.offset != 0 {
                     write!(f, ")")?;
                 }
-                if reg.0 != 0{
+                if reg.0 != 0 {
                     write!(f, "[{reg}]")?;
                 }
                 Ok(())
             }
             Value::RegisterOffset(reg, offset) => {
-                if reg.0 == 0{
+                if reg.0 == 0 {
                     write!(f, "{offset}")?;
-                }else{
+                } else {
                     write!(f, "{reg}")?;
                     if offset != 0 {
                         write!(f, "[{offset}]")?;
-                    } 
+                    }
                 }
                 Ok(())
             }
@@ -244,34 +243,34 @@ impl<'a> Display for Value<'a>{
     }
 }
 
-impl<'a> Value<'a>{
-    pub fn get_type(&self) -> ExpressionType{
-        match self{
-            Value::Constant(c) => match c{
-                Constant::I8(_) => ExpressionType::I8,
-                Constant::I16(_) => ExpressionType::I16,
-                Constant::I32(_) => ExpressionType::I32,
-                Constant::I64(_) => ExpressionType::I64,
-                Constant::U8(_) => ExpressionType::U8,
-                Constant::U16(_) => ExpressionType::U16,
-                Constant::U32(_) => ExpressionType::U32,
-                Constant::U64(_) => ExpressionType::U64,
-                Constant::F32(_) => ExpressionType::F32,
-                Constant::F64(_) => ExpressionType::F64,
-                Constant::String(_) => ExpressionType::String,
-                Constant::Char(_) => ExpressionType::Char,
-                Constant::Bool(_) => ExpressionType::Bool,
-            }
-            Value::Label(_) => ExpressionType::Label,
-            Value::LabelRegisterOffset(_, _) => ExpressionType::Indexed,
-            Value::RegisterOffset(_, _) => ExpressionType::Indexed,
-            Value::Register(_) => ExpressionType::Register,
+impl<'a> Value<'a> {
+    pub fn get_type(&self) -> ValueType {
+        match self {
+            Value::Constant(c) => match c {
+                Constant::I8(_) => ValueType::I8,
+                Constant::I16(_) => ValueType::I16,
+                Constant::I32(_) => ValueType::I32,
+                Constant::I64(_) => ValueType::I64,
+                Constant::U8(_) => ValueType::U8,
+                Constant::U16(_) => ValueType::U16,
+                Constant::U32(_) => ValueType::U32,
+                Constant::U64(_) => ValueType::U64,
+                Constant::F32(_) => ValueType::F32,
+                Constant::F64(_) => ValueType::F64,
+                Constant::String(_) => ValueType::String,
+                Constant::Char(_) => ValueType::Char,
+                Constant::Bool(_) => ValueType::Bool,
+            },
+            Value::Label(_) => ValueType::Label,
+            Value::LabelRegisterOffset(_, _) => ValueType::Indexed,
+            Value::RegisterOffset(_, _) => ValueType::Indexed,
+            Value::Register(_) => ValueType::Register,
         }
     }
-    
-    pub fn get_size(&self) -> Option<u32>{
-        match *self{
-            Value::Constant(c) => match c{
+
+    pub fn get_size(&self) -> Option<u32> {
+        match *self {
+            Value::Constant(c) => match c {
                 Constant::I8(_) => Some(1),
                 Constant::I16(_) => Some(2),
                 Constant::I32(_) => Some(4),
@@ -293,9 +292,9 @@ impl<'a> Value<'a>{
         }
     }
 
-    pub fn get_align(&self) -> Option<u32>{
-        match *self{
-            Value::Constant(c) => match c{
+    pub fn get_align(&self) -> Option<u32> {
+        match *self {
+            Value::Constant(c) => match c {
                 Constant::I8(_) => Some(1),
                 Constant::I16(_) => Some(2),
                 Constant::I32(_) => Some(4),
@@ -338,9 +337,9 @@ pub enum Constant<'a> {
     Bool(bool),
 }
 
-impl<'a> Display for Constant<'a>{
+impl<'a> Display for Constant<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match *self{
+        match *self {
             Constant::I8(c) => write!(f, "{}", c),
             Constant::I16(c) => write!(f, "{}", c),
             Constant::I32(c) => write!(f, "{}", c),
@@ -390,67 +389,67 @@ impl<'a> Constant<'a> {
     }
 }
 
-impl ExpressionType {
+impl ValueType {
     pub fn numeric_suffix(&self) -> Option<&'static str> {
         match self {
-            ExpressionType::Any => None,
-            ExpressionType::Register => None,
-            ExpressionType::Indexed => None,
-            ExpressionType::String => None,
-            ExpressionType::Label => None,
-            ExpressionType::I8 => Some("i8"),
-            ExpressionType::I16 => Some("i16"),
-            ExpressionType::I32 => Some("i32"),
-            ExpressionType::I64 => Some("i64"),
-            ExpressionType::U8 => Some("u8"),
-            ExpressionType::U16 => Some("u16"),
-            ExpressionType::U32 => Some("u32"),
-            ExpressionType::U64 => Some("u64"),
-            ExpressionType::F32 => Some("f32"),
-            ExpressionType::F64 => Some("f64"),
-            ExpressionType::Bool => None,
-            ExpressionType::Char => None,
+            ValueType::Any => None,
+            ValueType::Register => None,
+            ValueType::Indexed => None,
+            ValueType::String => None,
+            ValueType::Label => None,
+            ValueType::I8 => Some("i8"),
+            ValueType::I16 => Some("i16"),
+            ValueType::I32 => Some("i32"),
+            ValueType::I64 => Some("i64"),
+            ValueType::U8 => Some("u8"),
+            ValueType::U16 => Some("u16"),
+            ValueType::U32 => Some("u32"),
+            ValueType::U64 => Some("u64"),
+            ValueType::F32 => Some("f32"),
+            ValueType::F64 => Some("f64"),
+            ValueType::Bool => None,
+            ValueType::Char => None,
         }
     }
 
     pub fn is_integer(&self) -> bool {
         match self {
-            ExpressionType::Any => false,
-            ExpressionType::Register => false,
-            ExpressionType::Indexed => false,
-            ExpressionType::String => false,
-            ExpressionType::Label => false,
-            ExpressionType::I8 => true,
-            ExpressionType::I16 => true,
-            ExpressionType::I32 => true,
-            ExpressionType::I64 => true,
-            ExpressionType::U8 => true,
-            ExpressionType::U16 => true,
-            ExpressionType::U32 => true,
-            ExpressionType::U64 => true,
-            ExpressionType::F32 => false,
-            ExpressionType::F64 => false,
-            ExpressionType::Bool => false,
-            ExpressionType::Char => false,
+            ValueType::Any => false,
+            ValueType::Register => false,
+            ValueType::Indexed => false,
+            ValueType::String => false,
+            ValueType::Label => false,
+            ValueType::I8 => true,
+            ValueType::I16 => true,
+            ValueType::I32 => true,
+            ValueType::I64 => true,
+            ValueType::U8 => true,
+            ValueType::U16 => true,
+            ValueType::U32 => true,
+            ValueType::U64 => true,
+            ValueType::F32 => false,
+            ValueType::F64 => false,
+            ValueType::Bool => false,
+            ValueType::Char => false,
         }
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum ArgumentsTypeHint<'a> {
-    Mono(ExpressionType),
-    Individual(&'a [ExpressionType]),
+    Mono(ValueType),
+    Individual(&'a [ValueType]),
     None,
 }
 
 impl<'a> Index<usize> for ArgumentsTypeHint<'a> {
-    type Output = ExpressionType;
+    type Output = ValueType;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {
             ArgumentsTypeHint::Mono(ty) => ty,
-            ArgumentsTypeHint::Individual(ty) => ty.get(index).unwrap_or(&ExpressionType::Any),
-            ArgumentsTypeHint::None => &ExpressionType::Any,
+            ArgumentsTypeHint::Individual(ty) => ty.get(index).unwrap_or(&ValueType::Any),
+            ArgumentsTypeHint::None => &ValueType::Any,
         }
     }
 }
@@ -460,7 +459,7 @@ impl<'a> Assembler<'a> {
         &mut self,
         num: Number<'a>,
         n: NodeId<'a>,
-        hint: ExpressionType,
+        hint: ValueType,
     ) -> Constant<'a> {
         let (suffix, radix) = match num.get_hint() {
             crate::lex::TypeHint::Float if hint.is_integer() => {
@@ -564,7 +563,7 @@ impl<'a> Assembler<'a> {
         }
     }
 
-    fn parse_expr_1(&mut self, hint: ExpressionType) -> Expression<'a> {
+    fn parse_expr_1(&mut self, hint: ValueType) -> Expression<'a> {
         let expr = match self.next() {
             Some(Node(Token::Ident(ident), node)) => match self.peek() {
                 Some(Node(Token::LPar, lhs)) => {
@@ -594,40 +593,36 @@ impl<'a> Assembler<'a> {
                 }
                 _ => self.handle_ident(ident, node, hint),
             },
-            Some(Node(Token::TrueLiteral, node)) => Expression {
-                value: Value::Constant(Constant::Bool(true)),
+            Some(Node(Token::TrueLiteral, node)) => {
+                Node(Value::Constant(Constant::Bool(true)), node)
+            }
+            Some(Node(Token::FalseLiteral, node)) => {
+                Node(Value::Constant(Constant::Bool(false)), node)
+            }
+            Some(Node(Token::StringLiteral(str), node)) => Node(
+                Value::Constant(Constant::String(self.parse_string_literal(str, node))),
                 node,
-            },
-            Some(Node(Token::FalseLiteral, node)) => Expression {
-                value: Value::Constant(Constant::Bool(false)),
+            ),
+            Some(Node(Token::CharLiteral(str), node)) => Node(
+                Value::Constant(Constant::Char(self.parse_char_literal(str, node))),
                 node,
-            },
-            Some(Node(Token::StringLiteral(str), node)) => Expression {
-                value: Value::Constant(Constant::String(
-                    self.parse_string_literal(str, node),
-                )),
+            ),
+            Some(Node(Token::NumericLiteral(num), node)) => Node(
+                Value::Constant(self.parse_numeric_literal(num, node, hint)),
                 node,
-            },
-            Some(Node(Token::CharLiteral(str), node)) => Expression {
-                value: Value::Constant(Constant::Char(self.parse_char_literal(str, node))),
-                node,
-            },
-            Some(Node(Token::NumericLiteral(num), node)) => Expression {
-                value: Value::Constant(self.parse_numeric_literal(num, node, hint)),
-                node,
-            },
+            ),
             Some(Node(Token::LPar, lhs)) => {
                 let mut arg = self.parse_expr(hint);
                 match self.peek() {
                     Some(Node(Token::RPar, rhs)) => {
-                        arg.node = self.context.context.merge_nodes(lhs, rhs);
+                        arg.1 = self.context.context.merge_nodes(lhs, rhs);
                         self.next();
                     }
                     Some(Node(t, rhs)) => {
                         self.context
                             .context
                             .report_error(rhs, format!("Unexpected token '{t:?}' expected ')'"));
-                        arg.node = self.context.context.merge_nodes(lhs, rhs);
+                        arg.1 = self.context.context.merge_nodes(lhs, rhs);
                     }
                     None => {
                         self.context
@@ -642,19 +637,13 @@ impl<'a> Assembler<'a> {
                 self.context
                     .context
                     .report_error(node, format!("Unexpected token '{t:?}'"));
-                Expression{
-                    value: hint.default_value(),
-                    node,
-                }
+                Node(hint.default_value(), node)
             }
             None => {
                 self.context
                     .context
                     .report_error_eof("Expected token but found eof");
-                Expression{
-                    value: hint.default_value(),
-                    node: self.context.context.top_src_eof(),
-                }
+                Node(hint.default_value(), self.context.context.top_src_eof())
             }
         };
 
@@ -672,7 +661,7 @@ impl<'a> Assembler<'a> {
                         self.context
                             .context
                             .report_error(node, format!("Unexpected token '{t:?}' expected ']'"));
-                        expr.node
+                        expr.1
                     }
                     None => {
                         self.context
@@ -696,7 +685,7 @@ impl<'a> Assembler<'a> {
                             node,
                             format!("Unexpected token '{t:?}' expected identifier"),
                         );
-                        (expr.node, "i32")
+                        (expr.1, "i32")
                     }
                     None => {
                         self.context
@@ -713,10 +702,10 @@ impl<'a> Assembler<'a> {
         expr
     }
 
-    fn parse_expr_2(&mut self, hint: ExpressionType, min_prec: u32) -> Expression<'a> {
+    fn parse_expr_2(&mut self, hint: ValueType, min_prec: u32) -> Expression<'a> {
         let mut lhs = self.parse_expr_1(hint);
-        loop{
-            let op = match self.peek(){
+        loop {
+            let op = match self.peek() {
                 Some(Node(Token::Plus, _)) if BinOp::Add.precedence() >= min_prec => BinOp::Add,
                 Some(Node(Token::Minus, _)) if BinOp::Sub.precedence() >= min_prec => BinOp::Sub,
 
@@ -727,31 +716,47 @@ impl<'a> Assembler<'a> {
                 Some(Node(Token::LogicalOr, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
                 Some(Node(Token::BitwiseXor, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
 
-                Some(Node(Token::Ampersand, _)) if BinOp::And.precedence() >= min_prec => BinOp::And,
-                Some(Node(Token::LogicalAnd, _)) if BinOp::And.precedence() >= min_prec => BinOp::And,
+                Some(Node(Token::Ampersand, _)) if BinOp::And.precedence() >= min_prec => {
+                    BinOp::And
+                }
+                Some(Node(Token::LogicalAnd, _)) if BinOp::And.precedence() >= min_prec => {
+                    BinOp::And
+                }
 
-                Some(Node(Token::BitwiseXor, _)) if BinOp::Xor.precedence() >= min_prec => BinOp::Xor,
+                Some(Node(Token::BitwiseXor, _)) if BinOp::Xor.precedence() >= min_prec => {
+                    BinOp::Xor
+                }
 
-                Some(Node(Token::ShiftLeft, _)) if BinOp::Shl.precedence() >= min_prec => BinOp::Shl,
-                Some(Node(Token::ShiftRight, _)) if BinOp::Shr.precedence() >= min_prec => BinOp::Shr,
+                Some(Node(Token::ShiftLeft, _)) if BinOp::Shl.precedence() >= min_prec => {
+                    BinOp::Shl
+                }
+                Some(Node(Token::ShiftRight, _)) if BinOp::Shr.precedence() >= min_prec => {
+                    BinOp::Shr
+                }
 
-                Some(Node(Token::GreaterThan, _)) if BinOp::Gt.precedence() >= min_prec => BinOp::Gt,
-                Some(Node(Token::GreaterThanEq, _)) if BinOp::Gte.precedence() >= min_prec => BinOp::Gte,
+                Some(Node(Token::GreaterThan, _)) if BinOp::Gt.precedence() >= min_prec => {
+                    BinOp::Gt
+                }
+                Some(Node(Token::GreaterThanEq, _)) if BinOp::Gte.precedence() >= min_prec => {
+                    BinOp::Gte
+                }
                 Some(Node(Token::LessThan, _)) if BinOp::Lt.precedence() >= min_prec => BinOp::Lt,
-                Some(Node(Token::LessThanEq, _)) if BinOp::Lte.precedence() >= min_prec => BinOp::Lte,
+                Some(Node(Token::LessThanEq, _)) if BinOp::Lte.precedence() >= min_prec => {
+                    BinOp::Lte
+                }
                 Some(Node(Token::Equals, _)) if BinOp::Eq.precedence() >= min_prec => BinOp::Eq,
                 Some(Node(Token::NotEquals, _)) if BinOp::Ne.precedence() >= min_prec => BinOp::Ne,
                 _ => break,
             };
             self.next();
 
-            let rhs = self.parse_expr_2(hint, op.precedence()+1);
+            let rhs = self.parse_expr_2(hint, op.precedence() + 1);
             lhs = self.binop(op, lhs, rhs);
-        };
+        }
         lhs
     }
 
-    fn parse_expr_3(&mut self, hint: ExpressionType) -> Expression<'a> {
+    fn parse_expr_3(&mut self, hint: ValueType) -> Expression<'a> {
         match self.peek() {
             Some(Node(Token::Minus, node)) => {
                 self.next();
@@ -767,7 +772,7 @@ impl<'a> Assembler<'a> {
         }
     }
 
-    fn parse_expr(&mut self, hint: ExpressionType) -> Expression<'a> {
+    fn parse_expr(&mut self, hint: ValueType) -> Expression<'a> {
         self.parse_expr_3(hint)
     }
 
@@ -828,13 +833,10 @@ impl<'a> Assembler<'a> {
         &mut self,
         ident: &'a str,
         node: NodeId<'a>,
-        hint: ExpressionType,
+        hint: ValueType,
     ) -> Expression<'a> {
         fn reg(node: NodeId, reg: u8) -> Expression {
-            Expression {
-                node,
-                value: Value::Register(Register(reg)),
-            }
+            Node(Value::Register(Register(reg)), node)
         }
         match ident {
             "x0" | "zero" => reg(node, 0),
@@ -870,12 +872,40 @@ impl<'a> Assembler<'a> {
             "x30" | "t5" => reg(node, 30),
             "x31" | "t6" => reg(node, 31),
 
-            _ => {
-                Expression{
-                    value: Value::Label(LabelUse::new(ident)),
-                    node
-                }
-            }
+            "f0" => reg(node, 32 + 0),
+            "f1" => reg(node, 32 + 1),
+            "f2" => reg(node, 32 + 2),
+            "f3" => reg(node, 32 + 3),
+            "f4" => reg(node, 32 + 4),
+            "f5" => reg(node, 32 + 5),
+            "f6" => reg(node, 32 + 6),
+            "f7" => reg(node, 32 + 7),
+            "f8" => reg(node, 32 + 8),
+            "f9" => reg(node, 32 + 9),
+            "f10" => reg(node, 32 + 10),
+            "f11" => reg(node, 32 + 11),
+            "f12" => reg(node, 32 + 12),
+            "f13" => reg(node, 32 + 13),
+            "f14" => reg(node, 32 + 14),
+            "f15" => reg(node, 32 + 15),
+            "f16" => reg(node, 32 + 16),
+            "f17" => reg(node, 32 + 17),
+            "f18" => reg(node, 32 + 18),
+            "f19" => reg(node, 32 + 19),
+            "f20" => reg(node, 32 + 20),
+            "f21" => reg(node, 32 + 21),
+            "f22" => reg(node, 32 + 22),
+            "f23" => reg(node, 32 + 23),
+            "f24" => reg(node, 32 + 24),
+            "f25" => reg(node, 32 + 25),
+            "f26" => reg(node, 32 + 26),
+            "f27" => reg(node, 32 + 27),
+            "f28" => reg(node, 32 + 28),
+            "f29" => reg(node, 32 + 29),
+            "f30" => reg(node, 32 + 30),
+            "f31" => reg(node, 32 + 31),
+
+            _ => Node(Value::Label(LabelUse::new(ident)), node),
         }
     }
 
@@ -887,21 +917,20 @@ impl<'a> Assembler<'a> {
         args_node: NodeId<'a>,
     ) -> Expression<'a> {
         let node = self.context.context.merge_nodes(func_node, args_node);
-        let value = match func{
+        let value = match func {
             "size" => Value::Constant(Constant::I32(0)),
             "align" => Value::Constant(Constant::I32(1)),
             "pcrel" => Value::Constant(Constant::I32(0)),
             "absolute" => Value::Constant(Constant::I32(0)),
             "format" => Value::Constant(Constant::String("nyaaa~")),
             _ => {
-                self.context.context.report_error(func_node, format!("Unknown function {}", func));
+                self.context
+                    .context
+                    .report_error(func_node, format!("Unknown function {}", func));
                 Value::Constant(Constant::I32(0))
             }
         };
-        Expression {
-            node,
-            value,
-        }
+        Node(value, node)
     }
 
     fn index(
@@ -910,95 +939,151 @@ impl<'a> Assembler<'a> {
         rhs: Expression<'a>,
         closing: NodeId<'a>,
     ) -> Expression<'a> {
-        let node = self.context.context.merge_nodes(lhs.node, closing);
-        let value = match (rhs.value, lhs.value){
+        let node = self.context.context.merge_nodes(lhs.1, closing);
+        let value = match (rhs.0, lhs.0) {
             (Value::Register(r), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, i),
             (Value::Constant(Constant::I32(i)), Value::Register(r)) => Value::RegisterOffset(r, i),
-            (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, o.wrapping_add(i)),
-            (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => Value::RegisterOffset(r, o.wrapping_add(i)),
+            (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
+                Value::RegisterOffset(r, o.wrapping_add(i))
+            }
+            (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
+                Value::RegisterOffset(r, o.wrapping_add(i))
+            }
 
-            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse{
+            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
                 ident: l.ident,
                 offset: l.offset.wrapping_add(i),
                 meta: LabelMeta::PcRel,
             }),
-            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse{
+            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse {
                 ident: l.ident,
                 offset: l.offset.wrapping_add(i),
                 meta: LabelMeta::PcRel,
             }),
             (Value::Label(l), Value::Register(r)) => Value::LabelRegisterOffset(r, l),
             (Value::Register(r), Value::Label(l)) => Value::LabelRegisterOffset(r, l),
-            
-            (Value::Label(l), Value::RegisterOffset(r, i)) => Value::LabelRegisterOffset(r, LabelUse{
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: LabelMeta::PcRel,
-            }),
-            (Value::RegisterOffset(r, i), Value::Label(l)) => Value::LabelRegisterOffset(r, LabelUse{
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: LabelMeta::PcRel,
-            }),
+
+            (Value::Label(l), Value::RegisterOffset(r, i)) => Value::LabelRegisterOffset(
+                r,
+                LabelUse {
+                    ident: l.ident,
+                    offset: l.offset.wrapping_add(i),
+                    meta: LabelMeta::PcRel,
+                },
+            ),
+            (Value::RegisterOffset(r, i), Value::Label(l)) => Value::LabelRegisterOffset(
+                r,
+                LabelUse {
+                    ident: l.ident,
+                    offset: l.offset.wrapping_add(i),
+                    meta: LabelMeta::PcRel,
+                },
+            ),
             _ => {
-                self.context.context.report_error(node, format!("Cannot index {} with {}", lhs.value.get_type(), rhs.value.get_type()));
+                self.context.context.report_error(
+                    node,
+                    format!(
+                        "Cannot index {} with {}",
+                        lhs.0.get_type(),
+                        rhs.0.get_type()
+                    ),
+                );
                 Value::RegisterOffset(Register(0), 0)
-            }   
+            }
         };
-        Expression {
-            node,
-            value,
-        }
+        Node(value, node)
     }
 
-    fn cast_error(&mut self, expr: Expression<'a>, expected: ExpressionType) -> Value<'a> {
-        self.context.context.report_error(expr.node, format!("Cannot cast {} to {}", expr.value.get_type(), expected));
+    fn cast_error(&mut self, expr: Expression<'a>, expected: ValueType) -> Value<'a> {
+        self.context.context.report_error(
+            expr.1,
+            format!("Cannot cast {} to {}", expr.0.get_type(), expected),
+        );
         expected.default_value()
     }
 
     fn cast(&mut self, expr: Expression<'a>, ty: &'a str, node_id: NodeId<'a>) -> Expression<'a> {
-        
         macro_rules! integer {
             ($ident:ident, $ty:ty) => {
-                match expr.value{
+                match expr.0 {
                     Value::Constant(Constant::I8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I16(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I64(i)) => Value::Constant(Constant::$ident(i as $ty)),
+                    Value::Constant(Constant::I16(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::I32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::I64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
                     Value::Constant(Constant::U8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U16(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U64(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::F32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::F64(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::Bool(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::Char(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    _ => self.cast_error(expr, ExpressionType::$ident),
+                    Value::Constant(Constant::U16(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::U32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::U64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::F32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::F64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::Bool(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::Char(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    _ => self.cast_error(expr, ValueType::$ident),
                 }
             };
         }
 
         macro_rules! float {
             ($ident:ident, $ty:ty) => {
-                match expr.value{
+                match expr.0 {
                     Value::Constant(Constant::I8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I16(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I64(i)) => Value::Constant(Constant::$ident(i as $ty)),
+                    Value::Constant(Constant::I16(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::I32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::I64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
                     Value::Constant(Constant::U8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U16(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U64(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::F32(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::F64(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    _ => self.cast_error(expr, ExpressionType::$ident),
+                    Value::Constant(Constant::U16(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::U32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::U64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::F32(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    Value::Constant(Constant::F64(i)) => {
+                        Value::Constant(Constant::$ident(i as $ty))
+                    }
+                    _ => self.cast_error(expr, ValueType::$ident),
                 }
             };
         }
-        
-        let node = self.context.context.merge_nodes(expr.node, node_id);
-        let value = match ty{
-            "str" => Value::Constant(Constant::String(self.context.context.alloc_str(format!("{}", expr.value).as_str()))),
+
+        let node = self.context.context.merge_nodes(expr.1, node_id);
+        let value = match ty {
+            "str" => Value::Constant(Constant::String(
+                self.context
+                    .context
+                    .alloc_str(format!("{}", expr.0).as_str()),
+            )),
             "i8" => integer!(I8, i8),
             "i16" => integer!(I16, i16),
             "i32" => integer!(I32, i32),
@@ -1009,42 +1094,53 @@ impl<'a> Assembler<'a> {
             "u64" => integer!(U64, u64),
             "f32" => float!(F32, f32),
             "f64" => float!(F64, f64),
-            "char" => match expr.value{
+            "char" => match expr.0 {
                 Value::Constant(Constant::U8(i)) => Value::Constant(Constant::Char(i as char)),
-                Value::Constant(Constant::U16(i)) => Value::Constant(Constant::Char(char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER))),
-                Value::Constant(Constant::U32(i)) => Value::Constant(Constant::Char(char::from_u32(i).unwrap_or(char::REPLACEMENT_CHARACTER))),
-                Value::Constant(Constant::U64(i)) => Value::Constant(Constant::Char(char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER))),
+                Value::Constant(Constant::U16(i)) => Value::Constant(Constant::Char(
+                    char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER),
+                )),
+                Value::Constant(Constant::U32(i)) => Value::Constant(Constant::Char(
+                    char::from_u32(i).unwrap_or(char::REPLACEMENT_CHARACTER),
+                )),
+                Value::Constant(Constant::U64(i)) => Value::Constant(Constant::Char(
+                    char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER),
+                )),
                 Value::Constant(Constant::Char(i)) => Value::Constant(Constant::Char(i)),
-                _ => self.cast_error(expr, ExpressionType::Char),
+                _ => self.cast_error(expr, ValueType::Char),
             },
             _ => {
-                self.context.context.report_error(node, format!("Unknown type {}", ty));
-                expr.value
+                self.context
+                    .context
+                    .report_error(node, format!("Unknown type {}", ty));
+                expr.0
             }
         };
-        Expression {
-            node,
-            value,
-        }
+        Node(value, node)
     }
 
     fn unop(&mut self, op: UnOp, node: NodeId<'a>, mut expr: Expression<'a>) -> Expression<'a> {
-        let node = self.context.context.merge_nodes(node, expr.node);
-        match op{
-            UnOp::Neg => match &mut expr.value{
-                Value::Constant(c) => match c{
+        let node = self.context.context.merge_nodes(node, expr.1);
+        match op {
+            UnOp::Neg => match &mut expr.0 {
+                Value::Constant(c) => match c {
                     Constant::I8(i) => *i = -*i,
                     Constant::I16(i) => *i = -*i,
                     Constant::I32(i) => *i = -*i,
                     Constant::I64(i) => *i = -*i,
                     Constant::F32(i) => *i = -*i,
                     Constant::F64(i) => *i = -*i,
-                    _ => self.context.context.report_error(node, format!("Cannot negate expression of type {}", expr.value.get_type()))
-                }
-                _ => self.context.context.report_error(node, format!("Cannot negate expression of type {}", expr.value.get_type()))
-            }
-            UnOp::Not => match &mut expr.value{
-                Value::Constant(c) => match c{
+                    _ => self.context.context.report_error(
+                        node,
+                        format!("Cannot negate expression of type {}", expr.0.get_type()),
+                    ),
+                },
+                _ => self.context.context.report_error(
+                    node,
+                    format!("Cannot negate expression of type {}", expr.0.get_type()),
+                ),
+            },
+            UnOp::Not => match &mut expr.0 {
+                Value::Constant(c) => match c {
                     Constant::I8(i) => *i = !*i,
                     Constant::I16(i) => *i = !*i,
                     Constant::I32(i) => *i = !*i,
@@ -1054,24 +1150,21 @@ impl<'a> Assembler<'a> {
                     Constant::U32(i) => *i = !*i,
                     Constant::U64(i) => *i = !*i,
                     Constant::Bool(i) => *i = !*i,
-                    _ => self.context.context.report_error(node, format!("Cannot not expression of type {}", expr.value.get_type()))
-                }
-                _ => self.context.context.report_error(node, format!("Cannot not expression of type {}", expr.value.get_type()))
-            }
+                    _ => self.context.context.report_error(
+                        node,
+                        format!("Cannot not expression of type {}", expr.0.get_type()),
+                    ),
+                },
+                _ => self.context.context.report_error(
+                    node,
+                    format!("Cannot not expression of type {}", expr.0.get_type()),
+                ),
+            },
         }
-        Expression {
-            node,
-            value: expr.value,
-        }
+        Node(expr.0, node)
     }
 
-    fn binop(
-        &mut self,
-        op: BinOp,
-        lhs: Expression<'a>,
-        rhs: Expression<'a>,
-    ) -> Expression<'a> {
-
+    fn binop(&mut self, op: BinOp, lhs: Expression<'a>, rhs: Expression<'a>) -> Expression<'a> {
         macro_rules! constants_grouped {
             ($l:ident, $r:ident, $($integer:block)?, $($float:block)?, $($string:block)?, $($char:block)?, $($bool:block)?, $error:block) => {
                 Value::Constant(match ($l, $r){
@@ -1106,7 +1199,7 @@ impl<'a> Assembler<'a> {
 
         macro_rules! constants_bool {
             ($l:ident, $r:ident, $block:block, $error:block) => {
-                Value::Constant(match ($l, $r){
+                Value::Constant(match ($l, $r) {
                     (Constant::I8($l), Constant::I8($r)) => Constant::Bool($block),
                     (Constant::I16($l), Constant::I16($r)) => Constant::Bool($block),
                     (Constant::I32($l), Constant::I32($r)) => Constant::Bool($block),
@@ -1120,65 +1213,109 @@ impl<'a> Assembler<'a> {
                     (Constant::String($l), Constant::String($r)) => Constant::Bool($block),
                     (Constant::Char($l), Constant::Char($r)) => Constant::Bool($block),
                     (Constant::Bool($l), Constant::Bool($r)) => Constant::Bool($block),
-                    _ => $error
+                    _ => $error,
                 })
             };
         }
-        
-        let node = self.context.context.merge_nodes(lhs.node, rhs.node);
-        let value = match op{
-            BinOp::Add => match (lhs.value, rhs.value){
-                (Value::Constant(Constant::String(l)), r) => 
-                    Value::Constant(Constant::String(self.context.context.alloc_str(format!("{l}{r}")))),
-                (l, Value::Constant(Constant::String(r))) => 
-                    Value::Constant(Constant::String(self.context.context.alloc_str(format!("{l}{r}")))),
 
-                (Value::Register(r), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, i),
-                (Value::Constant(Constant::I32(i)), Value::Register(r)) => Value::RegisterOffset(r, i),
-                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, o.wrapping_add(i)),
-                (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => Value::RegisterOffset(r, o.wrapping_add(i)),
+        let node = self.context.context.merge_nodes(lhs.1, rhs.1);
+        let value = match op {
+            BinOp::Add => match (lhs.0, rhs.0) {
+                (Value::Constant(Constant::String(l)), r) => Value::Constant(Constant::String(
+                    self.context.context.alloc_str(format!("{l}{r}")),
+                )),
+                (l, Value::Constant(Constant::String(r))) => Value::Constant(Constant::String(
+                    self.context.context.alloc_str(format!("{l}{r}")),
+                )),
 
-                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse{
+                (Value::Register(r), Value::Constant(Constant::I32(i))) => {
+                    Value::RegisterOffset(r, i)
+                }
+                (Value::Constant(Constant::I32(i)), Value::Register(r)) => {
+                    Value::RegisterOffset(r, i)
+                }
+                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
+                    Value::RegisterOffset(r, o.wrapping_add(i))
+                }
+                (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
+                    Value::RegisterOffset(r, o.wrapping_add(i))
+                }
+
+                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
                     ident: l.ident,
                     offset: l.offset.wrapping_add(i),
                     meta: LabelMeta::PcRel,
                 }),
-                (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse{
+                (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse {
                     ident: l.ident,
                     offset: l.offset.wrapping_add(i),
                     meta: LabelMeta::PcRel,
                 }),
-                
+
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/,
-                    { self.context.context.report_error(node, format!("Cannot add types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot add types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot add types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Sub => match (lhs.value, rhs.value){
-                (Value::Register(r), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, -i),
-                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, o.wrapping_sub(i)),
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot add types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Sub => match (lhs.0, rhs.0) {
+                (Value::Register(r), Value::Constant(Constant::I32(i))) => {
+                    Value::RegisterOffset(r, -i)
+                }
+                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
+                    Value::RegisterOffset(r, o.wrapping_sub(i))
+                }
 
-                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse{
+                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
                     ident: l.ident,
                     offset: l.offset.wrapping_sub(i),
                     meta: LabelMeta::PcRel,
                 }),
-                
+
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_sub(r)},/*float*/{l-r},/*str*/,/*char*/,/*bool*/,
-                    { self.context.context.report_error(node, format!("Cannot subtract types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot subtract types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot subtract types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Mul => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot subtract types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Mul => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_mul(r)},/*float*/{l*r},/*str*/,/*char*/,/*bool*/,
-                    { self.context.context.report_error(node, format!("Cannot multiply types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot multiply types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot multiply types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Div => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot multiply types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Div => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{
                         if r!=0{
@@ -1188,11 +1325,21 @@ impl<'a> Assembler<'a> {
                             0
                         }
                     },/*float*/{l/r},/*str*/,/*char*/,/*bool*/,
-                    { self.context.context.report_error(node, format!("Cannot divide types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot divide types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot divide types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Rem => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot divide types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Rem => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{
                         if r!=0{
@@ -1202,32 +1349,72 @@ impl<'a> Assembler<'a> {
                             0
                         }
                     },/*float*/{l%r},/*str*/,/*char*/,/*bool*/,
-                    { self.context.context.report_error(node, format!("Cannot remainder types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot remainder types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot remainder types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Xor => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot remainder types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Xor => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l^r},/*float*/,/*str*/,/*char*/,/*bool*/{l^r},
-                    { self.context.context.report_error(node, format!("Cannot xor types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot xor types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot xor types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::And => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot xor types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::And => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l&r},/*float*/,/*str*/,/*char*/,/*bool*/{l&r},
-                    { self.context.context.report_error(node, format!("Cannot and types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot and types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot and types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Or => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot and types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Or => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l|r},/*float*/,/*str*/,/*char*/,/*bool*/{l|r},
-                    { self.context.context.report_error(node, format!("Cannot or types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    { self.context.context.report_error(node, format!("Cannot or types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
                 ),
-                _ => { self.context.context.report_error(node, format!("Cannot or types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Shl => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot or types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Shl => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => Value::Constant(match (l, r) {
                     (Constant::I8(l), Constant::U8(r)) => Constant::I8(l.wrapping_shl(r as u32)),
                     (Constant::I16(l), Constant::U8(r)) => Constant::I16(l.wrapping_shl(r as u32)),
@@ -1253,11 +1440,31 @@ impl<'a> Assembler<'a> {
                     (Constant::U16(l), Constant::U32(r)) => Constant::U16(l.wrapping_shl(r)),
                     (Constant::U32(l), Constant::U32(r)) => Constant::U32(l.wrapping_shl(r)),
                     (Constant::U64(l), Constant::U32(r)) => Constant::U64(l.wrapping_shl(r)),
-                    _ => {self.context.context.report_error(node, format!("Cannot shift left types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    _ => {
+                        self.context.context.report_error(
+                            node,
+                            format!(
+                                "Cannot shift left types {} and {}",
+                                lhs.0.get_type(),
+                                rhs.0.get_type()
+                            ),
+                        );
+                        l
+                    }
                 }),
-                _ => { self.context.context.report_error(node, format!("Cannot shift left types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Shr => match (lhs.value, rhs.value){
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot shift left types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Shr => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => Value::Constant(match (l, r) {
                     (Constant::I8(l), Constant::U8(r)) => Constant::I8(l.wrapping_shr(r as u32)),
                     (Constant::I16(l), Constant::U8(r)) => Constant::I16(l.wrapping_shr(r as u32)),
@@ -1283,45 +1490,130 @@ impl<'a> Assembler<'a> {
                     (Constant::U16(l), Constant::U32(r)) => Constant::U16(l.wrapping_shr(r)),
                     (Constant::U32(l), Constant::U32(r)) => Constant::U32(l.wrapping_shr(r)),
                     (Constant::U64(l), Constant::U32(r)) => Constant::U64(l.wrapping_shr(r)),
-                    _ => {self.context.context.report_error(node, format!("Cannot shift right types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
+                    _ => {
+                        self.context.context.report_error(
+                            node,
+                            format!(
+                                "Cannot shift right types {} and {}",
+                                lhs.0.get_type(),
+                                rhs.0.get_type()
+                            ),
+                        );
+                        l
+                    }
                 }),
-                _ => { self.context.context.report_error(node, format!("Cannot shift right types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot shift right types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
 
-            BinOp::Lt => match (lhs.value, rhs.value){
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(
-                    l, r,{l<r},
-                    { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
-                ),
-                _ => { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Lte => match (lhs.value, rhs.value){
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(
-                    l, r,{l<=r},
-                    { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
-                ),
-                _ => { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Gt => match (lhs.value, rhs.value){
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(
-                    l, r,{l>r},
-                    { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
-                ),
-                _ => { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Gte => match (lhs.value, rhs.value){
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(
-                    l, r,{l>=r},
-                    { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); l }
-                ),
-                _ => { self.context.context.report_error(node, format!("Cannot compare types {} and {}", lhs.value.get_type(), rhs.value.get_type())); lhs.value }
-            }
-            BinOp::Eq => Value::Constant(Constant::Bool(lhs.value == rhs.value)),
-            BinOp::Ne => Value::Constant(Constant::Bool(lhs.value != rhs.value)),
+            BinOp::Lt => match (lhs.0, rhs.0) {
+                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l < r }, {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    l
+                }),
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Lte => match (lhs.0, rhs.0) {
+                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l <= r }, {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    l
+                }),
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Gt => match (lhs.0, rhs.0) {
+                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l > r }, {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    l
+                }),
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Gte => match (lhs.0, rhs.0) {
+                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l >= r }, {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    l
+                }),
+                _ => {
+                    self.context.context.report_error(
+                        node,
+                        format!(
+                            "Cannot compare types {} and {}",
+                            lhs.0.get_type(),
+                            rhs.0.get_type()
+                        ),
+                    );
+                    lhs.0
+                }
+            },
+            BinOp::Eq => Value::Constant(Constant::Bool(lhs.0 == rhs.0)),
+            BinOp::Ne => Value::Constant(Constant::Bool(lhs.0 != rhs.0)),
         };
-        Expression {
-            node,
-            value,
-        }
+        Node(value, node)
     }
 }

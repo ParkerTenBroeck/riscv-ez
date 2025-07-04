@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
 use crate::lex::Number;
+use std::fmt::{Display, Formatter};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Instruction<'a> {
@@ -159,9 +159,11 @@ impl Register {
 
 impl Display for Register {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let regs = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "fp", "s1", "a0"
-           , "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6"
-           , "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"];
+        let regs = [
+            "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1", "a2", "a3",
+            "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
+            "t3", "t4", "t5", "t6",
+        ];
         match self.0 {
             0..32 => write!(f, "{}", regs[self.0 as usize]),
             32..64 => write!(f, "f{}", self.0),

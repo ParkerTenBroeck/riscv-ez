@@ -2,7 +2,6 @@ use crate::assembler::Assembler;
 use crate::context::Context;
 use crate::preprocess::PreProcessor;
 use bumpalo::Bump;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
@@ -12,6 +11,7 @@ pub mod context;
 pub mod error;
 pub mod lex;
 pub mod preprocess;
+mod util;
 
 pub struct AssemblerResult {
     time: f64,

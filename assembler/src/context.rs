@@ -1,12 +1,12 @@
+use super::error::FormattedError;
 use crate::{
     error::ErrorKind,
     lex::{Span, Spanned},
 };
 use bumpalo::Bump;
+use std::cell::Cell;
 use std::rc::Rc;
 use std::{cell::RefCell, collections::HashMap, error::Error, num::NonZeroUsize};
-use std::cell::Cell;
-use super::error::FormattedError;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Node<'a, T>(pub T, pub NodeId<'a>);
@@ -14,6 +14,10 @@ pub struct Node<'a, T>(pub T, pub NodeId<'a>);
 impl<'a, T> Node<'a, T> {
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<'a, U> {
         Node(f(self.0), self.1)
+    }
+
+    pub fn as_ref(&self) -> Node<'a, &T> {
+        Node(&self.0, self.1)
     }
 }
 
@@ -102,17 +106,19 @@ impl<'a> Context<'a> {
                 path: "<INVALID>",
                 contents: "<INVALID>",
             }),
-            top_src_eof: Cell::new(&const {
-                NodeInfo {
-                    span: Span::empty(),
-                    source: &Source {
-                        path: "<INVALID>",
-                        contents: "<INVALID>",
-                    },
-                    included_by: None,
-                    invoked_by: None,
-                }
-            }),
+            top_src_eof: Cell::new(
+                &const {
+                    NodeInfo {
+                        span: Span::empty(),
+                        source: &Source {
+                            path: "<INVALID>",
+                            contents: "<INVALID>",
+                        },
+                        included_by: None,
+                        invoked_by: None,
+                    }
+                },
+            ),
         }
     }
 
@@ -212,8 +218,12 @@ impl<'a> Context<'a> {
     }
 
     pub fn report_error_eof(&self, error: impl ToString) {
-        let error =
-            FormattedError::new(self, self.top_src_eof.get(), ErrorKind::Error, error.to_string());
+        let error = FormattedError::new(
+            self,
+            self.top_src_eof.get(),
+            ErrorKind::Error,
+            error.to_string(),
+        );
         self.errors.borrow_mut().push(error);
     }
 
@@ -228,7 +238,12 @@ impl<'a> Context<'a> {
     }
 
     pub fn report_info_eof(&self, error: impl ToString) {
-        let error = FormattedError::new(self, self.top_src_eof.get(), ErrorKind::Info, error.to_string());
+        let error = FormattedError::new(
+            self,
+            self.top_src_eof.get(),
+            ErrorKind::Info,
+            error.to_string(),
+        );
         self.errors.borrow_mut().push(error);
     }
 
