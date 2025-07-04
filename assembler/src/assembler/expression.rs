@@ -1611,8 +1611,18 @@ impl<'a> Assembler<'a> {
                     lhs.0
                 }
             },
-            BinOp::Eq => Value::Constant(Constant::Bool(lhs.0 == rhs.0)),
-            BinOp::Ne => Value::Constant(Constant::Bool(lhs.0 != rhs.0)),
+            BinOp::Eq => if lhs.0.get_type() == rhs.0.get_type() {
+                Value::Constant(Constant::Bool(lhs.0 == rhs.0))
+            }else{
+                self.context.context.report_error(node, format!("cannot compare differing types {} and {}", lhs.0.get_type(), rhs.0.get_type()));
+                Value::Constant(Constant::Bool(lhs.0 == rhs.0))
+            }
+            BinOp::Ne => if lhs.0.get_type() == rhs.0.get_type() {
+                Value::Constant(Constant::Bool(lhs.0 != rhs.0))
+            }else{
+                self.context.context.report_error(node, format!("cannot compare differing types {} and {}", lhs.0.get_type(), rhs.0.get_type()));
+                Value::Constant(Constant::Bool(lhs.0 != rhs.0))
+            }
         };
         Node(value, node)
     }

@@ -1,11 +1,10 @@
 use crate::assembler::translation::{Label, Section};
 use crate::error::{ErrorKind, FormattedError};
 use crate::{
-    assembler::{instructions::Instruction, translation::TranslationUnit},
+    assembler::translation::TranslationUnit,
     context::{Context, NodeId},
 };
-use std::borrow::Cow;
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 pub struct AssemblerContext<'a> {
     pub context: Rc<Context<'a>>,
@@ -35,20 +34,26 @@ impl<'a> AssemblerContext<'a> {
         });
     }
 
-    pub fn add_data(&mut self, size: u32) -> &mut [u8] {
+    pub fn add_data(&mut self, size: u32, align: u32) -> &mut [u8] {
         if let Some(label) = self.tu.labels.get_mut(self.current_label) {
             label.size += size;
         }
         let current_section = self.get_current_section();
 
+
         let start = current_section.data.len();
+        current_section.align = current_section.align.max(align);
+        current_section.data.resize((align as usize - (current_section.data.len() & (align as usize - 1))) & (align as usize - 1), 0);
+        
+
+        let data_start = current_section.data.len();
         let size = start + size as usize;
         current_section.data.resize(size, 0);
-        &mut current_section.data[start..size]
+        &mut current_section.data[data_start..size]
     }
 
-    pub fn add_data_const<const N: usize>(&mut self) -> &mut [u8; N] {
-        self.add_data(N as u32).try_into().unwrap()
+    pub fn add_data_const<const N: usize>(&mut self, align: u32) -> &mut [u8; N] {
+        self.add_data(N as u32, align).try_into().unwrap()
     }
 
     pub fn add_fixer_upper(&mut self, offset: u32) {}

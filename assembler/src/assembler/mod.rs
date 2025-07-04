@@ -190,21 +190,21 @@ impl<'a> Assembler<'a> {
             }
 
             ".global" => {
-                if let Some(Node(sec, node)) = self.string_args() {
+                if let Some(Node(label, node)) = self.string_args() {
                     self.context
                         .context
                         .report_warning(node, "not implemented yet");
                 }
             }
             ".local" => {
-                if let Some(Node(sec, node)) = self.string_args() {
+                if let Some(Node(label, node)) = self.string_args() {
                     self.context
                         .context
                         .report_warning(node, "not implemented yet");
                 }
             }
             ".weak" => {
-                if let Some(Node(sec, node)) = self.string_args() {
+                if let Some(Node(label, node)) = self.string_args() {
                     self.context
                         .context
                         .report_warning(node, "not implemented yet");
@@ -228,63 +228,68 @@ impl<'a> Assembler<'a> {
             }
             ".space" => {
                 if let Some(Node(size, _)) = self.u32_args() {
-                    self.context.add_data(size);
+                    self.context.add_data(size, 1);
                 }
             }
             ".align" => {
-                if let Some(Node(size, _)) = self.u32_args() {
-                    todo!()
-                    // self.context.add_data(size);
+                if let Some(Node(align, node)) = self.u32_args() {
+                    if align == 0 || align.count_ones() != 1{
+                        self.context.context.report_error(node, "Align must be a non zero power of 2")
+                    }else{
+                        self.context.add_data(0, align);
+                    }
                 }
             }
 
             ".data" => {
                 for arg in self.args(ArgumentsTypeHint::None).0 {
+                    let align = arg.0.get_align().unwrap_or(1);
                     match arg.0 {
                         Value::Constant(v) => match v {
                             Constant::I8(v) => {
-                                *self.context.add_data_const::<1>() = v.to_le_bytes()
+                                *self.context.add_data_const::<1>(align) = v.to_le_bytes()
                             }
                             Constant::I16(v) => {
-                                *self.context.add_data_const::<2>() = v.to_le_bytes()
+                                *self.context.add_data_const::<2>(align) = v.to_le_bytes()
                             }
                             Constant::I32(v) => {
-                                *self.context.add_data_const::<4>() = v.to_le_bytes()
+                                *self.context.add_data_const::<4>(align) = v.to_le_bytes()
                             }
                             Constant::I64(v) => {
-                                *self.context.add_data_const::<8>() = v.to_le_bytes()
+                                *self.context.add_data_const::<8>(align) = v.to_le_bytes()
                             }
                             Constant::U8(v) => {
-                                *self.context.add_data_const::<1>() = v.to_le_bytes()
+                                *self.context.add_data_const::<1>(align) = v.to_le_bytes()
                             }
                             Constant::U16(v) => {
-                                *self.context.add_data_const::<2>() = v.to_le_bytes()
+                                *self.context.add_data_const::<2>(align) = v.to_le_bytes()
                             }
                             Constant::U32(v) => {
-                                *self.context.add_data_const::<4>() = v.to_le_bytes()
+                                *self.context.add_data_const::<4>(align) = v.to_le_bytes()
                             }
                             Constant::U64(v) => {
-                                *self.context.add_data_const::<8>() = v.to_le_bytes()
+                                *self.context.add_data_const::<8>(align) = v.to_le_bytes()
                             }
                             Constant::F32(v) => {
-                                *self.context.add_data_const::<4>() = v.to_le_bytes()
+                                *self.context.add_data_const::<4>(align) = v.to_le_bytes()
                             }
                             Constant::F64(v) => {
-                                *self.context.add_data_const::<8>() = v.to_le_bytes()
+                                *self.context.add_data_const::<8>(align) = v.to_le_bytes()
                             }
                             Constant::String(v) => self
                                 .context
-                                .add_data(v.len() as u32)
+                                .add_data(v.len() as u32, align)
                                 .copy_from_slice(v.as_bytes()),
                             Constant::Char(v) => {
-                                *self.context.add_data_const::<4>() = (v as u32).to_le_bytes()
+                                *self.context.add_data_const::<4>(align) = (v as u32).to_le_bytes()
                             }
                             Constant::Bool(v) => {
-                                *self.context.add_data_const::<1>() = (v as u8).to_le_bytes()
+                                *self.context.add_data_const::<1>(align) = (v as u8).to_le_bytes()
                             }
                         },
                         Value::Label(l) => {
-                            self.context.add_data(4);
+                            // self.context.get_current_section()
+                            self.context.add_data(4, 4);
                         }
                         _ => self
                             .context
@@ -298,7 +303,7 @@ impl<'a> Assembler<'a> {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U8)).0 {
                     if let Value::Constant(Constant::String(v)) = arg.0 {
                         self.context
-                            .add_data(v.len() as u32)
+                            .add_data(v.len() as u32, 1)
                             .copy_from_slice(v.as_bytes())
                     } else {
                         self.context.context.report_error(
@@ -312,9 +317,9 @@ impl<'a> Assembler<'a> {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U8)).0 {
                     if let Value::Constant(Constant::String(v)) = arg.0 {
                         self.context
-                            .add_data(v.len() as u32)
+                            .add_data(v.len() as u32, 1)
                             .copy_from_slice(v.as_bytes());
-                        self.context.add_data(1);
+                        self.context.add_data(1, 1);
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -327,7 +332,7 @@ impl<'a> Assembler<'a> {
             ".u8" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U8)).0 {
                     if let Value::Constant(Constant::U8(v)) = arg.0 {
-                        *self.context.add_data_const::<1>() = v.to_le_bytes();
+                        *self.context.add_data_const::<1>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -339,7 +344,7 @@ impl<'a> Assembler<'a> {
             ".u16" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U16)).0 {
                     if let Value::Constant(Constant::U16(v)) = arg.0 {
-                        *self.context.add_data_const::<2>() = v.to_le_bytes();
+                        *self.context.add_data_const::<2>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -351,7 +356,7 @@ impl<'a> Assembler<'a> {
             ".u32" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U32)).0 {
                     if let Value::Constant(Constant::U32(v)) = arg.0 {
-                        *self.context.add_data_const::<4>() = v.to_le_bytes();
+                        *self.context.add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -363,7 +368,7 @@ impl<'a> Assembler<'a> {
             ".u64" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::U64)).0 {
                     if let Value::Constant(Constant::U64(v)) = arg.0 {
-                        *self.context.add_data_const::<8>() = v.to_le_bytes();
+                        *self.context.add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -376,7 +381,7 @@ impl<'a> Assembler<'a> {
             ".i8" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::I8)).0 {
                     if let Value::Constant(Constant::I8(v)) = arg.0 {
-                        *self.context.add_data_const::<1>() = v.to_le_bytes();
+                        *self.context.add_data_const::<1>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -388,7 +393,7 @@ impl<'a> Assembler<'a> {
             ".i16" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::I16)).0 {
                     if let Value::Constant(Constant::I16(v)) = arg.0 {
-                        *self.context.add_data_const::<2>() = v.to_le_bytes();
+                        *self.context.add_data_const::<2>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -400,7 +405,7 @@ impl<'a> Assembler<'a> {
             ".i32" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::I32)).0 {
                     if let Value::Constant(Constant::I32(v)) = arg.0 {
-                        *self.context.add_data_const::<4>() = v.to_le_bytes();
+                        *self.context.add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -412,7 +417,7 @@ impl<'a> Assembler<'a> {
             ".i64" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::I64)).0 {
                     if let Value::Constant(Constant::I64(v)) = arg.0 {
-                        *self.context.add_data_const::<8>() = v.to_le_bytes();
+                        *self.context.add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -425,7 +430,7 @@ impl<'a> Assembler<'a> {
             ".f32" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::F32)).0 {
                     if let Value::Constant(Constant::F32(v)) = arg.0 {
-                        *self.context.add_data_const::<4>() = v.to_le_bytes();
+                        *self.context.add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
@@ -437,7 +442,7 @@ impl<'a> Assembler<'a> {
             ".f64" => {
                 for arg in self.args(ArgumentsTypeHint::Mono(ValueType::F64)).0 {
                     if let Value::Constant(Constant::F64(v)) = arg.0 {
-                        *self.context.add_data_const::<8>() = v.to_le_bytes();
+                        *self.context.add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
                     } else {
                         self.context.context.report_error(
                             arg.1,
