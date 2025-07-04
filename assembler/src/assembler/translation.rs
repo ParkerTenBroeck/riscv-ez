@@ -35,6 +35,7 @@ pub enum RelocationBitPattern {
 
 pub struct Relocation<'a> {
     label: &'a str,
+    add: i32,
     bits: RelocationBitPattern,
     kind: RelationKind,
     offset: u32,

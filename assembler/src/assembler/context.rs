@@ -1,10 +1,11 @@
-use crate::assembler::translation::{Label, Section};
+use crate::assembler::translation::{Label, RelationKind, Section};
 use crate::error::{ErrorKind, FormattedError};
 use crate::{
     assembler::translation::TranslationUnit,
     context::{Context, NodeId},
 };
 use std::rc::Rc;
+use crate::assembler::expression::LabelUse;
 
 pub struct AssemblerContext<'a> {
     pub context: Rc<Context<'a>>,
@@ -56,7 +57,7 @@ impl<'a> AssemblerContext<'a> {
         self.add_data(N as u32, align).try_into().unwrap()
     }
 
-    pub fn add_fixer_upper(&mut self, offset: u32) {
+    pub fn with_reloc(&mut self, initial: u32, label: LabelUse<'a>, relation_kind: RelationKind) {
         
     }
 
