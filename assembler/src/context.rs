@@ -165,8 +165,8 @@ impl<'a> Context<'a> {
         left
     }
 
-    pub fn alloc_str(&self, data: &str) -> &'a str {
-        self.bump.alloc_str(data)
+    pub fn alloc_str(&self, data: impl AsRef<str>) -> &'a str {
+        self.bump.alloc_str(data.as_ref())
     }
 
     pub fn alloc<T: Copy>(&self, data: T) -> &'a T {

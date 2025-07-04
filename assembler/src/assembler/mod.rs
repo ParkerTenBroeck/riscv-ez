@@ -117,21 +117,21 @@ impl<'a> Assembler<'a> {
                 for arg in args{
                     msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
                 }
-                self.context.context.report_info(args_node, format!("{msg}"))
+                self.context.context.report_info(args_node, msg)
             }
             ".warning" => {
                 let mut msg = String::new();
                 for arg in args{
                     msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
                 }
-                self.context.context.report_warning(args_node, format!("{msg}"))
+                self.context.context.report_warning(args_node, msg)
             }
             ".error" => {
                 let mut msg = String::new();
                 for arg in args{
                     msg.write_fmt(format_args!("{} ", arg.value)).unwrap();
                 }
-                self.context.context.report_error(args_node, format!("{msg}"))
+                self.context.context.report_error(args_node, msg)
             }
 
             ".global" => {}
