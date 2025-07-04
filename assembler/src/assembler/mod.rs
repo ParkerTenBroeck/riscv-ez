@@ -11,7 +11,6 @@ use crate::{
     lex::Token,
     preprocess::PreProcessor,
 };
-use std::fmt::Write;
 use std::rc::Rc;
 
 pub struct Assembler<'a> {

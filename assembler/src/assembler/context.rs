@@ -56,7 +56,9 @@ impl<'a> AssemblerContext<'a> {
         self.add_data(N as u32, align).try_into().unwrap()
     }
 
-    pub fn add_fixer_upper(&mut self, offset: u32) {}
+    pub fn add_fixer_upper(&mut self, offset: u32) {
+        
+    }
 
     pub fn get_current_section(&mut self) -> &mut Section<'a> {
         self.tu

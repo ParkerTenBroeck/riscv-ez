@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::iter::Peekable;
 
 pub trait IntoStrDelimable<T: Display>: Sized + Iterator<Item = T> {
     fn delim(self, delim: &str) -> StrDelimable<'_, T, Self> {

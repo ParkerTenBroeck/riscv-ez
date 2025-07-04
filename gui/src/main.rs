@@ -9,7 +9,7 @@ use crate::tabs::Tab;
 use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{RichText, ScrollArea};
-use egui_dock::{DockArea, DockState, TabViewer};
+use egui_dock::{DockArea, DockState};
 use egui_ltreeview::{Action, TreeView, TreeViewState};
 
 fn main() -> eframe::Result<()> {

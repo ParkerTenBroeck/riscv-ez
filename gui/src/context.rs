@@ -1,7 +1,5 @@
 use crate::tabs::{Tab, code_editor};
-use egui::TextBuffer;
 use egui_dock::TabViewer;
-use egui_ltreeview::TreeViewState;
 use poll_promise::Promise;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

@@ -2,7 +2,7 @@ use crate::assembler::Assembler;
 use crate::assembler::instructions::Register;
 use crate::context::{Node, NodeId};
 use crate::lex::{Number, Token};
-use std::fmt::{Display, Formatter, format};
+use std::fmt::{Display, Formatter};
 use std::ops::Index;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -172,7 +172,7 @@ pub struct LabelUse<'a> {
 }
 
 impl<'a> LabelUse<'a> {
-    fn new(ident: &'a str) -> LabelUse {
+    fn new(ident: &'a str) -> LabelUse<'a> {
         LabelUse {
             ident,
             offset: 0,

@@ -167,12 +167,12 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = LexerResult<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut update_start_on_error = true;
-        let mut error_meta = None;
+        let update_start_on_error = true;
+        let error_meta = None;
 
         let mut ret = None;
         let ok_ret_state = State::Default;
-        let mut err_ret_state = State::Default;
+        let err_ret_state = State::Default;
         loop {
             let c = self.chars.peek().copied();
             let mut consume = true;

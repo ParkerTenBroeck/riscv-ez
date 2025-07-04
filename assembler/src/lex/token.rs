@@ -109,16 +109,6 @@ impl Span {
         }
     }
 
-    pub fn immediately_after(&self) -> Span {
-        Span {
-            line: self.line,
-            //TODO this assumes ascii
-            col: self.col + self.len,
-            offset: self.offset + self.len,
-            len: 1,
-        }
-    }
-
     pub fn combine(&self, other: Span) -> Span {
         let send = self.len + self.offset;
         let oend = other.len + other.offset;

@@ -1,12 +1,12 @@
 use super::error::FormattedError;
 use crate::{
     error::ErrorKind,
-    lex::{Span, Spanned},
+    lex::Span,
 };
 use bumpalo::Bump;
 use std::cell::Cell;
 use std::rc::Rc;
-use std::{cell::RefCell, collections::HashMap, error::Error, num::NonZeroUsize};
+use std::{cell::RefCell, collections::HashMap, error::Error};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Node<'a, T>(pub T, pub NodeId<'a>);

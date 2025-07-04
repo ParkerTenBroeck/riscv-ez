@@ -14,10 +14,10 @@ pub mod preprocess;
 mod util;
 
 pub struct AssemblerResult {
-    time: f64,
-    allocated: usize,
-    output: (),
-    result: Result<(), ()>,
+    pub time: f64,
+    pub allocated: usize,
+    pub output: (),
+    pub result: Result<(), ()>,
 }
 
 pub fn assemble_and_link(
@@ -25,7 +25,7 @@ pub fn assemble_and_link(
     files: Vec<impl Into<String>>,
 ) -> AssemblerResult {
     let now = Instant::now();
-    let mut bump = Bump::new();
+    let bump = Bump::new();
     let context = Rc::new(Context::new(&bump, move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
             Ok(contents.to_owned())

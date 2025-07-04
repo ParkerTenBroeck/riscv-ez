@@ -1,5 +1,3 @@
-use eframe::epaint::ahash::HashMap;
-use egui_dock::TabViewer;
 
 pub mod code_editor;
 

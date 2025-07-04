@@ -1,5 +1,5 @@
 use crate::{
-    context::{Source, SourceId},
+    context::Source,
     lex::Span,
 };
 
