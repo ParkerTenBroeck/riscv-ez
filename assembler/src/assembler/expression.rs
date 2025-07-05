@@ -153,6 +153,7 @@ pub enum LabelMeta {
     PcRel,
     Absolute,
     Size,
+    Align,
     Unset,
 }
 
@@ -166,9 +167,9 @@ type Expression<'a> = Node<'a, Value<'a>>;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct LabelUse<'a> {
-    ident: &'a str,
-    offset: i32,
-    meta: LabelMeta,
+    pub ident: &'a str,
+    pub offset: i32,
+    pub meta: LabelMeta,
 }
 
 impl<'a> LabelUse<'a> {
@@ -187,6 +188,7 @@ impl<'a> Display for LabelUse<'a> {
             LabelMeta::PcRel => write!(f, "pc_rel(")?,
             LabelMeta::Absolute => write!(f, "absolute(")?,
             LabelMeta::Size => write!(f, "size(")?,
+            LabelMeta::Align => write!(f, "align(")?,
             LabelMeta::Unset => {}
         }
         write!(f, "{}", self.ident)?;
@@ -363,30 +365,35 @@ pub enum ConvertResult<T> {
     Failure,
 }
 
-impl<'a> Constant<'a> {
-    pub fn to_u32(&self) -> ConvertResult<u32> {
-        match *self {
-            Constant::I8(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I8(v) => ConvertResult::Success(v as u32),
-            Constant::I16(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I16(v) => ConvertResult::Success(v as u32),
-            Constant::I32(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I32(v) => ConvertResult::Success(v as u32),
-            Constant::I64(v) if v > u32::MAX as i64 => ConvertResult::Lossy(v as u32),
-            Constant::I64(v) if v < 0 => ConvertResult::Lossy(v as u32),
-            Constant::I64(v) => ConvertResult::Success(v as u32),
-            Constant::U8(v) => ConvertResult::Success(v as u32),
-            Constant::U16(v) => ConvertResult::Success(v as u32),
-            Constant::U32(v) => ConvertResult::Success(v),
-            Constant::U64(v) if v > u32::MAX as u64 => ConvertResult::Lossy(v as u32),
-            Constant::U64(v) => ConvertResult::Success(v as u32),
-            Constant::F32(_) => ConvertResult::Failure,
-            Constant::F64(_) => ConvertResult::Failure,
-            Constant::String(_) => ConvertResult::Failure,
-            Constant::Char(char) => ConvertResult::Success(char as u32),
-            Constant::Bool(bool) => ConvertResult::Success(bool as u32),
+macro_rules! conversion {
+    ($func:ident, $into:ty, $($try:ident)*, $($cast:ident)*) => {
+        pub fn $func(&self) -> ConvertResult<$into> {
+            match *self {
+                $(
+                    Constant::$try(v) => if let Ok(ok) = v.try_into() { ConvertResult::Success(ok)} else {ConvertResult::Lossy(v as $into)},
+                )*
+                $(
+                    Constant::$cast(v) => ConvertResult::Success(v as $into),
+                )*
+                _ => ConvertResult::Failure,
+            }
         }
-    }
+    };
+}
+
+impl<'a> Constant<'a> {
+    conversion!(to_u8, u8, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_u16, u16, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_u32, u32, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_u64, u64, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    
+    conversion!(to_i8, i8, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_i16, i16, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_i32, i32, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+    conversion!(to_i64, i64, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
+
+    conversion!(to_f32, f32, ,I8 I16 I32 I64 U8 U16 U32 U64 F32 F64);
+    conversion!(to_f64, f64, ,I8 I16 I32 I64 U8 U16 U32 U64 F32 F64);
 }
 
 impl ValueType {

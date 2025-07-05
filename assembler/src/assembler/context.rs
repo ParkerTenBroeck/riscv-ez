@@ -1,4 +1,4 @@
-use crate::assembler::translation::{Label, RelationKind, Section};
+use crate::assembler::translation::{Label, CalculationKind, Relocation, FormKind, Section};
 use crate::error::{ErrorKind, FormattedError};
 use crate::{
     assembler::translation::TranslationUnit,
@@ -31,7 +31,7 @@ impl<'a> AssemblerContext<'a> {
             start: None,
             align: 0,
             data: vec![],
-            fixer_uppers: vec![],
+            relocs: vec![],
         });
     }
 
@@ -57,8 +57,16 @@ impl<'a> AssemblerContext<'a> {
         self.add_data(N as u32, align).try_into().unwrap()
     }
 
-    pub fn with_reloc(&mut self, initial: u32, label: LabelUse<'a>, relation_kind: RelationKind) {
-        
+    pub fn ins_or_address_reloc(&mut self, data: u32, label: &'a str, offset: i32, calc: CalculationKind, form: FormKind) {
+        let sec = self.get_current_section();
+        sec.relocs.push(Relocation{
+            label,
+            value_offset: offset,
+            section_offset: sec.data.len() as u32,
+            form,
+            calc,
+        });
+        *self.add_data_const::<4>(4) = data.to_le_bytes();
     }
 
     pub fn get_current_section(&mut self) -> &mut Section<'a> {
@@ -70,7 +78,7 @@ impl<'a> AssemblerContext<'a> {
                 start: None,
                 align: 0,
                 data: Vec::new(),
-                fixer_uppers: vec![],
+                relocs: vec![],
             })
     }
 

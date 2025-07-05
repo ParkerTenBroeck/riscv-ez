@@ -3,7 +3,7 @@ mod expression;
 pub mod instructions;
 pub mod translation;
 
-use crate::assembler::expression::{ArgumentsTypeHint, Constant, ConvertResult, Value, ValueType};
+use crate::assembler::expression::{ArgumentsTypeHint, Constant, ConvertResult, LabelUse, Value, ValueType};
 use crate::util::IntoStrDelimable;
 use crate::{
     assembler::{context::AssemblerContext, translation::Section},
@@ -12,6 +12,9 @@ use crate::{
     preprocess::PreProcessor,
 };
 use std::rc::Rc;
+use crate::assembler::instructions::Register;
+use crate::assembler::translation::{CalculationKind, FormKind, Label};
+use crate::lex::TypeHint;
 
 pub struct Assembler<'a> {
     context: AssemblerContext<'a>,
@@ -43,7 +46,7 @@ impl<'a> Assembler<'a> {
                 start: None,
                 align: 4,
                 data: Vec::new(),
-                fixer_uppers: Vec::new(),
+                relocs: Vec::new(),
             },
         );
 
@@ -141,6 +144,83 @@ impl<'a> Assembler<'a> {
         }
     }
 
+    fn expect_regular_register(&mut self, value: Value<'a>, node_id: NodeId<'a>) -> Register{
+        match value{
+            Value::RegisterOffset(r, 0) | Value::Register(r) => if !r.is_regular(){
+                self.context.context.report_error(node_id, "Expected regular register found floating point register");
+                Register(r.0&0b11111)
+            }else {r},
+            _ => {
+                self.context.context.report_error(node_id, format!("Expected {} found {}", ValueType::Register, value.get_type()));
+                Register(0)
+            }
+        }
+    }
+
+    fn expect_float_register(&mut self, value: Value<'a>, node_id: NodeId<'a>) -> Register{
+        match value{
+            Value::RegisterOffset(r, 0) | Value::Register(r) => if !r.is_floating(){
+                self.context.context.report_error(node_id, "Expected floating point register found regular register");
+                Register(r.0&0b11111)
+            }else {r},
+            _ => {
+                self.context.context.report_error(node_id, format!("Expected {} found {}", ValueType::Register, value.get_type()));
+                Register(0)
+            }
+        }
+    }
+
+    fn expect_constant_or_label(&mut self, value: Value<'a>, node: NodeId<'a>) -> (i32, Option<LabelUse<'a>>){
+        match value {
+            Value::Constant(c) => match c.to_i32() {
+                ConvertResult::Success(value) => (value, None),
+                ConvertResult::Lossy(value) => {
+                    self.context
+                        .context
+                        .report_warning(node, "conversion to u32 is lossy");
+                    (value, None)
+                }
+                ConvertResult::Failure => {
+                    self.context
+                        .context
+                        .report_error(node, format!("cannot convert {} to u32", value.get_type()));
+                    (0, None)
+                }
+            },
+            Value::Label(l) => {
+                (0, Some(l))
+            }
+            _ => {
+                self.context.context.report_error(node, format!("Expected {} or constant integer found {}", ValueType::Label, value.get_type()));
+                (0, None)
+            }
+        }
+    }
+
+    fn expect_indexed_register(&mut self, value: Value<'a>, node: NodeId<'a>) -> (Register, i32, Option<LabelUse<'a>>){
+        match value{
+            Value::Constant(c) => match c.to_i32() {
+                ConvertResult::Success(value) => (Register(0), value, None),
+                ConvertResult::Lossy(value) => {
+                    self.context
+                        .context
+                        .report_warning(node, "conversion to u32 is lossy");
+                    (Register(0), value, None)
+                }
+                ConvertResult::Failure => {
+                    self.context
+                        .context
+                        .report_error(node, format!("cannot convert {} to u32", value.get_type()));
+                    (Register(0), 0, None)
+                }
+            },
+            Value::Label(l) => (Register(0), 0, Some(l)),
+            Value::LabelRegisterOffset(r, l) => (r, 0, Some(l)),
+            Value::RegisterOffset(r, i) => (r, i, None),
+            Value::Register(r) => (r, 0, None),
+        }
+    }
+
     fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
             "lui" => {}
@@ -166,8 +246,11 @@ impl<'a> Assembler<'a> {
             "sw" => {}
 
             "addi" => {}
-            "li" => {}
+            "li" => {
+                self.args(ArgumentsTypeHint::None);
+            }
             "ecall" => {}
+            "ebreak" => {}
 
             ".info" => {
                 let Node(args, args_node) = self.args(ArgumentsTypeHint::None);
@@ -287,8 +370,7 @@ impl<'a> Assembler<'a> {
                             }
                         },
                         Value::Label(l) => {
-                            // self.context.get_current_section()
-                            self.context.add_data(4, 4);
+                            self.context.ins_or_address_reloc(0, l.ident, l.offset, CalculationKind::Absolute, FormKind::Full);
                         }
                         _ => self
                             .context
@@ -451,10 +533,16 @@ impl<'a> Assembler<'a> {
                 }
             }
 
-            _ => self
-                .context
-                .context
-                .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'")),
+            _ => {
+                self
+                    .context
+                    .context
+                    .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'"));
+
+                while !matches!(self.peek(), Some(Node(Token::NewLine, _))){
+                    self.next();
+                }
+            },
         }
     }
 

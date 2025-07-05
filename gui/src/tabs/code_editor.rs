@@ -200,7 +200,9 @@ fn format_ident(ident: &str) -> TextFormat {
         "sw" => KEYWORD,
         "addi" => KEYWORD,
         "li" => KEYWORD,
+        "la" => KEYWORD,
         "ecall" => KEYWORD,
+        "ebreak" => KEYWORD,
         "add" => KEYWORD,
 
         ".global" => KEYWORD,

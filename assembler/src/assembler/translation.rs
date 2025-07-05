@@ -22,24 +22,23 @@ pub struct Label<'a, S> {
     pub align: u32,
 }
 
-pub enum RelationKind {
+pub enum CalculationKind {
     Size,
     Align,
     PcRel,
     Absolute,
 }
 
-pub enum RelocationBitPattern {
+pub enum FormKind {
     Full,
 }
 
 pub struct Relocation<'a> {
-    label: &'a str,
-    add: i32,
-    bits: RelocationBitPattern,
-    kind: RelationKind,
-    offset: u32,
-    size: u32,
+    pub label: &'a str,
+    pub value_offset: i32,
+    pub form: FormKind,
+    pub calc: CalculationKind,
+    pub section_offset: u32,
 }
 
 pub struct Section<'a> {
@@ -47,5 +46,5 @@ pub struct Section<'a> {
     pub start: Option<u32>,
     pub data: Vec<u8>,
     pub align: u32,
-    pub fixer_uppers: Vec<Relocation<'a>>,
+    pub relocs: Vec<Relocation<'a>>,
 }
