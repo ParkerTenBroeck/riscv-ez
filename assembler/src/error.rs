@@ -1,7 +1,4 @@
-use crate::{
-    context::Source,
-    lex::Span,
-};
+use crate::{context::Source, lex::Span};
 
 use super::context::{Context, NodeId};
 

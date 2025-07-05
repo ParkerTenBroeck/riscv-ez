@@ -1,107 +1,107 @@
 use crate::lex::Number;
 use std::fmt::{Display, Formatter};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Instruction<'a> {
-    Rtype {
-        opcode: RTypeOpCode,
-        immediate: Immediate<'a>,
-        rd: Register,
-        rs1: Register,
-        rs2: Register,
-    },
-    IType {
-        opcode: ITypeOpCode,
-        immediate: Immediate<'a>,
-        rs1: Register,
-        rd: Register,
-    },
-    SType {
-        opcode: STypeOpCode,
-        immediate: Immediate<'a>,
-        rs1: Register,
-        rs2: Register,
-    },
-    BType {
-        opcode: BTypeOpCode,
-        immediate: Immediate<'a>,
-        rs1: Register,
-        rs2: Register,
-    },
-    UType {
-        opcode: UTypeOpCode,
-        immediate: Immediate<'a>,
-        rd: Register,
-    },
-    JType {
-        opcode: JTypeOpCode,
-        immediate: Immediate<'a>,
-        rd: Register,
-    },
+pub const fn opcode(opcode: u32) -> u32 {
+    opcode & 0b1111111
 }
 
-const fn rtype(opcode: u32, func3: u32, func7: u32) -> u32 {
-    opcode | (func7 << 25) | (func3 << 12)
+pub const fn func3(func: u32) -> u32 {
+    (func & 0b111) << 12
+}
+
+pub const fn func7(func: u32) -> u32 {
+    (func & 0b1111111) << 25
+}
+
+pub const fn func5(func: u32) -> u32 {
+    (func & 0b11111) << 27
+}
+
+pub const fn acquire(acquire: bool) -> u32 {
+    (acquire as u32) << 26
+}
+
+pub const fn release(release: bool) -> u32 {
+    (release as u32) << 25
+}
+
+pub const fn rs3(reg: u32) -> u32 {
+    (reg & 0b11111) << 27
+}
+
+pub const fn rs2(reg: u32) -> u32 {
+    (reg & 0b11111) << 20
+}
+
+pub const fn rs1(reg: u32) -> u32 {
+    (reg & 0b11111) << 15
+}
+
+pub const fn rd(reg: u32) -> u32 {
+    (reg & 0b11111) << 7
+}
+
+pub const fn imm_11_0(imm: u32) -> u32 {
+    func7(imm >> 5) | rs2(imm)
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum RTypeOpCode {
-    Slli = rtype(0b0010011, 0b001, 0b0000000),
-    Srli = rtype(0b0010011, 0b101, 0b0000000),
-    Srai = rtype(0b0010011, 0b101, 0b0100000),
+    Slli = opcode(0b0010011) | func3(0b001),
+    Srli = opcode(0b0010011) | func3(0b101),
+    Srai = opcode(0b0010011) | func3(0b101) | func7(0b0100000),
 
-    Add = rtype(0b0110011, 0b000, 0b0000000),
-    Sub = rtype(0b0110011, 0b000, 0b0100000),
-    Sll = rtype(0b0110011, 0b001, 0b0000000),
-    Slt = rtype(0b0110011, 0b010, 0b0000000),
-    Sltu = rtype(0b0110011, 0b011, 0b0000000),
-    Xor = rtype(0b0110011, 0b100, 0b0000000),
-    Srl = rtype(0b0110011, 0b101, 0b0000000),
-    Sra = rtype(0b0110011, 0b101, 0b0100000),
-    Or = rtype(0b0110011, 0b110, 0b0000000),
-    And = rtype(0b0110011, 0b111, 0b0000000),
+    Add = opcode(0b0110011) | func3(0b000),
+    Sub = opcode(0b0110011) | func3(0b000) | func7(0b0100000),
+    Sll = opcode(0b0110011) | func3(0b001),
+    Slt = opcode(0b0110011) | func3(0b010),
+    Sltu = opcode(0b0110011) | func3(0b011),
+    Xor = opcode(0b0110011) | func3(0b100),
+    Srl = opcode(0b0110011) | func3(0b101),
+    Sra = opcode(0b0110011) | func3(0b101) | func7(0b0100000),
+    Or = opcode(0b0110011) | func3(0b110),
+    And = opcode(0b0110011) | func3(0b111),
 
-    LrW = rtype(0b0101111, 0b011, 0b0000010),
-    ScW = rtype(0b0101111, 0b011, 0b0000011),
+    LrW = opcode(0b0101111) | func3(0b011) | func5(0b0000010),
+    ScW = opcode(0b0101111) | func3(0b011) | func5(0b0000011),
 
-    AmoswapW = rtype(0b0101111, 0b011, 0b00001 << 2),
-    SmoaddW = rtype(0b0101111, 0b011, 0b00000 << 2),
-    AmoxorW = rtype(0b0101111, 0b011, 0b00100 << 2),
-    AmoandW = rtype(0b0101111, 0b011, 0b01100 << 2),
-    AmoorW = rtype(0b0101111, 0b011, 0b01000 << 2),
-    AmoMinW = rtype(0b0101111, 0b011, 0b10100 << 2),
-    AmoManW = rtype(0b0101111, 0b011, 0b11000 << 2),
-    AmoMaxuW = rtype(0b0101111, 0b011, 0b11100 << 2),
-}
-
-const fn isbtype(opcode: u32, func3: u32, func7: u32) -> u32 {
-    opcode | (func7 << 25) | (func3 << 12)
+    AmoswapW = opcode(0b0101111) | func3(0b011) | func5(0b00001),
+    SmoaddW = opcode(0b0101111) | func3(0b011) | func5(0b00000),
+    AmoxorW = opcode(0b0101111) | func3(0b011) | func5(0b00100),
+    AmoandW = opcode(0b0101111) | func3(0b011) | func5(0b01100),
+    AmoorW = opcode(0b0101111) | func3(0b011) | func5(0b01000),
+    AmoMinW = opcode(0b0101111) | func3(0b011) | func5(0b10100),
+    AmoMaxW = opcode(0b0101111) | func3(0b011) | func5(0b11000),
+    AmoMaxuW = opcode(0b0101111) | func3(0b011) | func5(0b11100),
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ITypeOpCode {
-    Jalr,
+    Jalr = opcode(0b1100111) | func3(0x0),
 
-    Lb,
-    Lh,
-    Lw,
-    Lbu,
-    Lhu,
+    Lb = opcode(0b0000011) | func3(0x0),
+    Lh = opcode(0b0000011) | func3(0x1),
+    Lw = opcode(0b0000011) | func3(0x2),
+    Lbu = opcode(0b0000011) | func3(0x4),
+    Lhu = opcode(0b0000011) | func3(0x5),
 
-    Addi,
-    Slti,
-    Sltiu,
-    Xori,
-    Ori,
-    Andi,
+    Addi = opcode(0b0010011) | func3(0x0),
+    Slli = opcode(0b0010011) | func3(0x1),
+    Slti = opcode(0b0010011) | func3(0x2),
+    Sltiu = opcode(0b0010011) | func3(0x3),
+    Xori = opcode(0b0010011) | func3(0x4),
+    Srli = opcode(0b0010011) | func3(0x5),
+    Srai = opcode(0b0010011) | func3(0x5) | func7(0x20),
+    Ori = opcode(0b0010011) | func3(0x6),
+    Andi = opcode(0b0010011) | func3(0x7),
 
     Fence,
     FenceTso,
     Pause,
-    ECall,
-    EBreak,
+    ECall = opcode(0b1110011) | imm_11_0(0x0),
+    EBreak = opcode(0b1110011) | imm_11_0(0x1),
 
     FenceI,
     Csrrw,
@@ -115,36 +115,36 @@ pub enum ITypeOpCode {
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum STypeOpCode {
-    Sb,
-    Sh,
-    Sw,
+    Sb = opcode(0b0100011) | func3(0x0),
+    Sh = opcode(0b0100011) | func3(0x1),
+    Sw = opcode(0b0100011) | func3(0x2),
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BTypeOpCode {
-    Beq,
-    Bne,
-    Blt,
-    Bge,
-    Bltu,
-    Bgeu,
+    Beq = opcode(0b1100011) | func3(0x0),
+    Bne = opcode(0b1100011) | func3(0x1),
+    Blt = opcode(0b1100011) | func3(0x4),
+    Bge = opcode(0b1100011) | func3(0x5),
+    Bltu = opcode(0b1100011) | func3(0x6),
+    Bgeu = opcode(0b1100011) | func3(0x7),
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum UTypeOpCode {
-    Lui,
-    Auipc,
+    Lui = opcode(0b0110111),
+    Auipc = opcode(0b0010111),
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum JTypeOpCode {
-    Jal,
+    Jal = opcode(0b0110111),
 }
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Default)]
 pub struct Register(pub u8);
 
 impl Register {
@@ -170,11 +170,4 @@ impl Display for Register {
             _ => write!(f, "UNKNOWN<{}>", self.0),
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Immediate<'a> {
-    Label(&'a str),
-    Number(Number<'a>),
-    Expression(),
 }

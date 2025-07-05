@@ -59,6 +59,15 @@ impl std::fmt::Display for NumberError {
 }
 
 impl<'a> Number<'a> {
+    pub const fn empty() -> Number<'static> {
+        Number {
+            ptr: unsafe { NonNull::new_unchecked("".as_ptr().cast_mut()) },
+            len: 0,
+            ext_back_off: 0,
+            hint: TypeHint::Int,
+            _phan: PhantomData,
+        }
+    }
     pub fn new(str: &'a str, hint: TypeHint) -> Result<Self, NumberError> {
         Ok(Self {
             ptr: unsafe { NonNull::new_unchecked(str.as_ptr().cast_mut()) },

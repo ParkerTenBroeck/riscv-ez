@@ -211,24 +211,18 @@ impl<'a> PreProcessor<'a> {
         match tag {
             "include" => match self.stack_next() {
                 Some(Node(Token::StringLiteral(str), node)) => self.include(str, node),
-                Some(Node(t, n)) => self
-                    .context
-                    .report_error(n, format!("Expected string found {t:?}")),
-                None => self
-                    .context
-                    .report_error(n, "Expected string but found EOF"),
+                t => {
+                    _ = self
+                        .context
+                        .unexpected_token(t, Token::StringLiteral(""), false)
+                }
             },
             "define" => {
                 let ident = match self.stack_next() {
                     Some(Node(Token::Ident(str), _)) => str,
-                    Some(Node(t, n)) => {
-                        self.context
-                            .report_error(n, format!("Expected ident found {t:?}"));
-                        return;
-                    }
-                    None => {
-                        self.context.report_error(n, "Expected ident but found EOF");
-                        return;
+                    t => {
+                        self.context.unexpected_token(t, Token::Ident(""), false);
+                        ""
                     }
                 };
                 let mut toks = Vec::new();
@@ -238,12 +232,28 @@ impl<'a> PreProcessor<'a> {
                         Some(tok) => toks.push(tok),
                     }
                 }
-                self.defines.insert(ident, toks);
+                if ident.len() > 0 {
+                    self.defines.insert(ident, toks);
+                }
             }
 
-            unknown => self
-                .context
-                .report_error(n, format!("Unknown preprocessor tag '{unknown}'")),
+            unknown => {
+                self.context
+                    .report_error(n, format!("Unknown preprocessor tag '{unknown}'"));
+
+                loop {
+                    match self.stack_next() {
+                        Some(Node(Token::NewLine, _)) | None => break,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        loop {
+            match self.stack_next() {
+                Some(Node(Token::NewLine, _)) | None => break,
+                t => _ = self.context.unexpected_token(t, Token::NewLine, false),
+            }
         }
     }
 

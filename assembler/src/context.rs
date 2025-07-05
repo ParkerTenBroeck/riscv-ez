@@ -1,10 +1,9 @@
 use super::error::FormattedError;
-use crate::{
-    error::ErrorKind,
-    lex::Span,
-};
+use crate::lex::Token;
+use crate::{error::ErrorKind, lex::Span};
 use bumpalo::Bump;
 use std::cell::Cell;
+use std::fmt::{Display, format};
 use std::rc::Rc;
 use std::{cell::RefCell, collections::HashMap, error::Error};
 
@@ -225,6 +224,39 @@ impl<'a> Context<'a> {
             error.to_string(),
         );
         self.errors.borrow_mut().push(error);
+    }
+
+    pub fn unexpected_token(
+        &self,
+        got: Option<Node<'a, Token<'a>>>,
+        expected: impl Display,
+        alternate: bool,
+    ) -> NodeId<'a> {
+        if alternate {
+            match got {
+                Some(Node(got, n)) => self.report_error(
+                    n,
+                    format!("Unexpected token, got {got:#} expected {expected:#}"),
+                ),
+                None => self
+                    .report_error_eof(format!("Unexpected token, got eof expected {expected:#}")),
+            }
+        } else {
+            match got {
+                Some(Node(got, n)) => self.report_error(
+                    n,
+                    format!("Unexpected token, got {got:#} expected {expected}"),
+                ),
+                None => {
+                    self.report_error_eof(format!("Unexpected token, got eof expected {expected}"))
+                }
+            }
+        }
+
+        match got {
+            Some(Node(_, n)) => n,
+            None => self.top_src_eof(),
+        }
     }
 
     pub fn report_warning_eof(&self, error: impl ToString) {

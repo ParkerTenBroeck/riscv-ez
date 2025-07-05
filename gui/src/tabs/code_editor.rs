@@ -180,6 +180,13 @@ fn highlight(ui: &Ui, str: &str) -> LayoutJob {
 
 fn format_ident(ident: &str) -> TextFormat {
     match ident {
+        "as" => KEYWORD,
+        "size" => KEYWORD,
+        "align" => KEYWORD,
+        "pcrel" => KEYWORD,
+        "absolute" => KEYWORD,
+        "format" => KEYWORD,
+
         "lui" => KEYWORD,
         "auipc" => KEYWORD,
         "jal" => KEYWORD,
@@ -208,6 +215,25 @@ fn format_ident(ident: &str) -> TextFormat {
         ".global" => KEYWORD,
         ".local" => KEYWORD,
         ".weak" => KEYWORD,
+
+        ".info" => KEYWORD,
+        ".warning" => KEYWORD,
+        ".error" => KEYWORD,
+
+        "i8" => REGISTER,
+        "i16" => REGISTER,
+        "i32" => REGISTER,
+        "i64" => REGISTER,
+        "u8" => REGISTER,
+        "u16" => REGISTER,
+        "u32" => REGISTER,
+        "u64" => REGISTER,
+        "f32" => REGISTER,
+        "f64" => REGISTER,
+        "str" => REGISTER,
+        "char" => REGISTER,
+        "bool" => REGISTER,
+
         ".space" => KEYWORD,
         ".data" => KEYWORD,
         ".string" => KEYWORD,

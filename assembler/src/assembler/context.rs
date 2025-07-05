@@ -1,11 +1,10 @@
-use crate::assembler::translation::{Label, CalculationKind, Relocation, FormKind, Section};
+use crate::assembler::translation::{CalculationKind, FormKind, Label, Relocation, Section};
 use crate::error::{ErrorKind, FormattedError};
 use crate::{
     assembler::translation::TranslationUnit,
     context::{Context, NodeId},
 };
 use std::rc::Rc;
-use crate::assembler::expression::LabelUse;
 
 pub struct AssemblerContext<'a> {
     pub context: Rc<Context<'a>>,
@@ -41,11 +40,13 @@ impl<'a> AssemblerContext<'a> {
         }
         let current_section = self.get_current_section();
 
-
         let start = current_section.data.len();
         current_section.align = current_section.align.max(align);
-        current_section.data.resize((align as usize - (current_section.data.len() & (align as usize - 1))) & (align as usize - 1), 0);
-        
+        current_section.data.resize(
+            (align as usize - (current_section.data.len() & (align as usize - 1)))
+                & (align as usize - 1),
+            0,
+        );
 
         let data_start = current_section.data.len();
         let size = start + size as usize;
@@ -57,9 +58,16 @@ impl<'a> AssemblerContext<'a> {
         self.add_data(N as u32, align).try_into().unwrap()
     }
 
-    pub fn ins_or_address_reloc(&mut self, data: u32, label: &'a str, offset: i32, calc: CalculationKind, form: FormKind) {
+    pub fn ins_or_address_reloc(
+        &mut self,
+        data: u32,
+        label: &'a str,
+        offset: i32,
+        calc: CalculationKind,
+        form: FormKind,
+    ) {
         let sec = self.get_current_section();
-        sec.relocs.push(Relocation{
+        sec.relocs.push(Relocation {
             label,
             value_offset: offset,
             section_offset: sec.data.len() as u32,

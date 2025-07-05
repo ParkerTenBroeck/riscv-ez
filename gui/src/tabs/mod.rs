@@ -1,4 +1,3 @@
-
 pub mod code_editor;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
