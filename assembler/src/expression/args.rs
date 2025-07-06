@@ -1,4 +1,4 @@
-use crate::assembler::instructions::Register;
+use crate::assembler::riscv::Register;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
     ArgumentsTypeHint, Constant, ConvertResult, Expression, ExpressionEvaluatorContext, LabelUse,

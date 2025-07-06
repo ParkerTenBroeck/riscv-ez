@@ -1,4 +1,4 @@
-use crate::assembler::instructions::Register;
+use crate::assembler::riscv::Register;
 use std::fmt::{Display, Formatter};
 use std::ops::Index;
 

@@ -1,9 +1,9 @@
 pub mod context;
-pub mod instructions;
+pub mod riscv;
 mod mnemonics;
 pub mod translation;
 
-use crate::assembler::instructions::Register;
+use crate::assembler::riscv::Register;
 use crate::context::NodeId;
 use crate::expression::{ExpressionEvaluatorContext, LabelUse, Value, ValueType};
 use crate::{
@@ -14,12 +14,30 @@ use crate::{
 };
 use std::rc::Rc;
 
+pub trait AssemblerTrait<'a>{
+    // type Reg: 'a;
+
+    fn parse_ident_assembly(
+        &mut self,
+        ident: Node<'a, &'a str>,
+        hint: ValueType,
+    ) -> Node<'a, Value<'a>>;
+
+    fn parse_ident_preprocessor(
+        &mut self,
+        ident: Node<'a, &'a str>,
+        hint: ValueType,
+    ) -> Node<'a, Value<'a>>{
+        self.parse_ident_assembly(ident, hint)
+    }
+
+    fn assemble_mnemonic(&mut self, mnemonic: Node<'a, &'a str>);
+}
+
 pub struct Assembler<'a> {
     context: AssemblerContext<'a>,
 
     preprocessor: PreProcessor<'a>,
-    peek: Option<Node<'a, Token<'a>>>,
-    last: Option<Node<'a, Token<'a>>>,
 }
 
 impl<'a> Assembler<'a> {
@@ -27,8 +45,6 @@ impl<'a> Assembler<'a> {
         Self {
             context: AssemblerContext::new(context),
             preprocessor,
-            peek: None,
-            last: None,
         }
     }
 
@@ -48,47 +64,32 @@ impl<'a> Assembler<'a> {
             },
         );
 
-        while let Some(Node(Token::NewLine, _)) = self.peek() {
-            self.next();
+        while let Some(Node(Token::NewLine, _)) = self.preprocessor.peek() {
+            self.preprocessor.next();
         }
-        while self.peek().is_some() {
+        while self.preprocessor.peek().is_some() {
             self.assemble_line();
-            while let Some(Node(Token::NewLine, _)) = self.peek() {
-                self.next();
+            while let Some(Node(Token::NewLine, _)) = self.preprocessor.peek() {
+                self.preprocessor.next();
             }
         }
 
         Vec::new()
     }
 
-    fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
-        let n = self.peek.take().or_else(|| self.preprocessor.next());
-        if n.is_some() {
-            self.last = n;
-        }
-        n
-    }
-
-    fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
-        if self.peek.is_none() {
-            self.peek = self.preprocessor.next();
-        }
-        self.peek
-    }
-
     fn assemble_line(&mut self) {
-        match self.next() {
+        match self.preprocessor.next() {
             Some(Node(Token::Ident(ident), n)) => {
                 self.assemble_mnemonic(ident, n);
                 loop {
-                    match self.peek() {
+                    match self.preprocessor.peek() {
                         None | Some(Node(Token::NewLine, _)) => break,
                         Some(Node(t, n)) => self
                             .context
                             .context
                             .report_error(n, format!("Unexpected token '{t:#}' at end of line")),
                     }
-                    self.next();
+                    self.preprocessor.next();
                 }
             }
             Some(Node(Token::Label(label), source)) => {
@@ -105,11 +106,11 @@ impl<'a> Assembler<'a> {
 
 impl<'a> ExpressionEvaluatorContext<'a> for Assembler<'a> {
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.next()
+        self.preprocessor.next()
     }
 
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.peek()
+        self.preprocessor.peek()
     }
 
     fn context(&self) -> &Context<'a> {

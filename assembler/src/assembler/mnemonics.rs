@@ -1,6 +1,6 @@
-use crate::assembler::instructions::{ITypeOpCode, RTypeOpCode, UTypeOpCode};
+use crate::assembler::riscv::{ITypeOpCode, RTypeOpCode, UTypeOpCode};
 use crate::assembler::translation::{CalculationKind, FormKind};
-use crate::assembler::{Assembler, instructions};
+use crate::assembler::{Assembler, riscv};
 use crate::context::{Node, NodeId};
 use crate::expression::args::{FloatReg, Immediate, RegReg, StrOpt, U32Opt, U32Power2Opt};
 use crate::expression::{
@@ -36,8 +36,16 @@ impl<'a> Assembler<'a> {
 
     pub(super) fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
-            "lui" => {}
-            "auipc" => {}
+            "lui" => match self.coerced(n) {
+                (RegReg(r), Immediate::SignedConstant(c)) => {}
+                (RegReg(r), Immediate::UnsignedConstant(c)) => {}
+                (RegReg(r), Immediate::Label(_)) => {}
+            }
+            "auipc" => match self.coerced(n) {
+                (RegReg(r), Immediate::SignedConstant(c)) => {}
+                (RegReg(r), Immediate::UnsignedConstant(c)) => {}
+                (RegReg(r), Immediate::Label(_)) => {}
+            }
             "jal" => {}
             "jalr" => {}
 
@@ -81,10 +89,10 @@ impl<'a> Assembler<'a> {
                 // }
                 (RegReg(r), Immediate::SignedConstant(c)) => {
                     self.instruction(
-                        ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c as u32),
+                        ITypeOpCode::Addi as u32 | r.rd() | riscv::imm_11_0_s(c as u32),
                     );
                     self.instruction(
-                        UTypeOpCode::Lui as u32 | r.rd() | instructions::imm_31_12_u(c as u32),
+                        UTypeOpCode::Lui as u32 | r.rd() | riscv::imm_31_12_u(c as u32),
                     );
                 }
                 // (RegReg(r), Immediate::UnsignedConstant(c)) if c <= i16::MAX as u32 => {
@@ -92,10 +100,10 @@ impl<'a> Assembler<'a> {
                 // }
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {
                     self.instruction(
-                        ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c),
+                        ITypeOpCode::Addi as u32 | r.rd() | riscv::imm_11_0_s(c),
                     );
                     self.instruction(
-                        UTypeOpCode::Lui as u32 | r.rd() | instructions::imm_31_12_u(c),
+                        UTypeOpCode::Lui as u32 | r.rd() | riscv::imm_31_12_u(c),
                     );
                 }
                 (RegReg(r), Immediate::Label(_)) => {
@@ -414,8 +422,8 @@ impl<'a> Assembler<'a> {
                     .context
                     .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'"));
 
-                while !matches!(self.peek(), Some(Node(Token::NewLine, _))) {
-                    self.next();
+                while !matches!(self.preprocessor.peek(), Some(Node(Token::NewLine, _))) {
+                    self.preprocessor.next();
                 }
             }
         }

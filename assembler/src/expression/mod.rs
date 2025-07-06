@@ -58,7 +58,7 @@ pub enum UnOp {
     Not,
 }
 
-use crate::assembler::instructions::Register;
+use crate::assembler::riscv::Register;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token, TypeHint};

@@ -36,7 +36,7 @@ impl<'a> Source<'a> {
         Span {
             line: self.contents.lines().count() as u32,
             col: self.contents.lines().last().unwrap_or("").len() as u32,
-            offset: self.contents.len() as u32 - 1,
+            offset: (self.contents.len() as u32),
             len: 1,
         }
     }
