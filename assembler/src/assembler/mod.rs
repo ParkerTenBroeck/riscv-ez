@@ -160,7 +160,7 @@ impl<'a> ExpressionEvaluatorContext<'a> for Assembler<'a> {
             "x30" | "t5" => reg(node, 30),
             "x31" | "t6" => reg(node, 31),
 
-            "f0" => reg(node, 32 + 0),
+            "f0" => reg(node, 32),
             "f1" => reg(node, 32 + 1),
             "f2" => reg(node, 32 + 2),
             "f3" => reg(node, 32 + 3),
@@ -195,6 +195,5 @@ impl<'a> ExpressionEvaluatorContext<'a> for Assembler<'a> {
 
             _ => Node(Value::Label(LabelUse::new(ident)), node),
         }
-        
     }
 }

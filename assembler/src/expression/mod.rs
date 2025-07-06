@@ -60,11 +60,11 @@ pub enum UnOp {
 
 use crate::assembler::instructions::Register;
 use crate::context::{Context, Node, NodeId};
+use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token, TypeHint};
 use crate::util::IntoStrDelimable;
 use std::fmt::Write;
 use std::marker::PhantomData;
-use crate::expression::args::CoercedArgs;
 
 type Expression<'a> = Node<'a, Value<'a>>;
 
@@ -72,26 +72,33 @@ pub trait ExpressionEvaluatorContext<'a> {
     fn next(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn context(&self) -> &Context<'a>;
-    fn handle_ident(
-        &mut self,
-        ident: &'a str,
-        node: NodeId<'a>,
-        hint: ValueType,
-    ) -> Expression<'a>;
+    fn handle_ident(&mut self, ident: &'a str, node: NodeId<'a>, hint: ValueType)
+    -> Expression<'a>;
 
     fn args(&mut self, fb: NodeId<'a>, hint: ArgumentsTypeHint) -> Node<'a, Vec<Expression<'a>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments(hint, fb)
     }
 
-    fn args_delim(&mut self, start: Token<'a>, end: Token<'a>, hint: ArgumentsTypeHint) -> Node<'a, Vec<Expression<'a>>> {
+    fn args_delim(
+        &mut self,
+        start: Token<'a>,
+        end: Token<'a>,
+        hint: ArgumentsTypeHint,
+    ) -> Node<'a, Vec<Expression<'a>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments_delim(hint, start, end)
     }
 
-    fn coerced<T: CoercedArgs<'a>>(&mut self, fb: NodeId<'a>) -> T where Self: Sized {
+    fn coerced<T: CoercedArgs<'a>>(&mut self, fb: NodeId<'a>) -> T
+    where
+        Self: Sized,
+    {
         T::args(self, fb)
     }
 
-    fn coerced_delim<T: CoercedArgs<'a>>(&mut self,  start: Token<'a>, end: Token<'a>, ) -> T where Self: Sized {
+    fn coerced_delim<T: CoercedArgs<'a>>(&mut self, start: Token<'a>, end: Token<'a>) -> T
+    where
+        Self: Sized,
+    {
         T::args_delim(self, start, end)
     }
 }
@@ -403,7 +410,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
     }
 
     fn parse_string_literal(&mut self, repr: &'a str, _: NodeId<'a>) -> &'a str {
-        repr.into()
+        repr
     }
 
     pub fn parse_arguments_delim(
@@ -569,7 +576,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
             }
             _ => {
                 self.context()
-                    .report_error(func_node, format!("Unknown function {}", func));
+                    .report_error(func_node, format!("Unknown function {func}"));
                 Value::Constant(Constant::I32(0))
             }
         };
@@ -751,7 +758,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
             },
             _ => {
                 self.context()
-                    .report_error(node, format!("Unknown type {}", ty));
+                    .report_error(node, format!("Unknown type {ty}"));
                 expr.0
             }
         };

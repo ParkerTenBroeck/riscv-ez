@@ -77,7 +77,7 @@ pub enum RTypeOpCode {
     AmoMinW = opcode(0b0101111) | func3(0b011) | func5(0b10100),
     AmoMaxW = opcode(0b0101111) | func3(0b011) | func5(0b11000),
     AmoMaxuW = opcode(0b0101111) | func3(0b011) | func5(0b11100),
-    
+
     Mul = opcode(0x0110011) | func3(0x0) | func5(0x01),
     Mulh = opcode(0x0110011) | func3(0x1) | func5(0x01),
     Mulsu = opcode(0x0110011) | func3(0x2) | func5(0x01),

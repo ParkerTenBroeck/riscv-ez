@@ -58,7 +58,7 @@ pub struct NodeInfo<'a> {
 
 impl<'a> PartialEq for Source<'a> {
     fn eq(&self, other: &Self) -> bool {
-        if self as *const Self as usize == other as *const Self as usize {
+        if std::ptr::eq(self, other) {
             return true;
         };
         self.path == other.path
@@ -67,7 +67,7 @@ impl<'a> PartialEq for Source<'a> {
 
 impl<'a> PartialEq for NodeInfo<'a> {
     fn eq(&self, other: &Self) -> bool {
-        if self as *const Self as usize == other as *const Self as usize {
+        if std::ptr::eq(self, other) {
             return true;
         };
         self.span == other.span
@@ -130,7 +130,7 @@ impl<'a> Context<'a> {
             return Ok(*id);
         }
         let path = self.bump.alloc_str(&path);
-        let contents = self.supplier.clone()(&path, self)?;
+        let contents = self.supplier.clone()(path, self)?;
         let contents = self.bump.alloc_str(contents.as_str());
         let source = self.bump.alloc(Source { path, contents });
         let mut map = self.source_map.borrow_mut();

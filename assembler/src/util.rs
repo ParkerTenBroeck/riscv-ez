@@ -18,7 +18,7 @@ impl<'a, T: Display, I: Iterator<Item = T> + Clone> std::fmt::Display for StrDel
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut iter = self.iter.clone().peekable();
         while let Some(next) = iter.next() {
-            write!(f, "{}", next)?;
+            write!(f, "{next}")?;
             if iter.peek().is_some() {
                 write!(f, "{}", self.delim)?;
             }

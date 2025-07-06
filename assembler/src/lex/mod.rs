@@ -168,7 +168,6 @@ impl<'a> Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let update_start_on_error = true;
-        let error_meta = None;
 
         let mut ret = None;
         let ok_ret_state = State::Default;
@@ -618,7 +617,7 @@ impl<'a> Iterator for Lexer<'a> {
                         return Some(Ok(Spanned::new(token, meta)));
                     }
                     Err(err) => {
-                        let meta = error_meta.unwrap_or(Span::start_end(self.start, self.current));
+                        let meta = Span::start_end(self.start, self.current);
                         if update_start_on_error {
                             self.start = self.current;
                         }

@@ -153,13 +153,13 @@ pub enum Value<'a> {
 impl<'a> Display for Value<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Value::Constant(c) => write!(f, "{}", c),
-            Value::Label(l) => write!(f, "{}", l),
+            Value::Constant(c) => write!(f, "{c}"),
+            Value::Label(l) => write!(f, "{l}"),
             Value::LabelRegisterOffset(reg, l) => {
                 if l.meta.is_unset() && l.offset != 0 {
                     write!(f, "(")?;
                 }
-                write!(f, "{}", l)?;
+                write!(f, "{l}")?;
                 if l.meta.is_unset() && l.offset != 0 {
                     write!(f, ")")?;
                 }
@@ -179,7 +179,7 @@ impl<'a> Display for Value<'a> {
                 }
                 Ok(())
             }
-            Value::Register(reg) => write!(f, "{}", reg),
+            Value::Register(reg) => write!(f, "{reg}"),
         }
     }
 }
@@ -281,19 +281,19 @@ pub enum Constant<'a> {
 impl<'a> Display for Constant<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Constant::I8(c) => write!(f, "{}", c),
-            Constant::I16(c) => write!(f, "{}", c),
-            Constant::I32(c) => write!(f, "{}", c),
-            Constant::I64(c) => write!(f, "{}", c),
-            Constant::U8(c) => write!(f, "{}", c),
-            Constant::U16(c) => write!(f, "{}", c),
-            Constant::U32(c) => write!(f, "{}", c),
-            Constant::U64(c) => write!(f, "{}", c),
-            Constant::F32(c) => write!(f, "{}", c),
-            Constant::F64(c) => write!(f, "{}", c),
-            Constant::String(c) => write!(f, "{}", c),
-            Constant::Char(c) => write!(f, "{}", c),
-            Constant::Bool(c) => write!(f, "{}", c),
+            Constant::I8(c) => write!(f, "{c}"),
+            Constant::I16(c) => write!(f, "{c}"),
+            Constant::I32(c) => write!(f, "{c}"),
+            Constant::I64(c) => write!(f, "{c}"),
+            Constant::U8(c) => write!(f, "{c}"),
+            Constant::U16(c) => write!(f, "{c}"),
+            Constant::U32(c) => write!(f, "{c}"),
+            Constant::U64(c) => write!(f, "{c}"),
+            Constant::F32(c) => write!(f, "{c}"),
+            Constant::F64(c) => write!(f, "{c}"),
+            Constant::String(c) => write!(f, "{c}"),
+            Constant::Char(c) => write!(f, "{c}"),
+            Constant::Bool(c) => write!(f, "{c}"),
         }
     }
 }

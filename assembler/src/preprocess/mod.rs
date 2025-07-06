@@ -232,7 +232,7 @@ impl<'a> PreProcessor<'a> {
                         Some(tok) => toks.push(tok),
                     }
                 }
-                if ident.len() > 0 {
+                if !ident.is_empty() {
                     self.defines.insert(ident, toks);
                 }
             }
@@ -271,7 +271,7 @@ impl<'a> PreProcessor<'a> {
         true
     }
 
-    fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
+    fn next_filtered(&mut self) -> Option<Node<'a, Token<'a>>> {
         loop {
             match self.stack_next() {
                 Some(Node(Token::PreProcessorTag(tag), n)) if self.line_beginning => {
@@ -292,6 +292,6 @@ impl<'a> Iterator for PreProcessor<'a> {
     type Item = Node<'a, Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next()
+        self.next_filtered()
     }
 }

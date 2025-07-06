@@ -112,7 +112,7 @@ impl<'a> Display for Token<'a> {
             Token::PreProcessorTag(_) => write!(f, "preprocessor tag"),
             Token::Label(label) if f.alternate() => write!(f, "'{label}'"),
             Token::Label(_) => write!(f, "label"),
-            Token::Ident(ident) if f.alternate() => write!(f, "'{}'", ident),
+            Token::Ident(ident) if f.alternate() => write!(f, "'{ident}'"),
             Token::Ident(_) => write!(f, "identifier"),
             Token::StringLiteral(str) if f.alternate() => write!(f, "{str:?}"),
             Token::StringLiteral(_) => write!(f, "string literal"),

@@ -14,9 +14,7 @@ pub fn show(ui: &mut Ui, text: &mut String) {
             let rows = text.matches("\n").count() + 1;
             let width = (rows as f32).log10().floor() as usize + 1;
             for num in 1..=rows {
-                string
-                    .write_fmt(format_args!("{num: >width$}", width = width))
-                    .unwrap();
+                string.write_fmt(format_args!("{num: >width$}")).unwrap();
                 if num != rows {
                     string.write_char('\n').unwrap();
                 }

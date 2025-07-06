@@ -42,7 +42,7 @@ impl eframe::App for MyApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Quit").clicked(){
+                    if ui.button("Quit").clicked() {
                         todo!()
                     }
                 });

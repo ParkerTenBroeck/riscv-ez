@@ -46,6 +46,12 @@ impl Context {
     }
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
         Self {
@@ -73,8 +79,7 @@ impl Context {
             let Some(p) = entry
                 .path()
                 .to_str()
-                .map(|path| path.strip_prefix(&self.project).map(|s| s.to_owned()))
-                .flatten()
+                .and_then(|path| path.strip_prefix(&self.project).map(|s| s.to_owned()))
             else {
                 continue;
             };
