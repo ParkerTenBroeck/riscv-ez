@@ -1,12 +1,37 @@
-use crate::assembler::Assembler;
+use crate::assembler::{instructions, Assembler};
+use crate::assembler::instructions::{ITypeOpCode, RTypeOpCode, UTypeOpCode};
 use crate::assembler::translation::{CalculationKind, FormKind};
 use crate::context::{Node, NodeId};
-use crate::expression::{args, ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, Value, ValueType};
-use crate::expression::args::{Immediate, RegReg, StrOpt, U32Opt, U32Power2Opt};
+use crate::expression::{ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, Value, ValueType};
+use crate::expression::args::{FloatReg, Immediate, RegReg, StrOpt, U32Opt, U32Power2Opt};
 use crate::lex::Token;
 use crate::util::IntoStrDelimable;
 
 impl<'a> Assembler<'a> {
+    fn instruction(&mut self, ins: u32){
+        *self.context.add_data_const::<4>(4) = ins.to_le_bytes();
+    }
+    
+    fn reg_reg_only(&mut self, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = self.coerced(n);
+        self.instruction(ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+    }
+
+    fn float_reg_only_3(&mut self, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = self.coerced(n);
+        self.instruction(ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+    }
+
+    fn float_reg_only_4(&mut self, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = self.coerced(n);
+        self.instruction(ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2() | rs3.rs3());
+    }
+    
+    fn no_args(&mut self, n: NodeId<'a>, ins: u32) {
+        let _: () = self.coerced(n);
+        self.instruction(ins);
+    }
+    
     pub(super) fn assemble_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
             "lui" => {}
@@ -30,15 +55,46 @@ impl<'a> Assembler<'a> {
             "sb" => {}
             "sh" => {}
             "sw" => {}
+            
+            "add"  => self.reg_reg_only(n, RTypeOpCode::Add),
+            "sub"  => self.reg_reg_only(n, RTypeOpCode::Sub),
+            "xor"  => self.reg_reg_only(n, RTypeOpCode::Xor),
+            "or"  => self.reg_reg_only(n, RTypeOpCode::Or),
+            "and"  => self.reg_reg_only(n, RTypeOpCode::And),
+            "slt"  => self.reg_reg_only(n, RTypeOpCode::Slt),
+            "sltu"  => self.reg_reg_only(n, RTypeOpCode::Sltu),
 
-            "addi" => {}
+            "mul"  => self.reg_reg_only(n, RTypeOpCode::Mul),
+            "mulh"  => self.reg_reg_only(n, RTypeOpCode::Mulh),
+            "mulsu"  => self.reg_reg_only(n, RTypeOpCode::Mulsu),
+            "mulu"  => self.reg_reg_only(n, RTypeOpCode::Mulu),
+            "div"  => self.reg_reg_only(n, RTypeOpCode::Div),
+            "divu"  => self.reg_reg_only(n, RTypeOpCode::Divu),
+            "rem"  => self.reg_reg_only(n, RTypeOpCode::Rem),
+            "remu"  => self.reg_reg_only(n, RTypeOpCode::Remu),
+
             "li" => match self.coerced(n){
-                (RegReg(r), Immediate::SignedConstant(c)) => {}
-                (RegReg(r), Immediate::UnsignedConstant(c)) => {}
-                (RegReg(r), Immediate::Label(c)) => {}
+                // (RegReg(r), Immediate::SignedConstant(c)) if c <= i16::MAX as i32 && c >= i16::MIN as i32 => {
+                //     self.instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c as u32))
+                // }
+                (RegReg(r), Immediate::SignedConstant(c)) => {
+                    self.instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c as u32));
+                    self.instruction(UTypeOpCode::Lui as u32 | r.rd() | instructions::imm_31_12_u(c as u32));
+                }
+                // (RegReg(r), Immediate::UnsignedConstant(c)) if c <= i16::MAX as u32 => {
+                //     self.instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c))
+                // }
+                (RegReg(r), Immediate::UnsignedConstant(c)) => {
+                    self.instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(c));
+                    self.instruction(UTypeOpCode::Lui as u32 | r.rd() | instructions::imm_31_12_u(c));
+                }
+                (RegReg(r), Immediate::Label(_)) => {
+                    self.instruction(ITypeOpCode::Addi as u32 | r.rd());
+                    self.instruction(UTypeOpCode::Lui as u32 | r.rd());
+                }
             }
-            "ecall" => {}
-            "ebreak" => {}
+            "ecall" => self.no_args(n, ITypeOpCode::ECall as u32),
+            "ebreak" => self.no_args(n, ITypeOpCode::EBreak as u32),
 
             ".info" => {
                 let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
@@ -59,17 +115,17 @@ impl<'a> Assembler<'a> {
                     .report_error(args_node, args.iter().map(|i| i.0).delim(" "))
             }
 
-            ".global" => if let Node(StrOpt(Some(label)), node) = self.coerced(n){
+            ".global" => if let Node(StrOpt(Some(_label)), node) = self.coerced(n){
                 self.context
                     .context
                     .report_warning(node, "not implemented yet");
             }
-            ".local" => if let Node(StrOpt(Some(label)), node) = self.coerced(n){
+            ".local" => if let Node(StrOpt(Some(_label)), node) = self.coerced(n){
                 self.context
                     .context
                     .report_warning(node, "not implemented yet");
             }
-            ".weak" => if let Node(StrOpt(Some(label)), node) = self.coerced(n){
+            ".weak" => if let Node(StrOpt(Some(_label)), node) = self.coerced(n){
                 self.context
                     .context
                     .report_warning(node, "not implemented yet");

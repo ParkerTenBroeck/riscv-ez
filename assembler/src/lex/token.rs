@@ -165,7 +165,7 @@ impl Span {
         }
     }
 
-    pub fn start_end(start: super::Position, end: super::Position) -> Self {
+    pub(super) fn start_end(start: super::Position, end: super::Position) -> Self {
         Span {
             line: start.line as u32,
             col: start.col as u32,

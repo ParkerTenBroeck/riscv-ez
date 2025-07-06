@@ -1,4 +1,3 @@
-use crate::lex::Number;
 use std::fmt::{Display, Formatter};
 
 pub const fn opcode(opcode: u32) -> u32 {
@@ -41,8 +40,12 @@ pub const fn rd(reg: u32) -> u32 {
     (reg & 0b11111) << 7
 }
 
-pub const fn imm_11_0(imm: u32) -> u32 {
+pub const fn imm_11_0_s(imm: u32) -> u32 {
     func7(imm >> 5) | rs2(imm)
+}
+
+pub const fn imm_31_12_u(imm: u32) -> u32 {
+    (imm & 0xFFFFF) << 12
 }
 
 #[repr(u32)]
@@ -74,6 +77,15 @@ pub enum RTypeOpCode {
     AmoMinW = opcode(0b0101111) | func3(0b011) | func5(0b10100),
     AmoMaxW = opcode(0b0101111) | func3(0b011) | func5(0b11000),
     AmoMaxuW = opcode(0b0101111) | func3(0b011) | func5(0b11100),
+    
+    Mul = opcode(0x0110011) | func3(0x0) | func5(0x01),
+    Mulh = opcode(0x0110011) | func3(0x1) | func5(0x01),
+    Mulsu = opcode(0x0110011) | func3(0x2) | func5(0x01),
+    Mulu = opcode(0x0110011) | func3(0x3) | func5(0x01),
+    Div = opcode(0x0110011) | func3(0x4) | func5(0x01),
+    Divu = opcode(0x0110011) | func3(0x5) | func5(0x01),
+    Rem = opcode(0x0110011) | func3(0x6) | func5(0x01),
+    Remu = opcode(0x0110011) | func3(0x7) | func5(0x01),
 }
 
 #[repr(u32)]
@@ -100,8 +112,8 @@ pub enum ITypeOpCode {
     Fence,
     FenceTso,
     Pause,
-    ECall = opcode(0b1110011) | imm_11_0(0x0),
-    EBreak = opcode(0b1110011) | imm_11_0(0x1),
+    ECall = opcode(0b1110011) | imm_11_0_s(0x0),
+    EBreak = opcode(0b1110011) | imm_11_0_s(0x1),
 
     FenceI,
     Csrrw,
@@ -146,6 +158,21 @@ pub enum JTypeOpCode {
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Default)]
 pub struct Register(pub u8);
+
+impl Register {
+    pub fn rd(&self) -> u32 {
+        rd(self.0 as u32)
+    }
+    pub fn rs1(&self) -> u32 {
+        rs1(self.0 as u32)
+    }
+    pub fn rs2(&self) -> u32 {
+        rs2(self.0 as u32)
+    }
+    pub fn rs3(&self) -> u32 {
+        rs3(self.0 as u32)
+    }
+}
 
 impl Register {
     pub fn is_regular(self) -> bool {

@@ -1,9 +1,7 @@
 use crate::assembler::instructions::Register;
 use crate::context::{Context, Node, NodeId};
-use crate::expression::{
-    ArgumentsTypeHint, Constant, ConvertResult, ExpressionEvaluatorContext, LabelUse, Value,
-    ValueType,
-};
+use crate::expression::{ArgumentsTypeHint, Constant, ConvertResult, Expression, ExpressionEvaluatorContext, LabelUse, Value, ValueType};
+use crate::lex::Token;
 use crate::util::IntoStrDelimable;
 
 #[derive(Default)]
@@ -12,7 +10,7 @@ impl<'a> CoercedArg<'a> for U32Opt {
     const TYPE_REPR: &'static str = "u32";
     const HINT: ValueType = ValueType::U32;
 
-    fn from(
+    fn from_arg(
         context: &Context<'a>,
         node: NodeId<'a>,
         value: Value<'a>,
@@ -42,7 +40,7 @@ impl<'a> CoercedArg<'a> for U32Opt {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -53,7 +51,7 @@ impl<'a> CoercedArg<'a> for U32Power2Opt {
     const TYPE_REPR: &'static str = "u32";
     const HINT: ValueType = ValueType::U32;
 
-    fn from(
+    fn from_arg(
         context: &Context<'a>,
         node: NodeId<'a>,
         value: Value<'a>,
@@ -91,7 +89,7 @@ impl<'a> CoercedArg<'a> for U32Power2Opt {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -102,9 +100,9 @@ impl<'a> CoercedArg<'a> for StrOpt<'a> {
     const TYPE_REPR: &'static str = "str";
     const HINT: ValueType = ValueType::String;
 
-    fn from(
-        context: &Context<'a>,
-        node: NodeId<'a>,
+    fn from_arg(
+        _: &Context<'a>,
+        _: NodeId<'a>,
         value: Value<'a>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -113,7 +111,7 @@ impl<'a> CoercedArg<'a> for StrOpt<'a> {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -124,9 +122,9 @@ impl<'a> CoercedArg<'a> for RegReg {
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType = ValueType::Register;
 
-    fn from(
-        context: &Context<'a>,
-        node: NodeId<'a>,
+    fn from_arg(
+        _: &Context<'a>,
+        _: NodeId<'a>,
         value: Value<'a>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -138,20 +136,20 @@ impl<'a> CoercedArg<'a> for RegReg {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
 
 #[derive(Default)]
-pub struct FloatReg(Register);
+pub struct FloatReg(pub Register);
 impl<'a> CoercedArg<'a> for FloatReg {
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType = ValueType::Register;
 
-    fn from(
-        context: &Context<'a>,
-        node: NodeId<'a>,
+    fn from_arg(
+        _: &Context<'a>,
+        _: NodeId<'a>,
         value: Value<'a>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -163,7 +161,7 @@ impl<'a> CoercedArg<'a> for FloatReg {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -182,7 +180,7 @@ impl<'a> CoercedArg<'a> for Immediate<'a> {
     const TYPE_REPR: &'static str = "i32|label";
     const HINT: ValueType = ValueType::I32;
 
-    fn from(
+    fn from_arg(
         context: &Context<'a>,
         node: NodeId<'a>,
         value: Value<'a>,
@@ -231,7 +229,7 @@ impl<'a> CoercedArg<'a> for Immediate<'a> {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -249,7 +247,7 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
     const TYPE_REPR: &'static str = "indexed";
     const HINT: ValueType = ValueType::Indexed;
 
-    fn from(
+    fn from_arg(
         context: &Context<'a>,
         node: NodeId<'a>,
         value: Value<'a>,
@@ -282,7 +280,7 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
         }
     }
 
-    fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(_: &Context<'a>, _: NodeId<'a>) -> Self {
         Default::default()
     }
 }
@@ -291,8 +289,8 @@ impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Node<'a, T> {
     const TYPE_REPR: &'static str = T::TYPE_REPR;
     const HINT: ValueType = T::HINT;
 
-    fn from(context: &Context<'a>, node: NodeId<'a>, value: Value<'a>) -> Result<Self, Option<String>> {
-        T::from(context, node, value).map(|v| Node(v, node))
+    fn from_arg(context: &Context<'a>, node: NodeId<'a>, value: Value<'a>) -> Result<Self, Option<String>> {
+        T::from_arg(context, node, value).map(|v| Node(v, node))
     }
 
     fn default(context: &Context<'a>, node: NodeId<'a>) -> Self {
@@ -303,7 +301,7 @@ impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Node<'a, T> {
 pub trait CoercedArg<'a>: Sized {
     const TYPE_REPR: &'static str;
     const HINT: ValueType;
-    fn from(
+    fn from_arg(
         context: &Context<'a>,
         node: NodeId<'a>,
         value: Value<'a>,
@@ -316,7 +314,18 @@ pub trait CoercedArg<'a>: Sized {
 }
 
 pub trait CoercedArgs<'a> {
-    fn from(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self ;
+    const ARGS_HINT: ArgumentsTypeHint<'a>;
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, args: Node<'a, Vec<Expression<'a>>>) -> Self;
+    
+    fn args(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self where Self: Sized {
+        let args = ctx.args(fb, Self::ARGS_HINT);
+        Self::from_args(ctx, args)
+    }
+
+    fn args_delim(ctx: &mut impl ExpressionEvaluatorContext<'a>, start: Token<'a>, end: Token<'a>) -> Self where Self: Sized {
+        let args: Node<'_, Vec<Node<'_, Value<'_>>>> = ctx.args_delim(start, end, Self::ARGS_HINT);
+        Self::from_args(ctx, args)
+    }
 }
 
 fn wrong_number_args<'a>(
@@ -339,7 +348,7 @@ fn coerce_argument<'a, T: CoercedArg<'a>>(
     context: &Context<'a>,
     Node(arg, node): Node<'a, Value<'a>>,
 ) -> T {
-    T::from(context, node, arg)
+    T::from_arg(context, node, arg)
         .inspect_err(|err| match err {
             None => context.report_error(
                 node,
@@ -354,12 +363,23 @@ fn coerce_argument<'a, T: CoercedArg<'a>>(
         .unwrap_or_else(|_| T::default(context, node))
 }
 
+impl<'a> CoercedArgs<'a> for (){
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::None;
+
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
+        if args.len() != 0 {
+            wrong_number_args(ctx.context(), node, args, &[]);
+        }
+    }
+}
+
 impl<'a, A: CoercedArg<'a>> CoercedArgs<'a> for A {
-    fn from(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self {
-        let Node(args, node) = ctx.args(fb, ArgumentsTypeHint::Individual(&[A::HINT]));
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::Individual(&[A::HINT]);
+    
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
         if args.len() != 1 {
             wrong_number_args(ctx.context(), node, args, &[A::TYPE_REPR]);
-            A::default(ctx.context(), fb)
+            A::default(ctx.context(), node)
         } else {
             coerce_argument(ctx.context(), args[0])
         }
@@ -367,11 +387,12 @@ impl<'a, A: CoercedArg<'a>> CoercedArgs<'a> for A {
 }
 
 impl<'a, A: CoercedArg<'a>> CoercedArgs<'a> for (A,) {
-    fn from(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self {
-        let Node(args, node) = ctx.args(fb, ArgumentsTypeHint::Individual(&[A::HINT]));
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::Individual(&[A::HINT]);
+    
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
         if args.len() != 1 {
             wrong_number_args(ctx.context(), node, args, &[A::TYPE_REPR]);
-            (A::default(ctx.context(), fb),)
+            (A::default(ctx.context(), node),)
         } else {
             (coerce_argument(ctx.context(), args[0]),)
         }
@@ -379,11 +400,12 @@ impl<'a, A: CoercedArg<'a>> CoercedArgs<'a> for (A,) {
 }
 
 impl<'a, A: CoercedArg<'a>, B: CoercedArg<'a>> CoercedArgs<'a> for (A, B) {
-    fn from(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self {
-        let Node(args, node) = ctx.args(fb, ArgumentsTypeHint::Individual(&[A::HINT, B::HINT]));
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::Individual(&[A::HINT, B::HINT]);
+    
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
         if args.len() != 2 {
             wrong_number_args(ctx.context(), node, args, &[A::TYPE_REPR, B::TYPE_REPR]);
-            (A::default(ctx.context(), fb), B::default(ctx.context(), fb))
+            (A::default(ctx.context(), node), B::default(ctx.context(), node))
         } else {
             (
                 coerce_argument(ctx.context(), args[0]),
@@ -394,24 +416,45 @@ impl<'a, A: CoercedArg<'a>, B: CoercedArg<'a>> CoercedArgs<'a> for (A, B) {
 }
 
 impl<'a, A: CoercedArg<'a>, B: CoercedArg<'a>, C: CoercedArg<'a>> CoercedArgs<'a> for (A, B, C) {
-    fn from(ctx: &mut impl ExpressionEvaluatorContext<'a>, fb: NodeId<'a>) -> Self {
-        let Node(args, node) = ctx.args(
-            fb,
-            ArgumentsTypeHint::Individual(&[A::HINT, B::HINT, C::HINT]),
-        );
-        if args.len() != 2 {
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::Individual(&[A::HINT, B::HINT, C::HINT]);
+    
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
+        if args.len() != 3 {
             wrong_number_args(
                 ctx.context(),
                 node,
                 args,
                 &[A::TYPE_REPR, B::TYPE_REPR, C::TYPE_REPR],
             );
-            (A::default(ctx.context(), fb), B::default(ctx.context(), fb), C::default(ctx.context(), fb))
+            (A::default(ctx.context(), node), B::default(ctx.context(), node), C::default(ctx.context(), node))
         } else {
             (
                 coerce_argument(ctx.context(), args[0]),
                 coerce_argument(ctx.context(), args[1]),
                 coerce_argument(ctx.context(), args[2]),
+            )
+        }
+    }
+}
+
+impl<'a, A: CoercedArg<'a>, B: CoercedArg<'a>, C: CoercedArg<'a>, D: CoercedArg<'a>> CoercedArgs<'a> for (A, B, C, D) {
+    const ARGS_HINT: ArgumentsTypeHint<'a> = ArgumentsTypeHint::Individual(&[A::HINT, B::HINT, C::HINT, D::HINT]);
+
+    fn from_args(ctx: &mut impl ExpressionEvaluatorContext<'a>, Node(args, node): Node<'a, Vec<Expression<'a>>>) -> Self {
+        if args.len() != 4 {
+            wrong_number_args(
+                ctx.context(),
+                node,
+                args,
+                &[A::TYPE_REPR, B::TYPE_REPR, C::TYPE_REPR, D::TYPE_REPR],
+            );
+            (A::default(ctx.context(), node), B::default(ctx.context(), node), C::default(ctx.context(), node), D::default(ctx.context(), node))
+        } else {
+            (
+                coerce_argument(ctx.context(), args[0]),
+                coerce_argument(ctx.context(), args[1]),
+                coerce_argument(ctx.context(), args[2]),
+                coerce_argument(ctx.context(), args[3]),
             )
         }
     }

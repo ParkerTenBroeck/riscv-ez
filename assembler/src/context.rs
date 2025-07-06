@@ -3,7 +3,7 @@ use crate::lex::Token;
 use crate::{error::ErrorKind, lex::Span};
 use bumpalo::Bump;
 use std::cell::Cell;
-use std::fmt::{Display, format};
+use std::fmt::Display;
 use std::rc::Rc;
 use std::{cell::RefCell, collections::HashMap, error::Error};
 

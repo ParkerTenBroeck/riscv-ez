@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-mod context;
-mod log;
-mod tabs;
+pub mod context;
+pub mod log;
+pub mod tabs;
 
 use crate::context::{Context, ProjectFilePath};
 use crate::tabs::Tab;
@@ -42,11 +42,13 @@ impl eframe::App for MyApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    ui.button("Quit");
+                    if ui.button("Quit").clicked(){
+                        todo!()
+                    }
                 });
-                ui.menu_button("View", |ui| {});
-                ui.menu_button("Help", |ui| {});
-                ui.menu_button("Settings", |ui| {});
+                ui.menu_button("View", |_ui| {});
+                ui.menu_button("Help", |_ui| {});
+                ui.menu_button("Settings", |_ui| {});
             })
         });
         egui::SidePanel::left("documents").show(ctx, |ui| {

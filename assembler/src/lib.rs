@@ -9,10 +9,10 @@ use std::time::Instant;
 pub mod assembler;
 pub mod context;
 pub mod error;
-mod expression;
+pub mod expression;
 pub mod lex;
 pub mod preprocess;
-mod util;
+pub mod util;
 
 pub struct AssemblerResult {
     pub time: f64,

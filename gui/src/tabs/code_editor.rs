@@ -78,7 +78,7 @@ const LEX_ERROR: TextFormat = simple_format(Color32::from_gray(120), true);
 const COMMENT: TextFormat = simple_format(Color32::from_gray(120), false);
 const REGISTER: TextFormat = simple_format(Color32::from_rgb(0xa0, 0x30, 0x50), false);
 
-fn highlight(ui: &Ui, str: &str) -> LayoutJob {
+fn highlight(_: &Ui, str: &str) -> LayoutJob {
     let mut layout_job = LayoutJob {
         text: str.into(),
         ..Default::default()

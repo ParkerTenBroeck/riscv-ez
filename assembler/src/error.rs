@@ -35,7 +35,7 @@ impl<'a> FormattedError<'a> {
 
     pub fn add(
         mut self,
-        context: &Context<'a>,
+        _: &Context<'a>,
         node_id: NodeId<'a>,
         kind: ErrorKind,
         msg: impl Into<String>,
