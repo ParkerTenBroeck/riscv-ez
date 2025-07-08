@@ -58,7 +58,7 @@ pub enum UnOp {
     Not,
 }
 
-use crate::assembler::riscv::Register;
+use crate::assembler::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token, TypeHint};
@@ -66,16 +66,15 @@ use crate::util::IntoStrDelimable;
 use std::fmt::Write;
 use std::marker::PhantomData;
 
-type Expression<'a> = Node<'a, Value<'a>>;
+pub type NodeVal<'a, T> = Node<'a, Value<'a, T>>;
 
-pub trait ExpressionEvaluatorContext<'a> {
+pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
     fn next(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>>;
-    fn context(&self) -> &Context<'a>;
-    fn handle_ident(&mut self, ident: &'a str, node: NodeId<'a>, hint: ValueType)
-    -> Expression<'a>;
+    fn context(&mut self) -> &mut Context<'a>;
+    fn parse_ident(&mut self, ident: &'a str, node: NodeId<'a>, hint: ValueType<'a, L>) -> NodeVal<'a, L>;
 
-    fn args(&mut self, fb: NodeId<'a>, hint: ArgumentsTypeHint) -> Node<'a, Vec<Expression<'a>>> {
+    fn args(&mut self, fb: NodeId<'a>, hint: ArgumentsTypeHint<'a, L>) -> Node<'a, Vec<NodeVal<'a, L>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments(hint, fb)
     }
 
@@ -83,19 +82,19 @@ pub trait ExpressionEvaluatorContext<'a> {
         &mut self,
         start: Token<'a>,
         end: Token<'a>,
-        hint: ArgumentsTypeHint,
-    ) -> Node<'a, Vec<Expression<'a>>> {
+        hint: ArgumentsTypeHint<'a, L>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments_delim(hint, start, end)
     }
 
-    fn coerced<T: CoercedArgs<'a>>(&mut self, fb: NodeId<'a>) -> T
+    fn coerced<T: CoercedArgs<'a, L>>(&mut self, fb: NodeId<'a>) -> T
     where
         Self: Sized,
     {
         T::args(self, fb)
     }
 
-    fn coerced_delim<T: CoercedArgs<'a>>(&mut self, start: Token<'a>, end: Token<'a>) -> T
+    fn coerced_delim<T: CoercedArgs<'a, L>>(&mut self, start: Token<'a>, end: Token<'a>) -> T
     where
         Self: Sized,
     {
@@ -103,13 +102,17 @@ pub trait ExpressionEvaluatorContext<'a> {
     }
 }
 
-pub struct ExpressionEvaluator<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized>(
-    &'b mut T,
-    PhantomData<&'a ()>,
-);
+pub struct ExpressionEvaluator<
+    'a,
+    'b,
+    L: AssemblyLanguage<'a>,
+    T: ExpressionEvaluatorContext<'a, L> + ?Sized,
+>(&'b mut T, PhantomData<(&'a (), L)>);
 
-impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a, 'b, T> {
-    pub fn context(&self) -> &Context<'a> {
+impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
+    ExpressionEvaluator<'a, 'b, L, T>
+{
+    pub fn context(&mut self) -> &mut Context<'a> {
         self.0.context()
     }
     pub fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
@@ -123,7 +126,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         &mut self,
         num: Number<'a>,
         n: NodeId<'a>,
-        hint: ValueType,
+        hint: ValueType<'a, L>,
     ) -> Constant<'a> {
         let (suffix, radix) = match num.get_hint() {
             TypeHint::Float if hint.is_integer() => (num.get_suffix().unwrap_or("f32"), 10),
@@ -222,7 +225,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         }
     }
 
-    fn parse_expr_1(&mut self, hint: ValueType) -> Expression<'a> {
+    fn parse_expr_1(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
         let expr = match self.next() {
             Some(Node(Token::Ident(ident), node)) => match self.peek() {
                 Some(Node(Token::LPar, _)) => {
@@ -233,7 +236,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
                     );
                     self.func(ident, node, args, args_node)
                 }
-                _ => self.0.handle_ident(ident, node, hint),
+                _ => self.0.parse_ident(ident, node, hint),
             },
             Some(Node(Token::TrueLiteral, node)) => {
                 Node(Value::Constant(Constant::Bool(true)), node)
@@ -321,7 +324,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         expr
     }
 
-    fn parse_expr_2(&mut self, hint: ValueType, min_prec: u32) -> Expression<'a> {
+    fn parse_expr_2(&mut self, hint: ValueType<'a, L>, min_prec: u32) -> NodeVal<'a, L> {
         let mut lhs = self.parse_expr_1(hint);
         loop {
             let op = match self.peek() {
@@ -375,7 +378,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         lhs
     }
 
-    fn parse_expr_3(&mut self, hint: ValueType) -> Expression<'a> {
+    fn parse_expr_3(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
         match self.peek() {
             Some(Node(Token::Minus, node)) => {
                 self.next();
@@ -391,7 +394,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         }
     }
 
-    fn parse_expr(&mut self, hint: ValueType) -> Expression<'a> {
+    fn parse_expr(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
         self.parse_expr_3(hint)
     }
 
@@ -415,10 +418,10 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
 
     pub fn parse_arguments_delim(
         &mut self,
-        hint: ArgumentsTypeHint<'_>,
+        hint: ArgumentsTypeHint<'a , L>,
         opening: Token<'a>,
         closing: Token<'a>,
-    ) -> Node<'a, Vec<Expression<'a>>> {
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();
 
         let start = match self.peek() {
@@ -446,17 +449,12 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
                     )
                 }
                 None => {
-                    return Node(
-                        args,
-                        self.context().merge_nodes(
-                            start,
-                            self.context().unexpected_token(
-                                None,
-                                [Token::Comma, closing].iter().delim("|"),
-                                true,
-                            ),
-                        ),
+                    let end = self.context().unexpected_token(
+                        None,
+                        [Token::Comma, closing].iter().delim("|"),
+                        true,
                     );
+                    return Node(args, self.context().merge_nodes(start, end));
                 }
             }
         }
@@ -464,9 +462,9 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
 
     pub fn parse_arguments(
         &mut self,
-        hint: ArgumentsTypeHint<'_>,
+        hint: ArgumentsTypeHint<'a , L>,
         fallback_node: NodeId<'a>,
-    ) -> Node<'a, Vec<Expression<'a>>> {
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();
         match self.peek() {
             Some(Node(Token::NewLine, _)) | None => return Node(args, fallback_node),
@@ -492,9 +490,9 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         &mut self,
         func: &'a str,
         func_node: NodeId<'a>,
-        args: Vec<Expression<'a>>,
+        args: Vec<NodeVal<'a, L>>,
         args_node: NodeId<'a>,
-    ) -> Expression<'a> {
+    ) -> NodeVal<'a, L> {
         let node = self.context().merge_nodes(func_node, args_node);
         let value = match func {
             "size" | "align" | "pcrel" | "absolute" => match &args[..] {
@@ -521,7 +519,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
                         format!(
                             "Unexpected arguments found [{}] expected [{}]",
                             unexpected.iter().map(|e| e.0.get_type()).delim(", "),
-                            ValueType::Label
+                            ValueType::<'a, L>::Label
                         ),
                     );
                     Value::Label(LabelUse {
@@ -585,66 +583,16 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
 
     fn index(
         &mut self,
-        lhs: Expression<'a>,
-        rhs: Expression<'a>,
+        lhs: NodeVal<'a, L>,
+        rhs: NodeVal<'a, L>,
         closing: NodeId<'a>,
-    ) -> Expression<'a> {
+    ) -> NodeVal<'a, L> {
         let node = self.context().merge_nodes(lhs.1, closing);
-        let value = match (rhs.0, lhs.0) {
-            (Value::Register(r), Value::Constant(Constant::I32(i))) => Value::RegisterOffset(r, i),
-            (Value::Constant(Constant::I32(i)), Value::Register(r)) => Value::RegisterOffset(r, i),
-            (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
-                Value::RegisterOffset(r, o.wrapping_add(i))
-            }
-            (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
-                Value::RegisterOffset(r, o.wrapping_add(i))
-            }
 
-            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: l.meta,
-            }),
-            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse {
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: l.meta,
-            }),
-            (Value::Label(l), Value::Register(r)) => Value::LabelRegisterOffset(r, l),
-            (Value::Register(r), Value::Label(l)) => Value::LabelRegisterOffset(r, l),
-
-            (Value::Label(l), Value::RegisterOffset(r, i)) => Value::LabelRegisterOffset(
-                r,
-                LabelUse {
-                    ident: l.ident,
-                    offset: l.offset.wrapping_add(i),
-                    meta: l.meta,
-                },
-            ),
-            (Value::RegisterOffset(r, i), Value::Label(l)) => Value::LabelRegisterOffset(
-                r,
-                LabelUse {
-                    ident: l.ident,
-                    offset: l.offset.wrapping_add(i),
-                    meta: l.meta,
-                },
-            ),
-            _ => {
-                self.context().report_error(
-                    node,
-                    format!(
-                        "Cannot index {} with {}",
-                        lhs.0.get_type(),
-                        rhs.0.get_type()
-                    ),
-                );
-                Value::RegisterOffset(Register(0), 0)
-            }
-        };
-        Node(value, node)
+        Node(L::Indexed::from_indexed(self.0, node, lhs, rhs), node)
     }
 
-    fn cast_error(&mut self, expr: Expression<'a>, expected: ValueType) -> Value<'a> {
+    fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {
         self.context().report_error(
             expr.1,
             format!("Cannot cast {} to {}", expr.0.get_type(), expected),
@@ -652,7 +600,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         expected.default_value()
     }
 
-    fn cast(&mut self, expr: Expression<'a>, ty: &'a str, node_id: NodeId<'a>) -> Expression<'a> {
+    fn cast(&mut self, expr: NodeVal<'a, L>, ty: &'a str, node_id: NodeId<'a>) -> NodeVal<'a, L> {
         macro_rules! integer {
             ($ident:ident, $ty:ty) => {
                 match expr.0 {
@@ -765,7 +713,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         Node(value, node)
     }
 
-    fn unop(&mut self, op: UnOp, node: NodeId<'a>, mut expr: Expression<'a>) -> Expression<'a> {
+    fn unop(&mut self, op: UnOp, node: NodeId<'a>, mut expr: NodeVal<'a, L>) -> NodeVal<'a, L> {
         let node = self.context().merge_nodes(node, expr.1);
         match op {
             UnOp::Neg => match &mut expr.0 {
@@ -811,7 +759,7 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
         Node(expr.0, node)
     }
 
-    fn binop(&mut self, op: BinOp, lhs: Expression<'a>, rhs: Expression<'a>) -> Expression<'a> {
+    fn binop(&mut self, op: BinOp, lhs: NodeVal<'a, L>, rhs: NodeVal<'a, L>) -> NodeVal<'a, L> {
         macro_rules! constants_grouped {
             ($l:ident, $r:ident, $($integer:block)?, $($float:block)?, $($string:block)?, $($char:block)?, $($bool:block)?, $error:block) => {
                 Value::Constant(match ($l, $r){
@@ -875,19 +823,18 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
                     self.context().alloc_str(format!("{l}{r}")),
                 )),
 
-                (Value::Register(r), Value::Constant(Constant::I32(i))) => {
-                    Value::RegisterOffset(r, i)
-                }
-                (Value::Constant(Constant::I32(i)), Value::Register(r)) => {
-                    Value::RegisterOffset(r, i)
-                }
-                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
-                    Value::RegisterOffset(r, o.wrapping_add(i))
-                }
-                (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
-                    Value::RegisterOffset(r, o.wrapping_add(i))
-                }
-
+                // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
+                //     Value::RegisterOffset(r, i)
+                // }
+                // (Value::Constant(Constant::I32(i)), Value::Register(r)) => {
+                //     Value::RegisterOffset(r, i)
+                // }
+                // (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
+                //     Value::RegisterOffset(r, o.wrapping_add(i))
+                // }
+                // (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
+                //     Value::RegisterOffset(r, o.wrapping_add(i))
+                // }
                 (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
                     ident: l.ident,
                     offset: l.offset.wrapping_add(i),
@@ -916,13 +863,12 @@ impl<'a, 'b, T: ExpressionEvaluatorContext<'a> + ?Sized> ExpressionEvaluator<'a,
                 }
             },
             BinOp::Sub => match (lhs.0, rhs.0) {
-                (Value::Register(r), Value::Constant(Constant::I32(i))) => {
-                    Value::RegisterOffset(r, -i)
-                }
-                (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
-                    Value::RegisterOffset(r, o.wrapping_sub(i))
-                }
-
+                // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
+                //     Value::RegisterOffset(r, -i)
+                // }
+                // (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
+                //     Value::RegisterOffset(r, o.wrapping_sub(i))
+                // }
                 (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
                     ident: l.ident,
                     offset: l.offset.wrapping_sub(i),

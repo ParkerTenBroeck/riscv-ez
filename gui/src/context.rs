@@ -65,7 +65,9 @@ impl Context {
         task: impl Send + 'static + FnOnce() -> T,
     ) -> Promise<T> {
         let (sender, receiver) = Promise::new();
-        std::thread::spawn(|| sender.send(task()));
+        _ = std::thread::Builder::new()
+            .name("asldkjas".into())
+            .spawn(|| sender.send(task()));
         receiver
     }
 

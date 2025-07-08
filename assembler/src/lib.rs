@@ -1,48 +1,80 @@
-use crate::assembler::Assembler;
+use crate::assembler::context::AssemblerState;
+use crate::assembler::{Assembler, AssemblyLanguage};
+
 use crate::context::Context;
+use crate::logs::LogEntry;
 use crate::preprocess::PreProcessor;
 use bumpalo::Bump;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::time::Instant;
 
 pub mod assembler;
 pub mod context;
-pub mod error;
+pub mod logs;
 pub mod expression;
 pub mod lex;
 pub mod preprocess;
 pub mod util;
 
-pub struct AssemblerResult {
+pub struct AssemblerResult<'a> {
     pub time: f64,
     pub allocated: usize,
-    pub output: (),
-    pub result: Result<(), ()>,
+    pub output: Vec<u8>,
+    pub log: Vec<LogEntry<'a>>,
 }
 
-pub fn assemble_and_link(
-    sources: HashMap<String, String>,
+impl<'a> std::fmt::Display for AssemblerResult<'a>{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut errors = 0;
+        let mut warnings = 0;
+        for log in &self.log {
+            errors += log.parts.iter().filter(|t|t.kind==LogKind::Error).count();
+            warnings += log.parts.iter().filter(|t|t.kind==LogKind::Warning).count();
+            writeln!(f, "{log}")?;
+        }
+
+        use logs::*;
+        
+        if warnings > 0{
+            writeln!(f, "{BOLD}{YELLOW}warning{RESET}{BOLD}: {warnings} warning(s) emitted{RESET}")?;
+        }
+        if errors > 0{
+            writeln!(f, "{BOLD}{RED}error{RESET}{BOLD}: could not assemble due to {errors} error(s). took {}s allocated {}b{RESET}", self.time, self.allocated)
+        }else{
+            writeln!(f, "{BOLD}{GREEN}Finished{RESET}{BOLD} in {}s allocated {}b{RESET}", self.time, self.allocated)
+        }
+    }
+}
+
+pub fn with_bump<R>(func: impl FnOnce(&Bump) -> R) -> R {
+    func(&Bump::new())
+}
+
+pub fn assemble_and_link<'a>(
+    sources: &'a HashMap<String, String>,
     files: Vec<impl Into<String>>,
-) -> AssemblerResult {
+    bump: &'a Bump,
+    lang: impl AssemblyLanguage<'a>,
+) -> AssemblerResult<'a> {
     let now = Instant::now();
-    let bump = Bump::new();
-    let context = Rc::new(Context::new(&bump, move |path, _ctx| {
+    let context = Context::new(&bump, move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
-            Ok(contents.to_owned())
+            Ok(contents.as_str())
         } else {
             Err(format!("No source found with path '{path}'").into())
         }
-    }));
-    let preprocessor = PreProcessor::new(context.clone());
-    let mut assember = Assembler::new(context.clone(), preprocessor);
+    });
+    let mut preprocessor = PreProcessor::new();
+    let mut state = AssemblerState::new(lang, context);
+
+    let mut assember = Assembler::new(&mut state, &mut preprocessor);
 
     for file in files {
         assember.assemble(file);
     }
 
     let elapsed = now.elapsed().as_secs_f64();
-    context.print_errors();
+    state.context.print_errors();
 
     println!(
         "Finished in {:.3}s allocated {}b",
@@ -53,7 +85,7 @@ pub fn assemble_and_link(
     AssemblerResult {
         allocated: bump.allocated_bytes(),
         time: elapsed,
-        output: (),
-        result: Ok(()),
+        output: Vec::new(),
+        log: state.context.take_logs(),
     }
 }

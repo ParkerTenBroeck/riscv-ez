@@ -12,5 +12,6 @@ eframe = { version = "*", default-features = false, features = [
 ] }
 egui_dock = "*"
 assembler = {path = "../assembler"}
+riscv_asm = {path = "../riscv_asm"}
 poll-promise = "*"
 egui_ltreeview = "*"

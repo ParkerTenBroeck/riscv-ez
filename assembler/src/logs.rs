@@ -1,45 +1,34 @@
 use crate::{context::Source, lex::Span};
 
-use super::context::{Context, NodeId};
+use super::context::NodeId;
 
-#[derive(Debug, Clone, Copy)]
-pub enum ErrorKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogKind {
     Error,
     Warning,
     Info,
     From,
 }
 
-pub struct ErrorPart<'a> {
+pub struct LogPart<'a> {
     pub node: Option<NodeId<'a>>,
     pub source: Option<Source<'a>>,
     pub span: Option<Span>,
-    pub kind: ErrorKind,
+    pub kind: LogKind,
     pub msg: Option<String>,
 }
 
 #[derive(Default)]
-pub struct FormattedError<'a> {
-    pub parts: Vec<ErrorPart<'a>>,
+pub struct LogEntry<'a> {
+    pub parts: Vec<LogPart<'a>>,
 }
 
-impl<'a> FormattedError<'a> {
-    pub fn new(
-        context: &Context<'a>,
-        node_id: NodeId<'a>,
-        kind: ErrorKind,
-        msg: impl Into<String>,
-    ) -> Self {
-        Self::default().add(context, node_id, kind, msg)
+impl<'a> LogEntry<'a> {
+    pub fn new(node_id: NodeId<'a>, kind: LogKind, msg: impl Into<String>) -> Self {
+        Self::default().add(node_id, kind, msg)
     }
 
-    pub fn add(
-        mut self,
-        _: &Context<'a>,
-        node_id: NodeId<'a>,
-        kind: ErrorKind,
-        msg: impl Into<String>,
-    ) -> Self {
+    pub fn add(mut self, node_id: NodeId<'a>, kind: LogKind, msg: impl Into<String>) -> Self {
         let mut node_id = Some(node_id);
         let mut msg = Some(msg.into());
         let mut kind = kind;
@@ -47,14 +36,14 @@ impl<'a> FormattedError<'a> {
             let node = *node;
 
             let src = *node.source;
-            self.parts.push(ErrorPart {
+            self.parts.push(LogPart {
                 node: node_id,
                 span: Some(node.span),
                 source: Some(src),
                 kind,
                 msg: msg.take(),
             });
-            kind = ErrorKind::From;
+            kind = LogKind::From;
 
             node_id = node.invoked_by;
         }
@@ -62,9 +51,9 @@ impl<'a> FormattedError<'a> {
         self
     }
 
-    pub fn add_sourceless(&self, kind: ErrorKind, msg: String) -> FormattedError<'a> {
+    pub fn add_sourceless(&self, kind: LogKind, msg: String) -> LogEntry<'a> {
         let mut s = Self::default();
-        s.parts.push(ErrorPart {
+        s.parts.push(LogPart {
             node: None,
             source: None,
             span: None,
@@ -75,21 +64,21 @@ impl<'a> FormattedError<'a> {
     }
 }
 
-const BOLD: &str = "\x1b[1m";
-const RED: &str = "\x1b[31m";
-const YELLOW: &str = "\x1b[33m";
-const BLUE: &str = "\x1b[34m";
-const GREEN: &str = "\x1b[32m";
-const RESET: &str = "\x1b[0;22m";
+pub const BOLD: &str = "\x1b[1m";
+pub const RED: &str = "\x1b[31m";
+pub const YELLOW: &str = "\x1b[33m";
+pub const BLUE: &str = "\x1b[34m";
+pub const GREEN: &str = "\x1b[32m";
+pub const RESET: &str = "\x1b[0;22m";
 
-impl<'a> std::fmt::Display for FormattedError<'a> {
+impl<'a> std::fmt::Display for LogEntry<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in self.parts.iter().rev() {
             match part.kind {
-                ErrorKind::Error => write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}")?,
-                ErrorKind::Warning => write!(f, "{BOLD}{YELLOW}warning{RESET}{RESET}{BOLD}")?,
-                ErrorKind::Info => write!(f, "{BOLD}{BLUE}info{RESET}{RESET}{BOLD}")?,
-                ErrorKind::From => write!(f, "{BOLD}{GREEN}from{RESET}{RESET}{GREEN}")?,
+                LogKind::Error => write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}")?,
+                LogKind::Warning => write!(f, "{BOLD}{YELLOW}warning{RESET}{RESET}{BOLD}")?,
+                LogKind::Info => write!(f, "{BOLD}{BLUE}info{RESET}{RESET}{BOLD}")?,
+                LogKind::From => write!(f, "{BOLD}{GREEN}from{RESET}{RESET}{GREEN}")?,
             }
 
             if let Some(msg) = &part.msg {

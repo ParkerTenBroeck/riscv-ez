@@ -1,9 +1,15 @@
-use crate::assembler::riscv::Register;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ValueType {
+use crate::assembler::AssemblyLanguage;
+use crate::context::NodeId;
+use crate::expression::{ExpressionEvaluatorContext, NodeVal};
+
+
+// pub type ValueType<'a, L: AssemblyLanguage<'a>> = ValueTypeI<L::CustomValueType>; 
+
+#[derive(Debug, Eq, Clone)]
+pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
     Any,
 
     String,
@@ -28,9 +34,47 @@ pub enum ValueType {
 
     Bool,
     Char,
+    Custom(L::CustomValueType),
 }
 
-impl Display for ValueType {
+impl<'a, L> core::cmp::PartialEq for ValueType<'a, L>
+where
+    L: AssemblyLanguage<'a>,
+    L::CustomValueType: core::cmp::PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ValueType::Any, ValueType::Any) => true,
+            (ValueType::String, ValueType::String) => true,
+            (ValueType::Indexed, ValueType::Indexed) => true,
+            (ValueType::Register, ValueType::Register) => true,
+            (ValueType::Label, ValueType::Label) => true,
+            (ValueType::I8, ValueType::I8) => true,
+            (ValueType::I16, ValueType::I16) => true,
+            (ValueType::I32, ValueType::I32) => true,
+            (ValueType::I64, ValueType::I64) => true,
+            (ValueType::U8, ValueType::U8) => true,
+            (ValueType::U16, ValueType::U16) => true,
+            (ValueType::U32, ValueType::U32) => true,
+            (ValueType::U64, ValueType::U64) => true,
+            (ValueType::F32, ValueType::F32) => true,
+            (ValueType::F64, ValueType::F64) => true,
+            (ValueType::Bool, ValueType::Bool) => true,
+            (ValueType::Char, ValueType::Char) => true,
+            (ValueType::Custom(f0_self), ValueType::Custom(f0_other)) => f0_self.eq(f0_other),
+            _unused => false,
+        }
+    }
+}
+
+
+impl<'a, L> Copy for ValueType<'a, L>
+where
+    L: AssemblyLanguage<'a>,
+    L::CustomValueType: Copy,
+{}
+
+impl<'a, L: AssemblyLanguage<'a>> Display for ValueType<'a, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ValueType::Any => write!(f, "any"),
@@ -50,24 +94,18 @@ impl Display for ValueType {
             ValueType::F64 => write!(f, "f64"),
             ValueType::Bool => write!(f, "bool"),
             ValueType::Char => write!(f, "char"),
+            ValueType::Custom(custom) => write!(f, "{custom}"),
         }
     }
 }
 
-impl ValueType {
-    pub fn default_value<'a>(&self) -> Value<'a> {
+impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
+    pub fn default_value(&self) -> Value<'a, L> {
         match self {
             ValueType::Any => Value::Constant(Constant::I32(0)),
             ValueType::String => Value::Constant(Constant::String("")),
-            ValueType::Indexed => Value::LabelRegisterOffset(
-                Register(0),
-                LabelUse {
-                    ident: "",
-                    offset: 0,
-                    meta: LabelMeta::Unset,
-                },
-            ),
-            ValueType::Register => Value::Register(Register(0)),
+            ValueType::Indexed => Value::Indexed(L::Indexed::default()),
+            ValueType::Register => Value::Register(L::RegType::default()),
             ValueType::Label => Value::Label(LabelUse {
                 ident: "",
                 offset: 0,
@@ -85,6 +123,7 @@ impl ValueType {
             ValueType::F64 => Value::Constant(Constant::F64(0.0)),
             ValueType::Bool => Value::Constant(Constant::Bool(false)),
             ValueType::Char => Value::Constant(Constant::Char('\0')),
+            ValueType::Custom(c) => Value::Custom(c.default_value())
         }
     }
 }
@@ -141,51 +180,74 @@ impl<'a> Display for LabelUse<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Value<'a> {
-    Constant(Constant<'a>),
-    Label(LabelUse<'a>),
-    LabelRegisterOffset(Register, LabelUse<'a>),
-    RegisterOffset(Register, i32),
-    Register(Register),
+pub trait CustomValue<'a, L: AssemblyLanguage<'a>>: Debug + Clone + Copy + PartialEq + Display + Default + Sized{
+    fn get_align(&self) -> Option<u32>;
+    fn get_size(&self) -> Option<u32>;
+    fn get_type(&self) -> L::CustomValueType;
+}
+pub trait CustomValueType<'a, L: AssemblyLanguage<'a>>: Debug + Clone + Copy + PartialEq + Eq + Display + Default + Sized + 'static{
+    fn default_value(&self) -> L::CustomValue;
 }
 
-impl<'a> Display for Value<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Value::Constant(c) => write!(f, "{c}"),
-            Value::Label(l) => write!(f, "{l}"),
-            Value::LabelRegisterOffset(reg, l) => {
-                if l.meta.is_unset() && l.offset != 0 {
-                    write!(f, "(")?;
-                }
-                write!(f, "{l}")?;
-                if l.meta.is_unset() && l.offset != 0 {
-                    write!(f, ")")?;
-                }
-                if reg.0 != 0 {
-                    write!(f, "[{reg}]")?;
-                }
-                Ok(())
-            }
-            Value::RegisterOffset(reg, offset) => {
-                if reg.0 == 0 {
-                    write!(f, "{offset}")?;
-                } else {
-                    write!(f, "{reg}")?;
-                    if offset != 0 {
-                        write!(f, "[{offset}]")?;
-                    }
-                }
-                Ok(())
-            }
-            Value::Register(reg) => write!(f, "{reg}"),
+
+pub trait AssemblyRegister: Debug + Clone + Copy + PartialEq + Display + Default + Sized {}
+pub trait Indexed<'a, L: AssemblyLanguage<'a>>:
+    Debug + Clone + Copy + PartialEq + Display + Default + Sized
+{
+    fn from_indexed(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        node: NodeId<'a>,
+        lhs: NodeVal<'a, L>,
+        rhs: NodeVal<'a, L>,
+    ) -> Value<'a, L>;
+}
+
+#[derive(Debug, Clone)]
+pub enum Value<'a, L: AssemblyLanguage<'a>> {
+    Constant(Constant<'a>),
+    Label(LabelUse<'a>),
+    Indexed(L::Indexed),
+    Register(L::RegType),
+    Custom(L::CustomValue)
+}
+
+impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for Value<'a, L>
+where
+    L: AssemblyLanguage<'a>,
+    L::RegType: core::cmp::PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Constant(f0_self), Value::Constant(f0_other)) => f0_self.eq(f0_other),
+            (Value::Label(f0_self), Value::Label(f0_other)) => f0_self.eq(f0_other),
+            (Value::Indexed(f0_self), Value::Indexed(f0_other)) => f0_self.eq(f0_other),
+            (Value::Register(f0_self), Value::Register(f0_other)) => f0_self.eq(f0_other),
+            _unused => false,
         }
     }
 }
 
-impl<'a> Value<'a> {
-    pub fn get_type(&self) -> ValueType {
+impl<'a, L: AssemblyLanguage<'a>> Copy for Value<'a, L>
+where
+    L::RegType: Copy,
+    L::Indexed: Copy,
+{
+}
+
+impl<'a, L: AssemblyLanguage<'a>> Display for Value<'a, L> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Value::Constant(c) => write!(f, "{c}"),
+            Value::Label(l) => write!(f, "{l}"),
+            Value::Indexed(index) => write!(f, "{index}"),
+            Value::Register(reg) => write!(f, "{reg}"),
+            Value::Custom(custom) => write!(f, "{custom}"),
+        }
+    }
+}
+
+impl<'a, L: AssemblyLanguage<'a>> Value<'a, L> {
+    pub fn get_type(&self) -> ValueType<'a, L> {
         match self {
             Value::Constant(c) => match c {
                 Constant::I8(_) => ValueType::I8,
@@ -203,9 +265,9 @@ impl<'a> Value<'a> {
                 Constant::Bool(_) => ValueType::Bool,
             },
             Value::Label(_) => ValueType::Label,
-            Value::LabelRegisterOffset(_, _) => ValueType::Indexed,
-            Value::RegisterOffset(_, _) => ValueType::Indexed,
+            Value::Indexed(_) => ValueType::Indexed,
             Value::Register(_) => ValueType::Register,
+            Value::Custom(c) => ValueType::Custom(c.get_type())
         }
     }
 
@@ -227,9 +289,9 @@ impl<'a> Value<'a> {
                 Constant::Bool(_) => Some(1),
             },
             Value::Label(_) => Some(4),
-            Value::LabelRegisterOffset(_, _) => None,
-            Value::RegisterOffset(_, _) => None,
+            Value::Indexed(_) => None,
             Value::Register(_) => None,
+            Value::Custom(c) => c.get_size()
         }
     }
 
@@ -251,9 +313,9 @@ impl<'a> Value<'a> {
                 Constant::Bool(_) => Some(1),
             },
             Value::Label(_) => Some(4),
-            Value::LabelRegisterOffset(_, _) => None,
-            Value::RegisterOffset(_, _) => None,
+            Value::Indexed(_) => None,
             Value::Register(_) => None,
+            Value::Custom(c) => c.get_align()
         }
     }
 }
@@ -336,29 +398,10 @@ impl<'a> Constant<'a> {
     conversion!(to_f64, f64, ,I8 I16 I32 I64 U8 U16 U32 U64 F32 F64);
 }
 
-impl ValueType {
-    pub fn numeric_suffix(&self) -> Option<&'static str> {
-        match self {
-            ValueType::Any => None,
-            ValueType::Register => None,
-            ValueType::Indexed => None,
-            ValueType::String => None,
-            ValueType::Label => None,
-            ValueType::I8 => Some("i8"),
-            ValueType::I16 => Some("i16"),
-            ValueType::I32 => Some("i32"),
-            ValueType::I64 => Some("i64"),
-            ValueType::U8 => Some("u8"),
-            ValueType::U16 => Some("u16"),
-            ValueType::U32 => Some("u32"),
-            ValueType::U64 => Some("u64"),
-            ValueType::F32 => Some("f32"),
-            ValueType::F64 => Some("f64"),
-            ValueType::Bool => None,
-            ValueType::Char => None,
-        }
+impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
+    pub fn is_numeric(&self) -> bool {
+        self.numeric_suffix().is_some()
     }
-
     pub fn is_integer(&self) -> bool {
         match self {
             ValueType::Any => false,
@@ -378,19 +421,42 @@ impl ValueType {
             ValueType::F64 => false,
             ValueType::Bool => false,
             ValueType::Char => false,
+            ValueType::Custom(_) => false,
+        }
+    }
+    pub fn numeric_suffix(&self) -> Option<&'static str> {
+        match self {
+            ValueType::Any => None,
+            ValueType::Register => None,
+            ValueType::Indexed => None,
+            ValueType::String => None,
+            ValueType::Label => None,
+            ValueType::I8 => Some("i8"),
+            ValueType::I16 => Some("i16"),
+            ValueType::I32 => Some("i32"),
+            ValueType::I64 => Some("i64"),
+            ValueType::U8 => Some("u8"),
+            ValueType::U16 => Some("u16"),
+            ValueType::U32 => Some("u32"),
+            ValueType::U64 => Some("u64"),
+            ValueType::F32 => Some("f32"),
+            ValueType::F64 => Some("f64"),
+            ValueType::Bool => None,
+            ValueType::Char => None,
+            ValueType::Custom(_) => None,
         }
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ArgumentsTypeHint<'a> {
-    Mono(ValueType),
-    Individual(&'a [ValueType]),
+pub enum ArgumentsTypeHint<'a, L: AssemblyLanguage<'a>> {
+    Mono(ValueType<'a, L>),
+    Individual(&'a [ValueType<'a, L>]),
     None,
 }
 
-impl<'a> Index<usize> for ArgumentsTypeHint<'a> {
-    type Output = ValueType;
+impl<'a, L: AssemblyLanguage<'a>> Index<usize> for ArgumentsTypeHint<'a, L> {
+    type Output = ValueType<'a, L>;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {

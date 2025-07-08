@@ -1,25 +1,27 @@
+use crate::assembler::AssemblyLanguage;
 use crate::assembler::translation::{CalculationKind, FormKind, Label, Relocation, Section};
-use crate::error::{ErrorKind, FormattedError};
+use crate::logs::{LogKind, LogEntry};
 use crate::{
     assembler::translation::TranslationUnit,
     context::{Context, NodeId},
 };
-use std::rc::Rc;
 
-pub struct AssemblerContext<'a> {
-    pub context: Rc<Context<'a>>,
+pub struct AssemblerState<'a, T: AssemblyLanguage<'a>> {
+    pub context: Context<'a>,
     pub current_section: &'a str,
     pub current_label: &'a str,
     pub tu: TranslationUnit<'a, NodeId<'a>>,
+    pub lang: T,
 }
 
-impl<'a> AssemblerContext<'a> {
-    pub fn new(context: Rc<Context<'a>>) -> Self {
-        AssemblerContext {
+impl<'a, T: AssemblyLanguage<'a>> AssemblerState<'a, T> {
+    pub fn new(lang: T, context: Context<'a>) -> Self {
+        AssemblerState {
             context,
             current_label: "",
             current_section: "text",
             tu: Default::default(),
+            lang,
         }
     }
 
@@ -43,19 +45,33 @@ impl<'a> AssemblerContext<'a> {
         let start = current_section.data.len();
         current_section.align = current_section.align.max(align);
         current_section.data.resize(
-            (align as usize - (current_section.data.len() & (align as usize - 1)))
-                & (align as usize - 1),
+            start
+                + ((align as usize - (current_section.data.len() & (align as usize - 1)))
+                    & (align as usize - 1)),
             0,
         );
 
         let data_start = current_section.data.len();
-        let size = start + size as usize;
-        current_section.data.resize(size, 0);
+        current_section.data.resize(data_start + size as usize, 0);
+        let size = data_start + size as usize;
         &mut current_section.data[data_start..size]
     }
 
     pub fn add_data_const<const N: usize>(&mut self, align: u32) -> &mut [u8; N] {
-        self.add_data(N as u32, align).try_into().unwrap()
+        let data = self.add_data(N as u32, align);
+        if data.len() != N {
+            // self.context.report_error_nodeless(format!("When trying to create const slice from slice of length {} into arr of size {N}", data.len()));
+            // self.context.print_errors();
+            panic!(
+                "When trying to create const slice from slice of length {} into arr of size {N}",
+                data.len()
+            )
+        } else {
+            match data.try_into() {
+                Ok(value) => return value,
+                Err(_) => unreachable!(),
+            }
+        }
     }
 
     pub fn ins_or_address_reloc(
@@ -92,11 +108,11 @@ impl<'a> AssemblerContext<'a> {
 
     pub fn add_label(&mut self, label: &'a str, source: NodeId<'a>) {
         if let Some(previous) = self.tu.labels.get(label) {
-            self.context.report(|ctx| {
-                FormattedError::default()
-                    .add(ctx, source, ErrorKind::Error, "Label bound more than once")
-                    .add(ctx, previous.source, ErrorKind::Info, "First bound here")
-            });
+            self.context.report(
+                LogEntry::default()
+                    .add(source, LogKind::Error, "Label bound more than once")
+                    .add(previous.source, LogKind::Info, "First bound here"),
+            );
             return;
         }
         self.current_label = label;

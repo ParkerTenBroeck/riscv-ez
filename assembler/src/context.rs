@@ -1,11 +1,9 @@
-use super::error::FormattedError;
+use super::logs::LogEntry;
 use crate::lex::Token;
-use crate::{error::ErrorKind, lex::Span};
+use crate::{logs::LogKind, lex::Span};
 use bumpalo::Bump;
-use std::cell::Cell;
 use std::fmt::Display;
-use std::rc::Rc;
-use std::{cell::RefCell, collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Node<'a, T>(pub T, pub NodeId<'a>);
@@ -23,7 +21,8 @@ impl<'a, T> Node<'a, T> {
 pub type NodeId<'a> = &'a NodeInfo<'a>;
 pub type SourceId<'a> = &'a Source<'a>;
 
-pub type SourceSupplier = Rc<dyn Fn(&str, &Context) -> Result<String, Box<dyn Error>>>;
+pub type SourceSupplier<'a> =
+    Box<dyn Fn(&str, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a>;
 
 #[derive(Clone, Copy)]
 pub struct Source<'a> {
@@ -79,11 +78,11 @@ impl<'a> PartialEq for NodeInfo<'a> {
 
 pub struct Context<'a> {
     bump: &'a Bump,
-    supplier: SourceSupplier,
-    source_map: RefCell<HashMap<&'a str, SourceId<'a>>>,
-    errors: RefCell<Vec<FormattedError<'a>>>,
-    top_src: Cell<SourceId<'a>>,
-    top_src_eof: Cell<NodeId<'a>>,
+    supplier: SourceSupplier<'a>,
+    source_map: HashMap<&'a str, SourceId<'a>>,
+    log: Vec<LogEntry<'a>>,
+    top_src: SourceId<'a>,
+    top_src_eof: NodeId<'a>,
 }
 
 #[derive(Debug, Default)]
@@ -94,48 +93,43 @@ pub struct Functioninfo {
 impl<'a> Context<'a> {
     pub fn new(
         bump: &'a Bump,
-        source_supplier: impl Fn(&str, &Context) -> Result<String, Box<dyn Error>> + 'static,
+        source_supplier: impl Fn(&str, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a,
     ) -> Self {
         Self {
             bump,
             source_map: Default::default(),
-            supplier: Rc::new(source_supplier),
-            errors: Default::default(),
-            top_src: Cell::new(&Source {
+            supplier: Box::new(source_supplier),
+            log: Default::default(),
+            top_src: &Source {
                 path: "<INVALID>",
                 contents: "<INVALID>",
-            }),
-            top_src_eof: Cell::new(
-                &const {
-                    NodeInfo {
-                        span: Span::empty(),
-                        source: &Source {
-                            path: "<INVALID>",
-                            contents: "<INVALID>",
-                        },
-                        included_by: None,
-                        invoked_by: None,
-                    }
-                },
-            ),
+            },
+            top_src_eof: &const {
+                NodeInfo {
+                    span: Span::empty(),
+                    source: &Source {
+                        path: "<INVALID>",
+                        contents: "<INVALID>",
+                    },
+                    included_by: None,
+                    invoked_by: None,
+                }
+            },
         }
     }
 
     pub fn get_source_from_path(
-        &self,
+        &mut self,
         path: impl Into<String>,
     ) -> Result<&'a Source<'a>, Box<dyn Error>> {
         let path = path.into();
-        if let Some(id) = self.source_map.borrow().get(&path.as_str()) {
+        if let Some(id) = self.source_map.get(&path.as_str()) {
             return Ok(*id);
         }
         let path = self.bump.alloc_str(&path);
-        let contents = self.supplier.clone()(path, self)?;
-        let contents = self.bump.alloc_str(contents.as_str());
+        let contents = (self.supplier)(path, self)?;
         let source = self.bump.alloc(Source { path, contents });
-        let mut map = self.source_map.borrow_mut();
-        map.insert(path, source);
-        drop(map);
+        self.source_map.insert(path, source);
         Ok(source)
     }
 
@@ -183,51 +177,44 @@ impl<'a> Context<'a> {
     }
 
     pub fn top_src_eof(&self) -> NodeId<'a> {
-        self.top_src_eof.get()
+        self.top_src_eof
     }
 
     pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
         self.bump.alloc(node)
     }
 
-    pub fn report(&self, error: impl FnOnce(&Context<'a>) -> FormattedError<'a>) {
-        let error = error(self);
-        self.errors.borrow_mut().push(error);
+    pub fn report(&mut self, error: LogEntry<'a>) {
+        self.log.push(error);
     }
 
-    pub fn report_error_nodeless(&self, msg: impl Into<String>) {
-        self.errors
-            .borrow_mut()
-            .push(FormattedError::default().add_sourceless(ErrorKind::Error, msg.into()));
+    pub fn report_error_nodeless(&mut self, msg: impl Into<String>) {
+        self.log
+            .push(LogEntry::default().add_sourceless(LogKind::Error, msg.into()));
     }
 
-    pub fn report_error(&self, node: NodeId<'a>, error: impl ToString) {
-        let error = FormattedError::new(self, node, ErrorKind::Error, error.to_string());
-        self.errors.borrow_mut().push(error);
+    pub fn report_error(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = LogEntry::new(node, LogKind::Error, error.to_string());
+        self.log.push(error);
     }
 
-    pub fn report_warning(&self, node: NodeId<'a>, error: impl ToString) {
-        let error = FormattedError::new(self, node, ErrorKind::Warning, error.to_string());
-        self.errors.borrow_mut().push(error);
+    pub fn report_warning(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = LogEntry::new(node, LogKind::Warning, error.to_string());
+        self.log.push(error);
     }
 
-    pub fn report_info(&self, node: NodeId<'a>, error: impl ToString) {
-        let error = FormattedError::new(self, node, ErrorKind::Info, error.to_string());
-        self.errors.borrow_mut().push(error);
+    pub fn report_info(&mut self, node: NodeId<'a>, error: impl ToString) {
+        let error = LogEntry::new(node, LogKind::Info, error.to_string());
+        self.log.push(error);
     }
 
-    pub fn report_error_eof(&self, error: impl ToString) {
-        let error = FormattedError::new(
-            self,
-            self.top_src_eof.get(),
-            ErrorKind::Error,
-            error.to_string(),
-        );
-        self.errors.borrow_mut().push(error);
+    pub fn report_error_eof(&mut self, error: impl ToString) {
+        let error = LogEntry::new(self.top_src_eof, LogKind::Error, error.to_string());
+        self.log.push(error);
     }
 
     pub fn unexpected_token(
-        &self,
+        &mut self,
         got: Option<Node<'a, Token<'a>>>,
         expected: impl Display,
         alternate: bool,
@@ -259,43 +246,37 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn report_warning_eof(&self, error: impl ToString) {
-        let error = FormattedError::new(
-            self,
-            self.top_src_eof.get(),
-            ErrorKind::Warning,
-            error.to_string(),
-        );
-        self.errors.borrow_mut().push(error);
+    pub fn report_warning_eof(&mut self, error: impl ToString) {
+        let error = LogEntry::new(self.top_src_eof, LogKind::Warning, error.to_string());
+        self.log.push(error);
     }
 
-    pub fn report_info_eof(&self, error: impl ToString) {
-        let error = FormattedError::new(
-            self,
-            self.top_src_eof.get(),
-            ErrorKind::Info,
-            error.to_string(),
-        );
-        self.errors.borrow_mut().push(error);
+    pub fn report_info_eof(&mut self, error: impl ToString) {
+        let error = LogEntry::new(self.top_src_eof, LogKind::Info, error.to_string());
+        self.log.push(error);
     }
 
-    pub fn set_top_level_src(&self, src: SourceId<'a>) {
-        self.top_src.set(src);
-        self.top_src_eof.set(self.node(NodeInfo {
+    pub fn set_top_level_src(&mut self, src: SourceId<'a>) {
+        self.top_src = src;
+        self.top_src_eof = self.node(NodeInfo {
             span: src.eof(),
             source: src,
             included_by: None,
             invoked_by: None,
-        }))
+        });
     }
 
     pub fn print_errors(&self) {
-        for error in &*self.errors.borrow() {
+        for error in &*self.log {
             println!("{error}")
         }
     }
 
+    pub fn take_logs(self) -> Vec<LogEntry<'a>> {
+        self.log
+    }
+
     pub fn has_errors(&self) -> bool {
-        !self.errors.borrow().is_empty()
+        !self.log.is_empty()
     }
 }

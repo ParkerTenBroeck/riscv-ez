@@ -167,11 +167,7 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = LexerResult<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let update_start_on_error = true;
-
         let mut ret = None;
-        let ok_ret_state = State::Default;
-        let err_ret_state = State::Default;
         loop {
             let c = self.chars.peek().copied();
             let mut consume = true;
@@ -190,131 +186,125 @@ impl<'a> Iterator for Lexer<'a> {
                 self.current
             };
 
-            macro_rules! eof_none {
-                ($expr:expr) => {
-                    if let Some(char) = $expr {
-                        char
-                    } else {
-                        self.state = State::Eof;
-                        return None;
-                    }
-                };
-            }
-
             macro_rules! unconsume_ret {
-                ($sel:ident, $expr:expr) => {{
+                ($expr:expr) => {{
                     consume = false;
                     ret = Some($expr);
                 }};
             }
 
             match self.state {
-                State::Default => match eof_none!(c) {
-                    '\n' => ret = Some(Ok(Token::NewLine)),
+                State::Default => match c {
+                    Some('\n') => ret = Some(Ok(Token::NewLine)),
 
-                    ';' => self.state = State::SingleLine(1),
-                    '#' => self.state = State::PreProcessorTag,
-                    '|' => self.state = State::Or,
-                    '^' => self.state = State::Xor,
-                    '/' => self.state = State::Divide,
-                    '%' => self.state = State::Mod,
-                    '-' => self.state = State::Minus,
-                    '+' => self.state = State::Plus,
-                    '*' => self.state = State::Times,
-                    '=' => self.state = State::Equal,
-                    '<' => self.state = State::Lt,
-                    '>' => self.state = State::Gt,
-                    '!' => self.state = State::Not,
-                    '&' => self.state = State::And,
-                    '"' => self.state = State::String,
-                    '\'' => self.state = State::CharLiteral,
+                    Some(';') => self.state = State::SingleLine(1),
+                    Some('#') => self.state = State::PreProcessorTag,
+                    Some('|') => self.state = State::Or,
+                    Some('^') => self.state = State::Xor,
+                    Some('/') => self.state = State::Divide,
+                    Some('%') => self.state = State::Mod,
+                    Some('-') => self.state = State::Minus,
+                    Some('+') => self.state = State::Plus,
+                    Some('*') => self.state = State::Times,
+                    Some('=') => self.state = State::Equal,
+                    Some('<') => self.state = State::Lt,
+                    Some('>') => self.state = State::Gt,
+                    Some('!') => self.state = State::Not,
+                    Some('&') => self.state = State::And,
+                    Some('"') => self.state = State::String,
+                    Some('\'') => self.state = State::CharLiteral,
 
-                    '(' => ret = Some(Ok(Token::LPar)),
-                    ')' => ret = Some(Ok(Token::RPar)),
-                    '{' => ret = Some(Ok(Token::LBrace)),
-                    '}' => ret = Some(Ok(Token::RBrace)),
-                    '[' => ret = Some(Ok(Token::LBracket)),
-                    ']' => ret = Some(Ok(Token::RBracket)),
-                    '~' => ret = Some(Ok(Token::BitwiseNot)),
-                    ',' => ret = Some(Ok(Token::Comma)),
+                    Some('(') => ret = Some(Ok(Token::LPar)),
+                    Some(')') => ret = Some(Ok(Token::RPar)),
+                    Some('{') => ret = Some(Ok(Token::LBrace)),
+                    Some('}') => ret = Some(Ok(Token::RBrace)),
+                    Some('[') => ret = Some(Ok(Token::LBracket)),
+                    Some(']') => ret = Some(Ok(Token::RBracket)),
+                    Some('~') => ret = Some(Ok(Token::BitwiseNot)),
+                    Some(',') => ret = Some(Ok(Token::Comma)),
 
-                    '0' => {
+                    Some('0') => {
                         self.numeric_start = self.current.offset;
                         self.state = State::NumericStartZero;
                     }
-                    '1'..='9' => {
+                    Some('1'..='9') => {
                         self.numeric_start = self.current.offset;
                         self.state = State::NumericStart;
                     }
 
-                    c if c.is_whitespace() => self.start = processing,
-                    c if ident_start(c) => self.state = State::Ident,
+                    Some(c) if c.is_whitespace() => self.start = processing,
+                    Some(c) if ident_start(c) => self.state = State::Ident,
 
-                    c => ret = Some(Err(LexError::InvalidChar(c))),
+                    Some(c) => ret = Some(Err(LexError::InvalidChar(c))),
+
+                    None => {
+                        self.state = State::Eof;
+                        return None;
+                    }
                 },
                 State::Plus => match c {
                     Some('=') => ret = Some(Ok(Token::PlusEq)),
-                    _ => unconsume_ret!(self, Ok(Token::Plus)),
+                    _ => unconsume_ret!(Ok(Token::Plus)),
                 },
                 State::Minus => match c {
                     Some('>') => ret = Some(Ok(Token::SmallRightArrow)),
                     Some('=') => ret = Some(Ok(Token::MinusEq)),
-                    _ => unconsume_ret!(self, Ok(Token::Minus)),
+                    _ => unconsume_ret!(Ok(Token::Minus)),
                 },
                 State::Times => match c {
                     Some('=') => ret = Some(Ok(Token::TimesEq)),
-                    _ => unconsume_ret!(self, Ok(Token::Star)),
+                    _ => unconsume_ret!(Ok(Token::Star)),
                 },
                 State::Divide => match c {
                     Some('=') => ret = Some(Ok(Token::DivideEq)),
                     Some('/') => self.state = State::SingleLine(2),
                     Some('*') => self.state = State::MultiLine(0),
-                    _ => unconsume_ret!(self, Ok(Token::Slash)),
+                    _ => unconsume_ret!(Ok(Token::Slash)),
                 },
                 State::Mod => match c {
                     Some('=') => ret = Some(Ok(Token::ModuloEq)),
-                    _ => unconsume_ret!(self, Ok(Token::Percent)),
+                    _ => unconsume_ret!(Ok(Token::Percent)),
                 },
                 State::Equal => match c {
                     Some('>') => ret = Some(Ok(Token::BigRightArrow)),
                     Some('=') => ret = Some(Ok(Token::Equals)),
-                    _ => unconsume_ret!(self, Ok(Token::Assignment)),
+                    _ => unconsume_ret!(Ok(Token::Assignment)),
                 },
                 State::Gt => match c {
                     Some('=') => ret = Some(Ok(Token::GreaterThanEq)),
                     Some('>') => self.state = State::GtGt,
-                    _ => unconsume_ret!(self, Ok(Token::GreaterThan)),
+                    _ => unconsume_ret!(Ok(Token::GreaterThan)),
                 },
                 State::GtGt => match c {
                     Some('=') => ret = Some(Ok(Token::ShiftRightEq)),
-                    _ => unconsume_ret!(self, Ok(Token::ShiftRight)),
+                    _ => unconsume_ret!(Ok(Token::ShiftRight)),
                 },
                 State::Lt => match c {
                     Some('=') => ret = Some(Ok(Token::LessThanEq)),
                     Some('<') => self.state = State::LtLt,
-                    _ => unconsume_ret!(self, Ok(Token::LessThan)),
+                    _ => unconsume_ret!(Ok(Token::LessThan)),
                 },
                 State::LtLt => match c {
                     Some('=') => ret = Some(Ok(Token::ShiftLeftEq)),
-                    _ => unconsume_ret!(self, Ok(Token::ShiftLeft)),
+                    _ => unconsume_ret!(Ok(Token::ShiftLeft)),
                 },
                 State::Not => match c {
                     Some('=') => ret = Some(Ok(Token::NotEquals)),
-                    _ => unconsume_ret!(self, Ok(Token::LogicalNot)),
+                    _ => unconsume_ret!(Ok(Token::LogicalNot)),
                 },
                 State::Or => match c {
                     Some('=') => ret = Some(Ok(Token::OrEq)),
                     Some('|') => ret = Some(Ok(Token::LogicalOr)),
-                    _ => unconsume_ret!(self, Ok(Token::BitwiseOr)),
+                    _ => unconsume_ret!(Ok(Token::BitwiseOr)),
                 },
                 State::And => match c {
                     Some('=') => ret = Some(Ok(Token::AndEq)),
                     Some('&') => ret = Some(Ok(Token::LogicalAnd)),
-                    _ => unconsume_ret!(self, Ok(Token::Ampersand)),
+                    _ => unconsume_ret!(Ok(Token::Ampersand)),
                 },
                 State::Xor => match c {
                     Some('=') => ret = Some(Ok(Token::XorEq)),
-                    _ => unconsume_ret!(self, Ok(Token::BitwiseXor)),
+                    _ => unconsume_ret!(Ok(Token::BitwiseXor)),
                 },
                 State::Ident => match c {
                     Some(c) if ident_continue(c) => {}
@@ -323,19 +313,15 @@ impl<'a> Iterator for Lexer<'a> {
                             &self.str[self.start.offset..self.current.offset],
                         )))
                     }
-                    _ => unconsume_ret!(
-                        self,
-                        Ok(ident(&self.str[self.start.offset..self.current.offset]))
-                    ),
+                    _ => {
+                        unconsume_ret!(Ok(ident(&self.str[self.start.offset..self.current.offset])))
+                    }
                 },
                 State::PreProcessorTag => match c {
                     Some(c) if ident_continue(c) => {}
-                    _ => unconsume_ret!(
-                        self,
-                        Ok(Token::PreProcessorTag(
-                            &self.str[self.start.offset + "#".len()..self.current.offset]
-                        ))
-                    ),
+                    _ => unconsume_ret!(Ok(Token::PreProcessorTag(
+                        &self.str[self.start.offset + "#".len()..self.current.offset]
+                    ))),
                 },
                 State::CharLiteral => match c {
                     Some('\'') => {
@@ -373,13 +359,11 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 State::SingleLine(start) => match c {
                     Some('\n') => {
-                        unconsume_ret!(
-                            self,
-                            Ok(Token::SingleLineComment(
-                                self.str[self.start.offset + start as usize..self.current.offset]
-                                    .into(),
-                            ))
-                        );
+                        consume = false;
+                        ret = Some(Ok(Token::SingleLineComment(
+                            self.str[self.start.offset + start as usize..self.current.offset]
+                                .into(),
+                        )));
                     }
                     Some(_) => {}
                     None => {
@@ -605,7 +589,7 @@ impl<'a> Iterator for Lexer<'a> {
                     Ok(token) => {
                         let meta = Span::start_end(self.start, self.current);
                         self.start = self.current;
-                        self.state = ok_ret_state;
+                        self.state = State::Default;
                         if matches!(
                             token,
                             Token::MultiLineComment(_) | Token::SingleLineComment(_)
@@ -618,10 +602,9 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     Err(err) => {
                         let meta = Span::start_end(self.start, self.current);
-                        if update_start_on_error {
-                            self.start = self.current;
-                        }
-                        self.state = err_ret_state;
+
+                        self.start = self.current;
+                        self.state = State::Default;
                         return Some(Err(Box::new(Spanned::new(err, meta))));
                     }
                 }

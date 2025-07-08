@@ -6,11 +6,13 @@ pub mod tabs;
 
 use crate::context::{Context, ProjectFilePath};
 use crate::tabs::Tab;
+use assembler::with_bump;
 use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{RichText, ScrollArea};
 use egui_dock::{DockArea, DockState};
 use egui_ltreeview::{Action, TreeView, TreeViewState};
+use riscv_asm::RiscvAssembler;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions::default();
@@ -72,8 +74,17 @@ impl eframe::App for MyApp {
 
                     if ui.button("assemble").clicked() {
                         let sources = self.context.source_map();
-                        _ = self.context.spawn(|| {
-                            assembler::assemble_and_link(sources, vec!["test.asm"]);
+                        _ = self.context.spawn(move || {
+                            with_bump(|bump| {
+                                let res = assembler::assemble_and_link(
+                                    &sources,
+                                    vec!["test.asm"],
+                                    bump,
+                                    RiscvAssembler::default(),
+                                );
+
+                                println!("{res}");
+                            });
                         });
                     }
 
