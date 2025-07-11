@@ -1,54 +1,40 @@
+use crate::label::Label;
 use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, Immediate};
 use assembler::expression::{
-    Constant, ConvertResult, ExpressionEvaluatorContext, Indexed, LabelUse, AssemblyRegister, Value, ValueType,
+    AssemblyRegister, Constant, ExpressionEvaluatorContext, ImplicitCastFrom, ImplicitCastTo as _,
+    Indexed, Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
 pub enum RegOffset<'a, L: AssemblyLanguage<'a>> {
-    Constant(L::RegType, i32),
-    Label(L::RegType, LabelUse<'a>),
+    Constant(L::Reg, i32),
+    Label(L::Reg, Label<'a>),
 }
 impl<'a, L: AssemblyLanguage<'a>> Default for RegOffset<'a, L> {
     fn default() -> Self {
-        Self::Constant(L::RegType::default(), 0)
+        Self::Constant(L::Reg::default(), 0)
     }
 }
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for RegOffset<'a, L> {
-    const TYPE_REPR: &'static str = "indexed";
-    const HINT: ValueType<'a, L> = ValueType::<'a, L>::Indexed;
+impl<'a> CoercedArg<'a, RiscvAssembler> for RegOffset<'a, RiscvAssembler> {
+    const TYPE_REPR: &'static str = "indexed|register|label|<integer>";
+    const HINT: ValueType<'a, RiscvAssembler> = ValueType::<'a, RiscvAssembler>::Indexed;
 
     fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
-        value: Value<'a, L>,
+        value: Value<'a, RiscvAssembler>,
     ) -> Result<Self, Option<String>> {
         match value {
-            Value::Constant(c) => match c {
-                Constant::I32(value) => Ok(RegOffset::Constant(L::RegType::default(), value)),
-                c => match c.to_i32() {
-                    ConvertResult::Success(val) => {
-                        context.report_warning(
-                            node,
-                            "implicit conversion to i32 could lead to errors",
-                        );
-                        Ok(RegOffset::Constant(L::RegType::default(), val))
-                    }
-                    ConvertResult::Lossy(val) => {
-                        context.report_warning(node, "conversion to i32 is lossy");
-                        Ok(RegOffset::Constant(L::RegType::default(), val))
-                    }
-                    ConvertResult::Failure => Err(Some(format!(
-                        "Cannot convert {} into i32",
-                        value.get_type()
-                    ))),
-                },
-            },
-            Value::Label(label) => Ok(RegOffset::Label(L::RegType::default(), label)),
-            // Value::RegisterOffset(r, o) => Ok(RegOffset::Constant(r, o)),
-            // Value::LabelRegisterOffset(r, l) => Ok(RegOffset::Label(r, l)),
+            Value::Constant(c) => Ok(RegOffset::Constant(
+                Default::default(),
+                c.cast_with(node, context, context.config().implicit_cast_label_offset)
+                    .ok_or(None)?,
+            )),
+
+            Value::Label(label) => Ok(RegOffset::Label(Default::default(), label)),
             _ => Err(None),
         }
     }

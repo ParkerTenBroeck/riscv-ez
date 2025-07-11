@@ -2,6 +2,7 @@
 
 pub mod args;
 pub mod indexed;
+pub mod label;
 pub mod opcodes;
 pub mod reg;
 
@@ -9,67 +10,45 @@ use indexed::*;
 use opcodes::*;
 use reg::*;
 
+use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
 use crate::args::{FloatReg, RegReg};
+use crate::label::Label;
 use assembler::assembler::{Assembler, AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, Immediate};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext, Indexed, LabelUse, Value, ValueType
+    AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext, Indexed,
+    Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
 pub type NodeVal<'a> = assembler::expression::NodeVal<'a, RiscvAssembler>;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Nya;
-impl<'a> CustomValue<'a, RiscvAssembler> for Nya{
-    fn get_align(&self) -> Option<u32> {
-        todo!()
-    }
-
-    fn get_size(&self) -> Option<u32> {
-        todo!()
-    }
-
-    fn get_type(&self) -> Nya {
-        todo!()
-    }
-}
-impl<'a> CustomValueType<'a, RiscvAssembler> for Nya{
-    fn default_value(&self) -> Nya {
-        todo!()
-    }
-}
-impl std::fmt::Display for Nya{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
 #[derive(Default, Clone)]
 pub struct RiscvAssembler;
 impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
-    type RegType = Register;
-    type Indexed = Index<'a>;
-    type CustomValue = Nya;
-    type CustomValueType = Nya;
+    type Reg = Register;
+    type Indexed = MemoryIndex<'a>;
+    type CustomValue = Infallible;
+    type Label = Label<'a>;
 
     fn parse_ident_assembly(
         _: &mut Assembler<'a, '_, Self>,
-        Node(ident, node): Node<'a, &'a str>,
+        ident: &'a str,
+        node: NodeId<'a>,
         _: ValueType<'a, RiscvAssembler>,
     ) -> Node<'a, Value<'a, Self>> {
         if let Ok(reg) = Register::from_str(ident) {
             Node(Value::Register(reg), node)
         } else {
-            Node(Value::Label(LabelUse::new(ident)), node)
+            Node(Value::Label(Label::new(ident)), node)
         }
     }
 
-    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, Node(mnemonic, n): Node<'a, &'a str>) {
+    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
             "lui" => match asm.coerced(n) {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
@@ -148,8 +127,17 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             _ => asm.assemble_mnemonic_default(Node(mnemonic, n)),
         }
     }
-    
 
+    fn add_label_as_data(asm: &mut Assembler<'a, '_, Self>, l: Self::Label, node: NodeId<'a>) {
+        // asm.state.ins_or_address_reloc(
+        //     0,
+        //     l.ident,
+        //     l.offset,
+        //     CalculationKind::Absolute,
+        //     FormKind::Full,
+        // );
+        todo!()
+    }
 }
 
 impl RiscvAssembler {

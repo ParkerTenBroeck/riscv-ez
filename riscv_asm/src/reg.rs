@@ -5,7 +5,7 @@ use std::{
 
 use assembler::expression::AssemblyRegister;
 
-use crate::opcodes::*;
+use crate::{RiscvAssembler, opcodes::*};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Default)]
 pub struct Register(pub u8);
@@ -127,4 +127,4 @@ impl Display for Register {
     }
 }
 
-impl AssemblyRegister for Register {}
+impl<'a> AssemblyRegister<'a, RiscvAssembler> for Register {}

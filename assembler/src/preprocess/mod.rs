@@ -5,8 +5,11 @@ pub mod if_else;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use crate::assembler::Assembler;
 use crate::assembler::AssemblyLanguage;
 use crate::assembler::context::AssemblerState;
+use crate::expression::ExpressionEvaluatorContext;
+use crate::expression::ValueType;
 use crate::preprocess::defined_macro::TokenIter;
 use crate::preprocess::file::FileIter;
 use crate::preprocess::if_else::IfDef;
@@ -55,7 +58,6 @@ pub trait PreProcessorFilter<'a, T: AssemblyLanguage<'a>> {
 pub struct PreProcessor<'a, T: AssemblyLanguage<'a>> {
     producers: Vec<ProducerStage<'a, T>>,
     filters: VecDeque<FilterStage<'a, T>>,
-    recursion_limit: usize,
     defines: HashMap<&'a str, Vec<Node<'a, Token<'a>>>>,
 
     peek: Option<Node<'a, Token<'a>>>,
@@ -66,7 +68,6 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         Self {
             producers: Vec::new(),
             filters: VecDeque::new(),
-            recursion_limit: 100,
             defines: HashMap::new(),
 
             peek: None,
@@ -74,40 +75,41 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     }
 
     fn add_producer(&mut self, state: &mut AssemblerState<'a, T>, stage: ProducerStage<'a, T>) {
-        if self.producers.len() > self.recursion_limit {
+        if self.producers.len() > state.context.config().producer_stack_limit {
             if let Some(source) = stage.source {
                 state.context.report_error(
                     source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for producers",
-                        self.recursion_limit
+                        state.context.config().producer_stack_limit
                     ),
                 );
             } else {
-                state.context.report_error_nodeless(format!(
+                state.context.report_error_locless(format!(
                     "Preprocessor stack recursion limit hit ({}) for producers",
-                    self.recursion_limit
+                    state.context.config().producer_stack_limit
                 ));
             }
+            self.producers.clear();
         } else {
             self.producers.push(stage);
         }
     }
 
     fn add_filter(&mut self, state: &mut AssemblerState<'a, T>, stage: FilterStage<'a, T>) {
-        if self.filters.len() > self.recursion_limit {
+        if self.filters.len() > state.context.config().filter_stack_limit {
             if let Some(source) = stage.source {
                 state.context.report_error(
                     source,
                     format!(
                         "Preprocessor stack recursion limit hit ({}) for filters",
-                        self.recursion_limit
+                        state.context.config().filter_stack_limit
                     ),
                 );
             } else {
-                state.context.report_error_nodeless(format!(
+                state.context.report_error_locless(format!(
                     "Preprocessor stack recursion limit hit ({}) for filters",
-                    self.recursion_limit
+                    state.context.config().filter_stack_limit
                 ));
             }
         } else {
@@ -144,7 +146,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             Err(error) => {
                 state
                     .context
-                    .report_error_nodeless(format!("Failed to load file '{error}'"));
+                    .report_error_locless(format!("Failed to load file '{error}'"));
 
                 None
             }
@@ -181,6 +183,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     }
 
     fn stack_next(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+        if self.peek.is_some() {
+            return self.peek.take();
+        }
         while let Some(mut top) = self.producers.pop() {
             if let Some(next) = top.iter.next(self, state) {
                 self.producers.push(top);
@@ -212,7 +217,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                         FilterStage {
                             filter: Box::new(IfDef {
                                 source: node,
-                                defined: self.defines.contains_key(str),
+                                condition: self.defines.contains_key(str),
                                 else_loc: None,
                             }),
                             source: Some(node),
@@ -228,7 +233,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                         FilterStage {
                             filter: Box::new(IfDef {
                                 source: node,
-                                defined: !self.defines.contains_key(str),
+                                condition: !self.defines.contains_key(str),
                                 else_loc: None,
                             }),
                             source: Some(node),
@@ -237,6 +242,20 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                 }
                 t => _ = state.context.unexpected_token(t, Token::Ident(""), false),
             },
+            "if" => {
+                let res = Assembler::new(state, self).expr(ValueType::Any);
+                self.add_filter(
+                    state,
+                    FilterStage {
+                        filter: Box::new(IfDef {
+                            source: res.1,
+                            condition: res.0.is_true(),
+                            else_loc: None,
+                        }),
+                        source: Some(res.1),
+                    },
+                );
+            }
             "define" => {
                 let ident = match self.stack_next(state) {
                     Some(Node(Token::Ident(str), _)) => str,
@@ -288,6 +307,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     }
 
     fn next_filtered(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+        if self.peek.is_some() {
+            return self.peek.take();
+        }
         loop {
             let mut next = self.stack_next(state);
             let mut filters = VecDeque::new();

@@ -1,6 +1,7 @@
 use crate::assembler::context::AssemblerState;
 use crate::assembler::{Assembler, AssemblyLanguage};
 
+use crate::config::AssemblerConfig;
 use crate::context::Context;
 use crate::logs::LogEntry;
 use crate::preprocess::PreProcessor;
@@ -9,10 +10,11 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 pub mod assembler;
+pub mod config;
 pub mod context;
-pub mod logs;
 pub mod expression;
 pub mod lex;
+pub mod logs;
 pub mod preprocess;
 pub mod util;
 
@@ -23,25 +25,44 @@ pub struct AssemblerResult<'a> {
     pub log: Vec<LogEntry<'a>>,
 }
 
-impl<'a> std::fmt::Display for AssemblerResult<'a>{
+impl<'a> std::fmt::Display for AssemblerResult<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut errors = 0;
         let mut warnings = 0;
         for log in &self.log {
-            errors += log.parts.iter().filter(|t|t.kind==LogKind::Error).count();
-            warnings += log.parts.iter().filter(|t|t.kind==LogKind::Warning).count();
+            errors += log
+                .parts
+                .iter()
+                .filter(|t| t.kind == LogKind::Error)
+                .count();
+            warnings += log
+                .parts
+                .iter()
+                .filter(|t| t.kind == LogKind::Warning)
+                .count();
             writeln!(f, "{log}")?;
         }
 
         use logs::*;
-        
-        if warnings > 0{
-            writeln!(f, "{BOLD}{YELLOW}warning{RESET}{BOLD}: {warnings} warning(s) emitted{RESET}")?;
+
+        if warnings > 0 {
+            writeln!(
+                f,
+                "{BOLD}{YELLOW}warning{RESET}{BOLD}: {warnings} warning(s) emitted{RESET}"
+            )?;
         }
-        if errors > 0{
-            writeln!(f, "{BOLD}{RED}error{RESET}{BOLD}: could not assemble due to {errors} error(s). took {}s allocated {}b{RESET}", self.time, self.allocated)
-        }else{
-            writeln!(f, "{BOLD}{GREEN}Finished{RESET}{BOLD} in {}s allocated {}b{RESET}", self.time, self.allocated)
+        if errors > 0 {
+            writeln!(
+                f,
+                "{BOLD}{RED}error{RESET}{BOLD}: could not assemble due to {errors} error(s). took {}s allocated {}b{RESET}",
+                self.time, self.allocated
+            )
+        } else {
+            writeln!(
+                f,
+                "{BOLD}{GREEN}Finished{RESET}{BOLD} in {}s allocated {}b{RESET}",
+                self.time, self.allocated
+            )
         }
     }
 }
@@ -57,7 +78,7 @@ pub fn assemble_and_link<'a>(
     lang: impl AssemblyLanguage<'a>,
 ) -> AssemblerResult<'a> {
     let now = Instant::now();
-    let context = Context::new(&bump, move |path, _ctx| {
+    let context = Context::new(&bump, AssemblerConfig::new(), move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
             Ok(contents.as_str())
         } else {
@@ -74,13 +95,6 @@ pub fn assemble_and_link<'a>(
     }
 
     let elapsed = now.elapsed().as_secs_f64();
-    state.context.print_errors();
-
-    println!(
-        "Finished in {:.3}s allocated {}b",
-        elapsed,
-        bump.allocated_bytes()
-    );
 
     AssemblerResult {
         allocated: bump.allocated_bytes(),

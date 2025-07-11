@@ -1,6 +1,7 @@
 use super::logs::LogEntry;
+use crate::config::AssemblerConfig;
+use crate::lex::Span;
 use crate::lex::Token;
-use crate::{logs::LogKind, lex::Span};
 use bumpalo::Bump;
 use std::fmt::Display;
 use std::{collections::HashMap, error::Error};
@@ -83,6 +84,7 @@ pub struct Context<'a> {
     log: Vec<LogEntry<'a>>,
     top_src: SourceId<'a>,
     top_src_eof: NodeId<'a>,
+    config: AssemblerConfig,
 }
 
 #[derive(Debug, Default)]
@@ -93,6 +95,7 @@ pub struct Functioninfo {
 impl<'a> Context<'a> {
     pub fn new(
         bump: &'a Bump,
+        config: AssemblerConfig,
         source_supplier: impl Fn(&str, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a,
     ) -> Self {
         Self {
@@ -115,7 +118,12 @@ impl<'a> Context<'a> {
                     invoked_by: None,
                 }
             },
+            config,
         }
+    }
+
+    pub fn config(&self) -> &AssemblerConfig {
+        &self.config
     }
 
     pub fn get_source_from_path(
@@ -188,28 +196,49 @@ impl<'a> Context<'a> {
         self.log.push(error);
     }
 
-    pub fn report_error_nodeless(&mut self, msg: impl Into<String>) {
-        self.log
-            .push(LogEntry::default().add_sourceless(LogKind::Error, msg.into()));
+    pub fn report_error_locless(&mut self, msg: impl ToString) {
+        self.log.push(LogEntry::default().error_locless(msg));
+    }
+
+    pub fn report_warning_locless(&mut self, msg: impl ToString) {
+        self.log.push(LogEntry::default().warning_locless(msg));
+    }
+
+    pub fn report_info_locless(&mut self, msg: impl ToString) {
+        self.log.push(LogEntry::default().info_locless(msg));
+    }
+
+    pub fn report_hint_locless(&mut self, msg: impl ToString) {
+        self.log.push(LogEntry::default().hint_locless(msg));
     }
 
     pub fn report_error(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new(node, LogKind::Error, error.to_string());
+        let error = LogEntry::new().error(node, error);
         self.log.push(error);
     }
 
     pub fn report_warning(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new(node, LogKind::Warning, error.to_string());
+        let error = LogEntry::new().warning(node, error);
         self.log.push(error);
     }
 
     pub fn report_info(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new(node, LogKind::Info, error.to_string());
+        let error = LogEntry::new().info(node, error);
         self.log.push(error);
     }
 
     pub fn report_error_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new(self.top_src_eof, LogKind::Error, error.to_string());
+        let error = LogEntry::new().error(self.top_src_eof, error);
+        self.log.push(error);
+    }
+
+    pub fn report_warning_eof(&mut self, error: impl ToString) {
+        let error = LogEntry::new().warning(self.top_src_eof, error);
+        self.log.push(error);
+    }
+
+    pub fn report_info_eof(&mut self, error: impl ToString) {
+        let error = LogEntry::new().info(self.top_src_eof, error);
         self.log.push(error);
     }
 
@@ -244,16 +273,6 @@ impl<'a> Context<'a> {
             Some(Node(_, n)) => n,
             None => self.top_src_eof(),
         }
-    }
-
-    pub fn report_warning_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new(self.top_src_eof, LogKind::Warning, error.to_string());
-        self.log.push(error);
-    }
-
-    pub fn report_info_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new(self.top_src_eof, LogKind::Info, error.to_string());
-        self.log.push(error);
     }
 
     pub fn set_top_level_src(&mut self, src: SourceId<'a>) {

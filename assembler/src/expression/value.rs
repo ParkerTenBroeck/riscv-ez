@@ -1,12 +1,51 @@
+use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
 use crate::assembler::AssemblyLanguage;
-use crate::context::NodeId;
+use crate::config::ImplicitCastConfig;
+use crate::context::{Context, NodeId};
 use crate::expression::{ExpressionEvaluatorContext, NodeVal};
 
+pub trait AssemblyLabel<'a, L: AssemblyLanguage<'a>>:
+    Sized + Default + std::fmt::Display + std::fmt::Debug + Copy + Clone + Eq + PartialEq
+{
+    type Offset: ImplicitCastFrom<'a, Constant<'a>> + Default;
 
-// pub type ValueType<'a, L: AssemblyLanguage<'a>> = ValueTypeI<L::CustomValueType>; 
+    fn add_constant_offset(self, offset: Self::Offset) -> Self;
+    fn sub_constant_offset(self, offset: Self::Offset) -> Self;
+}
+
+pub trait AssemblyRegister<'a, L: AssemblyLanguage<'a>>:
+    Debug + Clone + Copy + PartialEq + Display + Default + Sized
+{
+}
+pub trait Indexed<'a, L: AssemblyLanguage<'a>>:
+    Debug + Clone + Copy + PartialEq + Display + Default + Sized
+{
+    fn from_indexed(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        node: NodeId<'a>,
+        lhs: NodeVal<'a, L>,
+        rhs: NodeVal<'a, L>,
+    ) -> Value<'a, L>;
+}
+
+pub trait CustomValue<'a, L: AssemblyLanguage<'a>>:
+    Debug + Clone + Copy + PartialEq + Eq + Display + Sized
+{
+    type CustomValueType: CustomValueType<'a, L>;
+    fn get_align(&self) -> Option<u32>;
+    fn get_size(&self) -> Option<u32>;
+    fn get_type(&self) -> Self::CustomValueType;
+}
+pub trait CustomValueType<'a, L: AssemblyLanguage<'a>>:
+    Debug + Clone + Copy + PartialEq + Eq + Display + Sized + 'static
+{
+    fn default_value(&self) -> L::CustomValue;
+}
+
+//----------------------------------------------------------------------------
 
 #[derive(Debug, Eq, Clone)]
 pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
@@ -34,14 +73,10 @@ pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
 
     Bool,
     Char,
-    Custom(L::CustomValueType),
+    Custom(<L::CustomValue as CustomValue<'a, L>>::CustomValueType),
 }
 
-impl<'a, L> core::cmp::PartialEq for ValueType<'a, L>
-where
-    L: AssemblyLanguage<'a>,
-    L::CustomValueType: core::cmp::PartialEq,
-{
+impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for ValueType<'a, L> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (ValueType::Any, ValueType::Any) => true,
@@ -67,12 +102,7 @@ where
     }
 }
 
-
-impl<'a, L> Copy for ValueType<'a, L>
-where
-    L: AssemblyLanguage<'a>,
-    L::CustomValueType: Copy,
-{}
+impl<'a, L: AssemblyLanguage<'a>> Copy for ValueType<'a, L> {}
 
 impl<'a, L: AssemblyLanguage<'a>> Display for ValueType<'a, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -105,12 +135,8 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::Any => Value::Constant(Constant::I32(0)),
             ValueType::String => Value::Constant(Constant::String("")),
             ValueType::Indexed => Value::Indexed(L::Indexed::default()),
-            ValueType::Register => Value::Register(L::RegType::default()),
-            ValueType::Label => Value::Label(LabelUse {
-                ident: "",
-                offset: 0,
-                meta: LabelMeta::Unset,
-            }),
+            ValueType::Register => Value::Register(L::Reg::default()),
+            ValueType::Label => Value::Label(Default::default()),
             ValueType::I8 => Value::Constant(Constant::I8(0)),
             ValueType::I16 => Value::Constant(Constant::I16(0)),
             ValueType::I32 => Value::Constant(Constant::I32(0)),
@@ -123,99 +149,46 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::F64 => Value::Constant(Constant::F64(0.0)),
             ValueType::Bool => Value::Constant(Constant::Bool(false)),
             ValueType::Char => Value::Constant(Constant::Char('\0')),
-            ValueType::Custom(c) => Value::Custom(c.default_value())
+            ValueType::Custom(c) => Value::Custom(c.default_value()),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum LabelMeta {
-    PcRel,
-    Absolute,
-    Size,
-    Align,
-    Unset,
-}
+//----------------------------------------------------------------------------
 
-impl LabelMeta {
-    pub fn is_unset(&self) -> bool {
-        matches!(self, LabelMeta::Unset)
+impl<'a, L: AssemblyLanguage<'a>> CustomValueType<'a, L> for Infallible {
+    fn default_value(&self) -> L::CustomValue {
+        unreachable!()
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct LabelUse<'a> {
-    pub ident: &'a str,
-    pub offset: i32,
-    pub meta: LabelMeta,
-}
+impl<'a, L: AssemblyLanguage<'a>> CustomValue<'a, L> for Infallible {
+    type CustomValueType = Infallible;
+    fn get_align(&self) -> Option<u32> {
+        unreachable!()
+    }
 
-impl<'a> LabelUse<'a> {
-    pub fn new(ident: &'a str) -> LabelUse<'a> {
-        LabelUse {
-            ident,
-            offset: 0,
-            meta: LabelMeta::Unset,
-        }
+    fn get_size(&self) -> Option<u32> {
+        unreachable!()
+    }
+
+    fn get_type(&self) -> Self::CustomValueType {
+        unreachable!()
     }
 }
 
-impl<'a> Display for LabelUse<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.meta {
-            LabelMeta::PcRel => write!(f, "pc_rel(")?,
-            LabelMeta::Absolute => write!(f, "absolute(")?,
-            LabelMeta::Size => write!(f, "size(")?,
-            LabelMeta::Align => write!(f, "align(")?,
-            LabelMeta::Unset => {}
-        }
-        write!(f, "{}", self.ident)?;
-        if self.offset != 0 {
-            write!(f, "+{}", self.offset)?;
-        }
-        if !self.meta.is_unset() {
-            write!(f, ")")?;
-        }
-        Ok(())
-    }
-}
-
-pub trait CustomValue<'a, L: AssemblyLanguage<'a>>: Debug + Clone + Copy + PartialEq + Display + Default + Sized{
-    fn get_align(&self) -> Option<u32>;
-    fn get_size(&self) -> Option<u32>;
-    fn get_type(&self) -> L::CustomValueType;
-}
-pub trait CustomValueType<'a, L: AssemblyLanguage<'a>>: Debug + Clone + Copy + PartialEq + Eq + Display + Default + Sized + 'static{
-    fn default_value(&self) -> L::CustomValue;
-}
-
-
-pub trait AssemblyRegister: Debug + Clone + Copy + PartialEq + Display + Default + Sized {}
-pub trait Indexed<'a, L: AssemblyLanguage<'a>>:
-    Debug + Clone + Copy + PartialEq + Display + Default + Sized
-{
-    fn from_indexed(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        node: NodeId<'a>,
-        lhs: NodeVal<'a, L>,
-        rhs: NodeVal<'a, L>,
-    ) -> Value<'a, L>;
-}
+//----------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum Value<'a, L: AssemblyLanguage<'a>> {
     Constant(Constant<'a>),
-    Label(LabelUse<'a>),
+    Label(L::Label),
     Indexed(L::Indexed),
-    Register(L::RegType),
-    Custom(L::CustomValue)
+    Register(L::Reg),
+    Custom(L::CustomValue),
 }
 
-impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for Value<'a, L>
-where
-    L: AssemblyLanguage<'a>,
-    L::RegType: core::cmp::PartialEq,
-{
+impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for Value<'a, L> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Constant(f0_self), Value::Constant(f0_other)) => f0_self.eq(f0_other),
@@ -227,12 +200,7 @@ where
     }
 }
 
-impl<'a, L: AssemblyLanguage<'a>> Copy for Value<'a, L>
-where
-    L::RegType: Copy,
-    L::Indexed: Copy,
-{
-}
+impl<'a, L: AssemblyLanguage<'a>> Copy for Value<'a, L> {}
 
 impl<'a, L: AssemblyLanguage<'a>> Display for Value<'a, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -249,76 +217,43 @@ impl<'a, L: AssemblyLanguage<'a>> Display for Value<'a, L> {
 impl<'a, L: AssemblyLanguage<'a>> Value<'a, L> {
     pub fn get_type(&self) -> ValueType<'a, L> {
         match self {
-            Value::Constant(c) => match c {
-                Constant::I8(_) => ValueType::I8,
-                Constant::I16(_) => ValueType::I16,
-                Constant::I32(_) => ValueType::I32,
-                Constant::I64(_) => ValueType::I64,
-                Constant::U8(_) => ValueType::U8,
-                Constant::U16(_) => ValueType::U16,
-                Constant::U32(_) => ValueType::U32,
-                Constant::U64(_) => ValueType::U64,
-                Constant::F32(_) => ValueType::F32,
-                Constant::F64(_) => ValueType::F64,
-                Constant::String(_) => ValueType::String,
-                Constant::Char(_) => ValueType::Char,
-                Constant::Bool(_) => ValueType::Bool,
-            },
+            Value::Constant(c) => c.get_type(),
             Value::Label(_) => ValueType::Label,
             Value::Indexed(_) => ValueType::Indexed,
             Value::Register(_) => ValueType::Register,
-            Value::Custom(c) => ValueType::Custom(c.get_type())
+            Value::Custom(c) => ValueType::Custom(c.get_type()),
         }
     }
 
     pub fn get_size(&self) -> Option<u32> {
         match *self {
-            Value::Constant(c) => match c {
-                Constant::I8(_) => Some(1),
-                Constant::I16(_) => Some(2),
-                Constant::I32(_) => Some(4),
-                Constant::I64(_) => Some(8),
-                Constant::U8(_) => Some(1),
-                Constant::U16(_) => Some(2),
-                Constant::U32(_) => Some(4),
-                Constant::U64(_) => Some(8),
-                Constant::F32(_) => Some(4),
-                Constant::F64(_) => Some(8),
-                Constant::String(str) => Some(str.len() as u32),
-                Constant::Char(_) => Some(4),
-                Constant::Bool(_) => Some(1),
-            },
+            Value::Constant(c) => c.get_size(),
             Value::Label(_) => Some(4),
             Value::Indexed(_) => None,
             Value::Register(_) => None,
-            Value::Custom(c) => c.get_size()
+            Value::Custom(c) => c.get_size(),
         }
     }
 
     pub fn get_align(&self) -> Option<u32> {
         match *self {
-            Value::Constant(c) => match c {
-                Constant::I8(_) => Some(1),
-                Constant::I16(_) => Some(2),
-                Constant::I32(_) => Some(4),
-                Constant::I64(_) => Some(8),
-                Constant::U8(_) => Some(1),
-                Constant::U16(_) => Some(2),
-                Constant::U32(_) => Some(4),
-                Constant::U64(_) => Some(8),
-                Constant::F32(_) => Some(4),
-                Constant::F64(_) => Some(8),
-                Constant::String(_) => Some(1),
-                Constant::Char(_) => Some(4),
-                Constant::Bool(_) => Some(1),
-            },
+            Value::Constant(c) => c.get_align(),
             Value::Label(_) => Some(4),
             Value::Indexed(_) => None,
             Value::Register(_) => None,
-            Value::Custom(c) => c.get_align()
+            Value::Custom(c) => c.get_align(),
+        }
+    }
+
+    pub fn is_true(&self) -> bool {
+        match self {
+            Value::Constant(Constant::Bool(true)) => true,
+            _ => false,
         }
     }
 }
+
+//----------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Constant<'a> {
@@ -338,6 +273,91 @@ pub enum Constant<'a> {
     String(&'a str),
     Char(char),
     Bool(bool),
+}
+
+impl<'a> Constant<'a> {
+    pub fn is_float(&self) -> bool {
+        match self {
+            Self::F32(_) | Self::F64(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_type<L: AssemblyLanguage<'a>>(&self) -> ValueType<'a, L> {
+        match self {
+            Constant::I8(_) => ValueType::I8,
+            Constant::I16(_) => ValueType::I16,
+            Constant::I32(_) => ValueType::I32,
+            Constant::I64(_) => ValueType::I64,
+            Constant::U8(_) => ValueType::U8,
+            Constant::U16(_) => ValueType::U16,
+            Constant::U32(_) => ValueType::U32,
+            Constant::U64(_) => ValueType::U64,
+            Constant::F32(_) => ValueType::F32,
+            Constant::F64(_) => ValueType::F64,
+            Constant::String(_) => ValueType::String,
+            Constant::Char(_) => ValueType::Char,
+            Constant::Bool(_) => ValueType::Bool,
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_float() || self.is_integer()
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer()
+    }
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U64(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_signed_integer(&self) -> bool {
+        match self {
+            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_align(&self) -> Option<u32> {
+        match self {
+            Constant::I8(_) => Some(1),
+            Constant::I16(_) => Some(2),
+            Constant::I32(_) => Some(4),
+            Constant::I64(_) => Some(8),
+            Constant::U8(_) => Some(1),
+            Constant::U16(_) => Some(2),
+            Constant::U32(_) => Some(4),
+            Constant::U64(_) => Some(8),
+            Constant::F32(_) => Some(4),
+            Constant::F64(_) => Some(8),
+            Constant::String(_) => Some(1),
+            Constant::Char(_) => Some(4),
+            Constant::Bool(_) => Some(1),
+        }
+    }
+
+    pub fn get_size(&self) -> Option<u32> {
+        match self {
+            Constant::I8(_) => Some(1),
+            Constant::I16(_) => Some(2),
+            Constant::I32(_) => Some(4),
+            Constant::I64(_) => Some(8),
+            Constant::U8(_) => Some(1),
+            Constant::U16(_) => Some(2),
+            Constant::U32(_) => Some(4),
+            Constant::U64(_) => Some(8),
+            Constant::F32(_) => Some(4),
+            Constant::F64(_) => Some(8),
+            Constant::String(str) => Some(str.len() as u32),
+            Constant::Char(_) => Some(4),
+            Constant::Bool(_) => Some(1),
+        }
+    }
 }
 
 impl<'a> Display for Constant<'a> {
@@ -360,43 +380,282 @@ impl<'a> Display for Constant<'a> {
     }
 }
 
-pub enum ConvertResult<T> {
-    Success(T),
-    Lossy(T),
-    Failure,
+//----------------------------------------------------------------------------
+
+pub trait ImplicitCastTo<'a, To>
+where
+    Self: Sized,
+{
+    fn cast(self, node: NodeId<'a>, ctx: &mut Context<'a>) -> Option<To> {
+        self.cast_supressing(node, ctx, false, false, false, false, false, false)
+    }
+    fn cast_supressing(
+        self,
+        node: NodeId<'a>,
+        ctx: &mut Context<'a>,
+        narrowing: bool,
+        widening: bool,
+        sign: bool,
+        lossy: bool,
+        f2i: bool,
+        i2f: bool,
+    ) -> Option<To> {
+        self.cast_with(
+            node,
+            ctx,
+            ctx.config()
+                .implicit_cast_defaults
+                .supress(narrowing, widening, sign, lossy, f2i, i2f),
+        )
+    }
+    fn cast_with(
+        self,
+        node: NodeId<'a>,
+        ctx: &mut Context<'a>,
+        cfg: ImplicitCastConfig,
+    ) -> Option<To>;
 }
 
-macro_rules! conversion {
-    ($func:ident, $into:ty, $($try:ident)*, $($cast:ident)*) => {
-        #[allow(warnings)]
-        pub fn $func(&self) -> ConvertResult<$into> {
-            match *self {
-                $(
-                    Constant::$try(v) => if let Ok(ok) = v.try_into() { ConvertResult::Success(ok)} else {ConvertResult::Lossy(v as $into)},
-                )*
-                $(
-                    Constant::$cast(v) => ConvertResult::Success(v as $into),
-                )*
-                _ => ConvertResult::Failure,
+pub trait ImplicitCastFrom<'a, From>
+where
+    Self: Sized,
+{
+    fn cast(from: From, node: NodeId<'a>, ctx: &mut Context<'a>) -> Option<Self> {
+        Self::cast_supressing(from, node, ctx, false, false, false, false, false, false)
+    }
+    fn cast_supressing(
+        from: From,
+        node: NodeId<'a>,
+        ctx: &mut Context<'a>,
+        narrowing: bool,
+        widening: bool,
+        sign: bool,
+        lossy: bool,
+        f2i: bool,
+        i2f: bool,
+    ) -> Option<Self> {
+        Self::cast_with(
+            from,
+            node,
+            ctx,
+            ctx.config()
+                .implicit_cast_defaults
+                .supress(narrowing, widening, sign, lossy, f2i, i2f),
+        )
+    }
+    fn cast_with(
+        from: From,
+        node: NodeId<'a>,
+        ctx: &mut Context<'a>,
+        cfg: ImplicitCastConfig,
+    ) -> Option<Self>;
+}
+
+impl<'a, To: ImplicitCastFrom<'a, From>, From> ImplicitCastTo<'a, To> for From {
+    fn cast_with(
+        self,
+        node: NodeId<'a>,
+        ctx: &mut Context<'a>,
+        cfg: ImplicitCastConfig,
+    ) -> Option<To> {
+        To::cast_with(self, node, ctx, cfg)
+    }
+}
+
+macro_rules! implicit_cast_impl {
+    ($into:ty, identity: $identity:ident, $(identity_inv_sign: $identity_sign_change:ident,)? narrowing: [$($narrowing:ident),*], widening: [$($widening:ident),*], f2i: [$($f2i:ident),*], i2f: [$($i2f:ident),*] $(,)?) => {
+        impl<'a> ImplicitCastFrom<'a, Constant<'a>> for $into {
+            fn cast_with(
+                from: Constant<'a>,
+                node: NodeId<'a>,
+                ctx: &mut Context<'a>,
+                cfg: ImplicitCastConfig,
+            ) -> Option<$into> {
+                use $crate::config::LogOn as LO;
+                use $crate::logs::LogEntry;
+
+                match from {
+                    Constant::$identity(i) => Some(i),
+                    $(Constant::$identity_sign_change(i) => match cfg.sign {
+                        LO::Error => implicit_cast_impl!(!error, node, ctx, $identity_sign_change, $into),
+                        LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
+                        LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
+                    },)?
+                    $(
+                        Constant::$narrowing(i) => match cfg.narrowing {
+                            LO::Error => implicit_cast_impl!(!error, node, ctx, $narrowing, $into),
+                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $narrowing, $into),
+                            LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $narrowing, $into),
+                        }
+                    )*
+                    $(
+                        Constant::$widening(i) => match cfg.widening {
+                            LO::Error => implicit_cast_impl!(!error, node, ctx, $widening, $into),
+                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $widening, $into),
+                            LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $widening, $into),
+                        }
+                    )*
+                    $(
+                        Constant::$i2f(i) => match cfg.i2f {
+                            LO::Error => implicit_cast_impl!(!error, node, ctx, $i2f, $into),
+                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as $into)}, $i2f, $into),
+                            LO::None => Some(i as $into),
+                        },
+                    )*
+                    $(
+                        Constant::$f2i(i) => compiler_error!(),
+                    )*
+                    Constant::Char(_) => implicit_cast_impl!(!error, node, ctx, Char, $into),
+                    Constant::Bool(_) => implicit_cast_impl!(!error, node, ctx, Bool, $into),
+                    Constant::String(_) => implicit_cast_impl!(!error_hard, node, ctx, Str, $into),
+                }
             }
         }
     };
+    (!error_hard, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
+        let from = stringify!($from).to_lowercase();
+        let to = stringify!($to).to_lowercase();
+        $ctx.report(LogEntry::new().error($node, format!("cannot cast {from} to {to}")));
+        None
+    }};
+    (!error, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
+        let from = stringify!($from).to_lowercase();
+        let to = stringify!($to).to_lowercase();
+        $ctx.report(LogEntry::new().error($node, format!("cannot implicitly cast {from} to {to}")).hint_locless(format!("consider casting expression with 'as {to}'")));
+        None
+    }};
+    (!warning, $node:ident, $ctx:ident, $block:block, $from:ident, $to:ty) => {{
+        let from = stringify!($from).to_lowercase();
+        let to = stringify!($to).to_lowercase();
+        $ctx.report(LogEntry::new().warning($node, format!("implicit cast {from} to {to}")).hint_locless(format!("consider casting expression with 'as {to}'")));
+        $block
+    }};
+    (!warning, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
+        implicit_cast_impl!(!warning, $node, $ctx, {
+            implicit_cast_impl!(!try_into, $node, $ctx, $expr, $lossy, $from, $to)
+        }, $from, $to)
+    }};
+
+    (!checked_cast, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
+        match $lossy{
+            LO::Error => {
+                match $expr.try_into(){
+                    Ok(ok) => Some(ok),
+                    Err(_) => implicit_cast_impl!(!error_hard, node, ctx, $from, $into)
+                }
+            },
+            LO::Warning => {
+                match $expr.try_into(){
+                    Ok(ok) => Some(ok),
+                    Err(_) => implicit_cast_impl!(!warning, $node, $ctx, {Some($expr as $to)}, $from, $to)
+                }
+            },
+            LO::None => Some($expr as $to),
+        }
+
+    }};
+    (!try_into, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
+        match $lossy{
+            LO::Error => {
+                match $expr.try_into(){
+                    Ok(ok) => Some(ok),
+                    Err(_) => {
+                        let from = stringify!($from).to_lowercase();
+                        let to = stringify!($to).to_lowercase();
+                        $ctx.report(LogEntry::new().error($node, format!("implicit cast {from} to {to} is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
+                        None
+                    }
+                }
+            },
+            LO::Warning => {
+                match $expr.try_into(){
+                    Ok(ok) => Some(ok),
+                    Err(_) => {
+                        let from = stringify!($from).to_lowercase();
+                        let to = stringify!($to).to_lowercase();
+                        $ctx.report(LogEntry::new().error($node, format!("implicit cast {from} to {to} is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
+                        Some($expr as $to)
+                    }
+                }
+            },
+            LO::None => Some($expr as $to),
+        }
+
+    }};
 }
 
-impl<'a> Constant<'a> {
-    conversion!(to_u8, u8, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_u16, u16, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_u32, u32, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_u64, u64, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-
-    conversion!(to_i8, i8, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_i16, i16, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_i32, i32, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-    conversion!(to_i64, i64, I8 I16 I32 I64 U8 U16 U32 U64, Char Bool);
-
-    conversion!(to_f32, f32, ,I8 I16 I32 I64 U8 U16 U32 U64 F32 F64);
-    conversion!(to_f64, f64, ,I8 I16 I32 I64 U8 U16 U32 U64 F32 F64);
-}
+implicit_cast_impl!(
+    u8,
+    identity: U8,
+    identity_inv_sign: I8,
+    narrowing: [ I16, I32, I64, U16, U32, U64],
+    widening: [],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    u16,
+    identity: U16,
+    identity_inv_sign: I16,
+    narrowing: [I32, I64, U32, U64],
+    widening: [U8, I8],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    u32,
+    identity: U32,
+    identity_inv_sign: I32,
+    narrowing: [ I64, U64],
+    widening: [U8, I8, I16, U16],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    u64,
+    identity: U64,
+    identity_inv_sign: I64,
+    narrowing: [],
+    widening: [U8, I8, I16, U16, I32, U32],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    i8,
+    identity: I8,
+    identity_inv_sign: U8,
+    narrowing: [ I16, I32, I64, U16, U32, U64],
+    widening: [],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    i16,
+    identity: I16,
+    identity_inv_sign: U16,
+    narrowing: [I32, I64, U32, U64],
+    widening: [U8, I8],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    i32,
+    identity: I32,
+    identity_inv_sign: U32,
+    narrowing: [ I64, U64],
+    widening: [U8, I8, I16, U16],
+    f2i: [],
+    i2f: [F32, F64],
+);
+implicit_cast_impl!(
+    i64,
+    identity: I64,
+    identity_inv_sign: U64,
+    narrowing: [],
+    widening: [U8, I8, I16, U16, I32, U32],
+    f2i: [],
+    i2f: [F32, F64],
+);
 
 impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
     pub fn is_numeric(&self) -> bool {
@@ -448,14 +707,16 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
     }
 }
 
+//----------------------------------------------------------------------------
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum ArgumentsTypeHint<'a, L: AssemblyLanguage<'a>> {
+pub enum ArgumentsTypeHint<'a, 'b, L: AssemblyLanguage<'a>> {
     Mono(ValueType<'a, L>),
-    Individual(&'a [ValueType<'a, L>]),
+    Individual(&'b [ValueType<'a, L>]),
     None,
 }
 
-impl<'a, L: AssemblyLanguage<'a>> Index<usize> for ArgumentsTypeHint<'a, L> {
+impl<'a, 'b, L: AssemblyLanguage<'a>> Index<usize> for ArgumentsTypeHint<'a, 'b, L> {
     type Output = ValueType<'a, L>;
 
     fn index(&self, index: usize) -> &Self::Output {

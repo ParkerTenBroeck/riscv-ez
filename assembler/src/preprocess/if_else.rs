@@ -1,14 +1,14 @@
 use crate::{
     assembler::{AssemblyLanguage, context::AssemblerState},
     context::{Node, NodeId},
-    logs::LogEntry,
     lex::Token,
+    logs::LogEntry,
     preprocess::{FilterResult, PreProcessor, PreProcessorFilter},
 };
 
 pub struct IfDef<'a> {
     pub source: NodeId<'a>,
-    pub defined: bool,
+    pub condition: bool,
     pub else_loc: Option<NodeId<'a>>,
 }
 
@@ -26,16 +26,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
             Some(Node(Token::PreProcessorTag("else"), node)) => {
                 if let Some(last) = self.else_loc {
                     state.context.report(
-                        LogEntry::new(
-                            node,
-                            crate::logs::LogKind::Error,
-                            "Encountered #else multiple times",
-                        )
-                        .add(
-                            last,
-                            crate::logs::LogKind::Info,
-                            "First found here",
-                        ),
+                        LogEntry::new()
+                            .error(node, "Encountered #else multiple times")
+                            .info(last, "first found here"),
                     );
                 } else {
                     self.else_loc = Some(node);
@@ -44,20 +37,15 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
             }
             None => {
                 state.context.report(
-                    LogEntry::new(
-                        state.context.top_src_eof(),
-                        crate::logs::LogKind::Error,
-                        "Expected #endif found eof",
-                    )
-                    .add(
-                        self.source,
-                        crate::logs::LogKind::Info,
-                        "From here",
-                    ),
+                    LogEntry::new()
+                        .error(state.context.top_src_eof(), "Expected #endif found eof")
+                        .info(self.source, "from here"),
                 );
                 FilterResult::Consume { remove: true }
             }
-            _ if !self.defined ^ self.else_loc.is_some() => FilterResult::Consume { remove: false },
+            _ if !self.condition ^ self.else_loc.is_some() => {
+                FilterResult::Consume { remove: false }
+            }
             token => FilterResult::Pass {
                 remove: false,
                 token,

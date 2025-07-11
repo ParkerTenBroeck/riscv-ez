@@ -1,16 +1,16 @@
 use crate::assembler::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
-    ArgumentsTypeHint, Constant, ConvertResult, ExpressionEvaluatorContext, LabelUse, NodeVal,
-    Value, ValueType,
+    ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, ImplicitCastTo, NodeVal, Value,
+    ValueType,
 };
-use crate::lex::{Token, TypeHint};
+use crate::lex::Token;
 use crate::util::IntoStrDelimable;
 
 #[derive(Default)]
 pub struct U32Opt(pub Option<u32>);
 impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Opt {
-    const TYPE_REPR: &'static str = "u32";
+    const TYPE_REPR: &'static str = "<integer>";
     const HINT: ValueType<'a, L> = ValueType::U32;
 
     fn from_arg(
@@ -19,26 +19,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Opt {
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
-            Value::Constant(c) => match c {
-                Constant::U32(value) => Ok(U32Opt(Some(value))),
-                c => match c.to_u32() {
-                    ConvertResult::Success(val) => {
-                        context.report_warning(
-                            node,
-                            "implicit conversion to u32 could lead to errors",
-                        );
-                        Ok(U32Opt(Some(val)))
-                    }
-                    ConvertResult::Lossy(val) => {
-                        context.report_warning(node, "conversion to u32 is lossy");
-                        Ok(U32Opt(Some(val)))
-                    }
-                    ConvertResult::Failure => Err(Some(format!(
-                        "Cannot convert {} into u32",
-                        value.get_type()
-                    ))),
-                },
-            },
+            Value::Constant(c) if c.is_integer() => Ok(U32Opt(c.cast(node, context))),
             _ => Err(None),
         }
     }
@@ -51,7 +32,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Opt {
 #[derive(Default)]
 pub struct U32Power2Opt(pub Option<u32>);
 impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Power2Opt {
-    const TYPE_REPR: &'static str = "u32";
+    const TYPE_REPR: &'static str = "<integer>";
     const HINT: ValueType<'a, L> = ValueType::U32;
 
     fn from_arg(
@@ -68,26 +49,10 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Power2Opt {
             }
         }
         match value {
-            Value::Constant(c) => match c {
-                Constant::U32(val) => Ok(U32Power2Opt(chk_pow(context, val, node))),
-                c => match c.to_u32() {
-                    ConvertResult::Success(val) => {
-                        context.report_warning(
-                            node,
-                            "implicit conversion to u32 could lead to errors",
-                        );
-                        Ok(U32Power2Opt(chk_pow(context, val, node)))
-                    }
-                    ConvertResult::Lossy(val) => {
-                        context.report_warning(node, "conversion to u32 is lossy");
-                        Ok(U32Power2Opt(chk_pow(context, val, node)))
-                    }
-                    ConvertResult::Failure => Err(Some(format!(
-                        "Cannot convert {} into u32",
-                        value.get_type()
-                    ))),
-                },
-            },
+            Value::Constant(c) => {
+                let value = c.cast(node, context).ok_or(None)?;
+                Ok(U32Power2Opt(chk_pow(context, value, node)))
+            }
             _ => Err(None),
         }
     }
@@ -119,18 +84,18 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for StrOpt<'a> {
     }
 }
 
-pub enum Immediate<'a> {
+pub enum Immediate<'a, L: AssemblyLanguage<'a>> {
     SignedConstant(i32),
     UnsignedConstant(u32),
-    Label(LabelUse<'a>),
+    Label(L::Label),
 }
-impl<'a> Default for Immediate<'a> {
+impl<'a, L: AssemblyLanguage<'a>> Default for Immediate<'a, L> {
     fn default() -> Self {
         Self::UnsignedConstant(0)
     }
 }
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for Immediate<'a> {
-    const TYPE_REPR: &'static str = "i32|label";
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for Immediate<'a, L> {
+    const TYPE_REPR: &'static str = "<integer>|label";
     const HINT: ValueType<'a, L> = ValueType::I32;
 
     fn from_arg(
@@ -140,42 +105,19 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for Immediate<'a> {
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Constant(c) => match c {
-                Constant::I32(value) => Ok(Immediate::SignedConstant(value)),
-                Constant::U32(value) => Ok(Immediate::UnsignedConstant(value)),
-                c @ (Constant::U8(_) | Constant::U16(_) | Constant::U64(_)) => match c.to_u32() {
-                    ConvertResult::Success(val) => {
-                        context.report_warning(
-                            node,
-                            "implicit conversion to u32 could lead to errors",
-                        );
-                        Ok(Immediate::UnsignedConstant(val))
-                    }
-                    ConvertResult::Lossy(val) => {
-                        context.report_warning(node, "conversion to u32 is lossy");
-                        Ok(Immediate::UnsignedConstant(val))
-                    }
-                    ConvertResult::Failure => Err(Some(format!(
-                        "Cannot convert {} into u32",
-                        value.get_type()
-                    ))),
-                },
-                c => match c.to_i32() {
-                    ConvertResult::Success(val) => {
-                        context.report_warning(
-                            node,
-                            "implicit conversion to i32 could lead to errors",
-                        );
-                        Ok(Immediate::SignedConstant(val))
-                    }
-                    ConvertResult::Lossy(val) => {
-                        context.report_warning(node, "conversion to i32 is lossy");
-                        Ok(Immediate::SignedConstant(val))
-                    }
-                    ConvertResult::Failure => Err(Some(format!(
-                        "Cannot convert {} into i32",
-                        value.get_type()
-                    ))),
-                },
+                c if c.is_signed_integer() => Ok(Immediate::SignedConstant(
+                    c.cast(node, context).ok_or(None)?,
+                )),
+                c if c.is_unsigned_integer() => Ok(Immediate::UnsignedConstant(
+                    c.cast(node, context).ok_or(None)?,
+                )),
+                _ => {
+                    context.report_error(
+                        node,
+                        format!("expected <integer> constant found {}", value.get_type()),
+                    );
+                    Err(None)
+                }
             },
             Value::Label(label) => Ok(Immediate::Label(label)),
             _ => Err(None),
@@ -217,8 +159,6 @@ pub trait CoercedArg<'a, L: AssemblyLanguage<'a>>: Sized {
 }
 
 pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
-    const ARGS_HINT: ArgumentsTypeHint<'a, L>;
-
     fn from_args(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
         args: Node<'a, Vec<NodeVal<'a, L>>>,
@@ -226,11 +166,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
 
     fn args(ctx: &mut impl ExpressionEvaluatorContext<'a, L>, fb: NodeId<'a>) -> Self
     where
-        Self: Sized,
-    {
-        let args = ctx.args(fb, Self::ARGS_HINT);
-        Self::from_args(ctx, args)
-    }
+        Self: Sized;
 
     fn args_delim(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
@@ -238,12 +174,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
         end: Token<'a>,
     ) -> Self
     where
-        Self: Sized,
-    {
-        let args: Node<'_, Vec<Node<'_, Value<'_, L>>>> =
-            ctx.args_delim(start, end, Self::ARGS_HINT);
-        Self::from_args(ctx, args)
-    }
+        Self: Sized;
 }
 
 fn wrong_number_args<'a>(
@@ -281,131 +212,73 @@ fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, L>>(
         .unwrap_or_else(|_| T::default(context, node))
 }
 
-impl<'a, L: AssemblyLanguage<'a>> CoercedArgs<'a, L> for () {
-    const ARGS_HINT: ArgumentsTypeHint<'a, L> = ArgumentsTypeHint::None;
-
-    fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        Node(args, node): Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self {
-        if !args.is_empty() {
-            wrong_number_args(ctx.context(), node, args, &[]);
-        }
-    }
-}
-
-impl<'a, L: AssemblyLanguage<'a>, A: CoercedArg<'a, L>> CoercedArgs<'a, L> for (A,) {
-    const ARGS_HINT: ArgumentsTypeHint<'a, L> = ArgumentsTypeHint::None;//ArgumentsTypeHint::Individual(unsafe{std::mem::transmute([A::HINT].as_slice())});
-
-    fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        Node(args, node): Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self {
-        if args.len() != 1 {
-            wrong_number_args(ctx.context(), node, args, &[A::TYPE_REPR]);
-            (A::default(ctx.context(), node),)
-        } else {
-            (coerce_argument(ctx.context(), args[0]),)
-        }
-    }
-}
-
-impl<'a, L: AssemblyLanguage<'a>, A: CoercedArg<'a, L>, B: CoercedArg<'a, L>> CoercedArgs<'a, L>
-    for (A, B)
-{
-    const ARGS_HINT: ArgumentsTypeHint<'a, L> =
-        ArgumentsTypeHint::None;//ArgumentsTypeHint::Individual(unsafe{std::mem::transmute([A::HINT, B::HINT].as_slice())});
-
-    fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        Node(args, node): Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self {
-        if args.len() != 2 {
-            wrong_number_args(ctx.context(), node, args, &[A::TYPE_REPR, B::TYPE_REPR]);
-            (
-                A::default(ctx.context(), node),
-                B::default(ctx.context(), node),
-            )
-        } else {
-            (
-                coerce_argument(ctx.context(), args[0]),
-                coerce_argument(ctx.context(), args[1]),
-            )
-        }
-    }
-}
-
-
-
-impl<'a, L: AssemblyLanguage<'a>, A: CoercedArg<'a, L>, B: CoercedArg<'a, L>, C: CoercedArg<'a, L>>
-    CoercedArgs<'a, L> for (A, B, C)
-{
-    const ARGS_HINT: ArgumentsTypeHint<'a, L> = const{
-        ArgumentsTypeHint::Individual(&[])
+macro_rules! nya {
+    (!expand,) => {
     };
+    (!expand, $v:ident, $($t:ident),*$(,)?) => {
+        nya!(!expand, $($t,)*);
+        nya!(!impl, $($t,)*);
+    };
+    ($($t:ident),*$(,)?) => {
+        nya!(!expand, $($t,)*);
+        nya!(!impl, $($t,)*);
+    };
+    (!impl, $($t:ident),*$(,)?) => {
+        impl<'a, AL: AssemblyLanguage<'a>, $($t: CoercedArg<'a, AL>,)*> CoercedArgs<'a, AL> for ($($t,)*) {
 
-    fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        Node(args, node): Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self {
-        if args.len() != 3 {
-            wrong_number_args(
-                ctx.context(),
-                node,
-                args,
-                &[A::TYPE_REPR, B::TYPE_REPR, C::TYPE_REPR],
-            );
-            (
-                A::default(ctx.context(), node),
-                B::default(ctx.context(), node),
-                C::default(ctx.context(), node),
-            )
-        } else {
-            (
-                coerce_argument(ctx.context(), args[0]),
-                coerce_argument(ctx.context(), args[1]),
-                coerce_argument(ctx.context(), args[2]),
-            )
+            fn args(ctx: &mut impl ExpressionEvaluatorContext<'a, AL>, fb: NodeId<'a>) -> Self
+            where
+                Self: Sized,
+            {
+                let args = ctx.args(fb, ArgumentsTypeHint::Individual(&[$($t::HINT,)*]));
+                Self::from_args(ctx, args)
+            }
+
+            fn args_delim(
+                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
+                start: Token<'a>,
+                end: Token<'a>,
+            ) -> Self
+            where
+                Self: Sized,
+            {
+                let args: Node<'a, Vec<Node<'a, Value<'a, AL>>>> =
+                    ctx.args_delim(start, end, ArgumentsTypeHint::Individual(&[$($t::HINT,)*]));
+                Self::from_args(ctx, args)
+            }
+
+            fn from_args(
+                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
+                Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
+            ) -> Self {
+                if args.len() != nya!(count: $($t,)*) {
+                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)*]);
+                    ($($t::default(ctx.context(), node),)*)
+                }else{
+                    nya!(ctx, args, 0, $($t,)*);
+                    ($($t,)*)
+                }
+            }
         }
-    }
-}
+    };
+    ($ctx:expr, $args:expr, $count:expr, ) => {
+    };
+    ($ctx:expr, $args:expr, $count:expr, $v:ident, $($t:ident,)*) => {
+        #[allow(non_snake_case)]
+        let $v = coerce_argument($ctx.context(), $args[$count]);
+        nya!($ctx, $args, $count+1, $($t,)*);
+    };
+    (args: $count:expr, $v:ident, $($t:ident),*) => {
 
-impl<
-    'a,
-    L: AssemblyLanguage<'a>,
-    A: CoercedArg<'a, L>,
-    B: CoercedArg<'a, L>,
-    C: CoercedArg<'a, L>,
-    D: CoercedArg<'a, L>,
-> CoercedArgs<'a, L> for (A, B, C, D)
-{
-    const ARGS_HINT: ArgumentsTypeHint<'a, L> =
-        ArgumentsTypeHint::None;//ArgumentsTypeHint::Individual(unsafe{std::mem::transmute([A::HINT, B::HINT, C::HINT, D::HINT].as_slice())});
-
-    fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        Node(args, node): Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self {
-        if args.len() != 4 {
-            wrong_number_args(
-                ctx.context(),
-                node,
-                args,
-                &[A::TYPE_REPR, B::TYPE_REPR, C::TYPE_REPR, D::TYPE_REPR],
-            );
-            (
-                A::default(ctx.context(), node),
-                B::default(ctx.context(), node),
-                C::default(ctx.context(), node),
-                D::default(ctx.context(), node),
-            )
-        } else {
-            (
-                coerce_argument(ctx.context(), args[0]),
-                coerce_argument(ctx.context(), args[1]),
-                coerce_argument(ctx.context(), args[2]),
-                coerce_argument(ctx.context(), args[3]),
-            )
-        }
-    }
+    };
+    (count:) => {
+        0
+    };
+    (count: $v:ident,) => {
+        1
+    };
+    (count: $v:ident, $($t:ident),*$(,)?) => {
+        1+nya!(count: $($t,)*)
+    };
 }
+nya!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);

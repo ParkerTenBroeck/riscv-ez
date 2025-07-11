@@ -65,6 +65,7 @@ use crate::lex::{Number, Token, TypeHint};
 use crate::util::IntoStrDelimable;
 use std::fmt::Write;
 use std::marker::PhantomData;
+use std::num::IntErrorKind;
 
 pub type NodeVal<'a, T> = Node<'a, Value<'a, T>>;
 
@@ -72,9 +73,21 @@ pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
     fn next(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn context(&mut self) -> &mut Context<'a>;
-    fn parse_ident(&mut self, ident: &'a str, node: NodeId<'a>, hint: ValueType<'a, L>) -> NodeVal<'a, L>;
+    fn parse_ident(
+        &mut self,
+        ident: &'a str,
+        node: NodeId<'a>,
+        hint: ValueType<'a, L>,
+    ) -> NodeVal<'a, L>;
 
-    fn args(&mut self, fb: NodeId<'a>, hint: ArgumentsTypeHint<'a, L>) -> Node<'a, Vec<NodeVal<'a, L>>> {
+    fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {
+        ExpressionEvaluator(self, PhantomData).parse_expr(hint)
+    }
+    fn args(
+        &mut self,
+        fb: NodeId<'a>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments(hint, fb)
     }
 
@@ -82,7 +95,7 @@ pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
         &mut self,
         start: Token<'a>,
         end: Token<'a>,
-        hint: ArgumentsTypeHint<'a, L>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         ExpressionEvaluator(self, PhantomData).parse_arguments_delim(hint, start, end)
     }
@@ -129,10 +142,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         hint: ValueType<'a, L>,
     ) -> Constant<'a> {
         let (suffix, radix) = match num.get_hint() {
-            TypeHint::Float if hint.is_integer() => (num.get_suffix().unwrap_or("f32"), 10),
+            TypeHint::Float if hint.is_integer() => {
+                (num.get_suffix().unwrap_or(L::DEFAULT_FLOAT_POSTFIX), 10)
+            }
             TypeHint::Float => (
                 num.get_suffix()
-                    .unwrap_or(hint.numeric_suffix().unwrap_or("f32")),
+                    .unwrap_or(hint.numeric_suffix().unwrap_or(L::DEFAULT_FLOAT_POSTFIX)),
                 10,
             ),
             TypeHint::Hex => (
@@ -140,7 +155,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     hint.is_integer()
                         .then(|| hint.numeric_suffix())
                         .flatten()
-                        .unwrap_or("i32"),
+                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
                 ),
                 16,
             ),
@@ -149,7 +164,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     hint.is_integer()
                         .then(|| hint.numeric_suffix())
                         .flatten()
-                        .unwrap_or("i32"),
+                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
                 ),
                 2,
             ),
@@ -158,7 +173,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     hint.is_integer()
                         .then(|| hint.numeric_suffix())
                         .flatten()
-                        .unwrap_or("i32"),
+                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
                 ),
                 10,
             ),
@@ -167,7 +182,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     hint.is_integer()
                         .then(|| hint.numeric_suffix())
                         .flatten()
-                        .unwrap_or("i32"),
+                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
                 ),
                 8,
             ),
@@ -175,10 +190,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
         macro_rules! integer {
             ($num:ty) => {
+
                 <$num>::from_str_radix(num.get_num(), radix)
                     .inspect_err(|e| {
-                        self.context()
-                            .report_error(n, format!("Invalid numeric literal {e}"));
+                        use crate::LogEntry;
+                        match e.kind(){
+                            IntErrorKind::NegOverflow => self.context().report(LogEntry::new().error(n, format!("numeric literal too small to fit in type {suffix}")).hint_locless("consider adding an explicit type suffix to the literal like '3i32' or '34u16'")),
+                            IntErrorKind::PosOverflow => self.context().report(LogEntry::new().error(n, format!("numeric literal too large to fit in type {suffix}")).hint_locless("consider adding an explicit type suffix to the literal like '3i32' or '34u16'")),
+                            _ => self.context().report_error(n, format!("Invalid numeric literal"))
+                        }
                     })
                     .unwrap_or(0)
             };
@@ -372,7 +392,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             };
             self.next();
 
-            let rhs = self.parse_expr_2(hint, op.precedence() + 1);
+            let shift = matches!(op, BinOp::Shl | BinOp::Shr);
+
+            let rhs = self.parse_expr_2(
+                if shift { ValueType::U32 } else { hint },
+                op.precedence() + 1,
+            );
             lhs = self.binop(op, lhs, rhs);
         }
         lhs
@@ -394,7 +419,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         }
     }
 
-    fn parse_expr(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
+    pub fn parse_expr(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
         self.parse_expr_3(hint)
     }
 
@@ -418,7 +443,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn parse_arguments_delim(
         &mut self,
-        hint: ArgumentsTypeHint<'a , L>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
         opening: Token<'a>,
         closing: Token<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
@@ -462,7 +487,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn parse_arguments(
         &mut self,
-        hint: ArgumentsTypeHint<'a , L>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
         fallback_node: NodeId<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();
@@ -495,40 +520,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
     ) -> NodeVal<'a, L> {
         let node = self.context().merge_nodes(func_node, args_node);
         let value = match func {
-            "size" | "align" | "pcrel" | "absolute" => match &args[..] {
-                [Node(Value::Label(l), node)] => {
-                    if !matches!(l.meta, LabelMeta::Unset) {
-                        self.context()
-                            .report_error(node, "label metadata already set before")
-                    }
-                    Value::Label(LabelUse {
-                        ident: l.ident,
-                        offset: l.offset,
-                        meta: match func {
-                            "size" => LabelMeta::Size,
-                            "align" => LabelMeta::Align,
-                            "pcrel" => LabelMeta::PcRel,
-                            "absolute" => LabelMeta::Absolute,
-                            _ => LabelMeta::Unset,
-                        },
-                    })
-                }
-                unexpected => {
-                    self.context().report_error(
-                        args_node,
-                        format!(
-                            "Unexpected arguments found [{}] expected [{}]",
-                            unexpected.iter().map(|e| e.0.get_type()).delim(", "),
-                            ValueType::<'a, L>::Label
-                        ),
-                    );
-                    Value::Label(LabelUse {
-                        ident: "",
-                        offset: 0,
-                        meta: LabelMeta::Unset,
-                    })
-                }
-            },
             "format" => 'result: {
                 let mut result = String::new();
                 let len = args.len();
@@ -823,6 +814,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     self.context().alloc_str(format!("{l}{r}")),
                 )),
 
+                (Value::Label(l), Value::Constant(i)) | (Value::Constant(i), Value::Label(l))
+                    if i.is_integer() =>
+                {
+                    let cng = self.context().config().implicit_cast_label_offset;
+                    Value::Label(l.add_constant_offset(
+                        i.cast_with(node, self.context(), cng).unwrap_or_default(),
+                    ))
+                }
+
                 // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
                 //     Value::RegisterOffset(r, i)
                 // }
@@ -835,17 +835,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 // (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
                 //     Value::RegisterOffset(r, o.wrapping_add(i))
                 // }
-                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
-                    ident: l.ident,
-                    offset: l.offset.wrapping_add(i),
-                    meta: l.meta,
-                }),
-                (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(LabelUse {
-                    ident: l.ident,
-                    offset: l.offset.wrapping_add(i),
-                    meta: l.meta,
-                }),
-
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/,
                     { self.context().report_error(node, format!("Cannot add types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
@@ -863,18 +852,18 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 }
             },
             BinOp::Sub => match (lhs.0, rhs.0) {
+                (Value::Label(l), Value::Constant(i)) if i.is_integer() => {
+                    let cng = self.context().config().implicit_cast_label_offset;
+                    Value::Label(l.sub_constant_offset(
+                        i.cast_with(node, self.context(), cng).unwrap_or_default(),
+                    ))
+                }
                 // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
                 //     Value::RegisterOffset(r, -i)
                 // }
                 // (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
                 //     Value::RegisterOffset(r, o.wrapping_sub(i))
                 // }
-                (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(LabelUse {
-                    ident: l.ident,
-                    offset: l.offset.wrapping_sub(i),
-                    meta: l.meta,
-                }),
-
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_sub(r)},/*float*/{l-r},/*str*/,/*char*/,/*bool*/,
                     { self.context().report_error(node, format!("Cannot subtract types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
@@ -1008,41 +997,31 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 }
             },
             BinOp::Shl => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => Value::Constant(match (l, r) {
-                    (Constant::I8(l), Constant::U8(r)) => Constant::I8(l.wrapping_shl(r as u32)),
-                    (Constant::I16(l), Constant::U8(r)) => Constant::I16(l.wrapping_shl(r as u32)),
-                    (Constant::I32(l), Constant::U8(r)) => Constant::I32(l.wrapping_shl(r as u32)),
-                    (Constant::I64(l), Constant::U8(r)) => Constant::I64(l.wrapping_shl(r as u32)),
-                    (Constant::U8(l), Constant::U8(r)) => Constant::U8(l.wrapping_shl(r as u32)),
-                    (Constant::U16(l), Constant::U8(r)) => Constant::U16(l.wrapping_shl(r as u32)),
-                    (Constant::U32(l), Constant::U8(r)) => Constant::U32(l.wrapping_shl(r as u32)),
-                    (Constant::U64(l), Constant::U8(r)) => Constant::U64(l.wrapping_shl(r as u32)),
-                    (Constant::I8(l), Constant::U16(r)) => Constant::I8(l.wrapping_shl(r as u32)),
-                    (Constant::I16(l), Constant::U16(r)) => Constant::I16(l.wrapping_shl(r as u32)),
-                    (Constant::I32(l), Constant::U16(r)) => Constant::I32(l.wrapping_shl(r as u32)),
-                    (Constant::I64(l), Constant::U16(r)) => Constant::I64(l.wrapping_shl(r as u32)),
-                    (Constant::U8(l), Constant::U16(r)) => Constant::U8(l.wrapping_shl(r as u32)),
-                    (Constant::U16(l), Constant::U16(r)) => Constant::U16(l.wrapping_shl(r as u32)),
-                    (Constant::U32(l), Constant::U16(r)) => Constant::U32(l.wrapping_shl(r as u32)),
-                    (Constant::U64(l), Constant::U16(r)) => Constant::U64(l.wrapping_shl(r as u32)),
-                    (Constant::I8(l), Constant::U32(r)) => Constant::I8(l.wrapping_shl(r)),
-                    (Constant::I16(l), Constant::U32(r)) => Constant::I16(l.wrapping_shl(r)),
-                    (Constant::I32(l), Constant::U32(r)) => Constant::I32(l.wrapping_shl(r)),
-                    (Constant::I64(l), Constant::U32(r)) => Constant::I64(l.wrapping_shl(r)),
-                    (Constant::U8(l), Constant::U32(r)) => Constant::U8(l.wrapping_shl(r)),
-                    (Constant::U16(l), Constant::U32(r)) => Constant::U16(l.wrapping_shl(r)),
-                    (Constant::U32(l), Constant::U32(r)) => Constant::U32(l.wrapping_shl(r)),
-                    (Constant::U64(l), Constant::U32(r)) => Constant::U64(l.wrapping_shl(r)),
-                    _ => {
-                        self.context().report_error(
-                            node,
-                            format!(
-                                "Cannot shift left types {} and {}",
-                                lhs.0.get_type(),
-                                rhs.0.get_type()
-                            ),
-                        );
-                        l
+                (Value::Constant(l), Value::Constant(r)) => Value::Constant({
+                    let v = self.context().config().implicit_cast_shift_value;
+                    let ctx = self.context();
+                    let c = r.cast_with(node, ctx, v).unwrap_or(0);
+                    match l {
+                        Constant::I8(l) => Constant::I8(l.wrapping_shl(c)),
+                        Constant::I16(l) => Constant::I16(l.wrapping_shl(c)),
+                        Constant::I32(l) => Constant::I32(l.wrapping_shl(c)),
+                        Constant::I64(l) => Constant::I64(l.wrapping_shl(c)),
+                        Constant::U8(l) => Constant::U8(l.wrapping_shl(c)),
+                        Constant::U16(l) => Constant::U16(l.wrapping_shl(c)),
+                        Constant::U32(l) => Constant::U32(l.wrapping_shl(c)),
+                        Constant::U64(l) => Constant::U64(l.wrapping_shl(c)),
+
+                        _ => {
+                            self.context().report_error(
+                                node,
+                                format!(
+                                    "Cannot shift left types {} and {}",
+                                    lhs.0.get_type(),
+                                    rhs.0.get_type()
+                                ),
+                            );
+                            l
+                        }
                     }
                 }),
                 _ => {
@@ -1058,41 +1037,31 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 }
             },
             BinOp::Shr => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => Value::Constant(match (l, r) {
-                    (Constant::I8(l), Constant::U8(r)) => Constant::I8(l.wrapping_shr(r as u32)),
-                    (Constant::I16(l), Constant::U8(r)) => Constant::I16(l.wrapping_shr(r as u32)),
-                    (Constant::I32(l), Constant::U8(r)) => Constant::I32(l.wrapping_shr(r as u32)),
-                    (Constant::I64(l), Constant::U8(r)) => Constant::I64(l.wrapping_shr(r as u32)),
-                    (Constant::U8(l), Constant::U8(r)) => Constant::U8(l.wrapping_shr(r as u32)),
-                    (Constant::U16(l), Constant::U8(r)) => Constant::U16(l.wrapping_shr(r as u32)),
-                    (Constant::U32(l), Constant::U8(r)) => Constant::U32(l.wrapping_shr(r as u32)),
-                    (Constant::U64(l), Constant::U8(r)) => Constant::U64(l.wrapping_shr(r as u32)),
-                    (Constant::I8(l), Constant::U16(r)) => Constant::I8(l.wrapping_shr(r as u32)),
-                    (Constant::I16(l), Constant::U16(r)) => Constant::I16(l.wrapping_shr(r as u32)),
-                    (Constant::I32(l), Constant::U16(r)) => Constant::I32(l.wrapping_shr(r as u32)),
-                    (Constant::I64(l), Constant::U16(r)) => Constant::I64(l.wrapping_shr(r as u32)),
-                    (Constant::U8(l), Constant::U16(r)) => Constant::U8(l.wrapping_shr(r as u32)),
-                    (Constant::U16(l), Constant::U16(r)) => Constant::U16(l.wrapping_shr(r as u32)),
-                    (Constant::U32(l), Constant::U16(r)) => Constant::U32(l.wrapping_shr(r as u32)),
-                    (Constant::U64(l), Constant::U16(r)) => Constant::U64(l.wrapping_shr(r as u32)),
-                    (Constant::I8(l), Constant::U32(r)) => Constant::I8(l.wrapping_shr(r)),
-                    (Constant::I16(l), Constant::U32(r)) => Constant::I16(l.wrapping_shr(r)),
-                    (Constant::I32(l), Constant::U32(r)) => Constant::I32(l.wrapping_shr(r)),
-                    (Constant::I64(l), Constant::U32(r)) => Constant::I64(l.wrapping_shr(r)),
-                    (Constant::U8(l), Constant::U32(r)) => Constant::U8(l.wrapping_shr(r)),
-                    (Constant::U16(l), Constant::U32(r)) => Constant::U16(l.wrapping_shr(r)),
-                    (Constant::U32(l), Constant::U32(r)) => Constant::U32(l.wrapping_shr(r)),
-                    (Constant::U64(l), Constant::U32(r)) => Constant::U64(l.wrapping_shr(r)),
-                    _ => {
-                        self.context().report_error(
-                            node,
-                            format!(
-                                "Cannot shift right types {} and {}",
-                                lhs.0.get_type(),
-                                rhs.0.get_type()
-                            ),
-                        );
-                        l
+                (Value::Constant(l), Value::Constant(r)) => Value::Constant({
+                    let v = self.context().config().implicit_cast_shift_value;
+                    let ctx = self.context();
+                    let c = r.cast_with(node, ctx, v).unwrap_or(0);
+                    match l {
+                        Constant::I8(l) => Constant::I8(l.wrapping_shr(c)),
+                        Constant::I16(l) => Constant::I16(l.wrapping_shr(c)),
+                        Constant::I32(l) => Constant::I32(l.wrapping_shr(c)),
+                        Constant::I64(l) => Constant::I64(l.wrapping_shr(c)),
+                        Constant::U8(l) => Constant::U8(l.wrapping_shr(c)),
+                        Constant::U16(l) => Constant::U16(l.wrapping_shr(c)),
+                        Constant::U32(l) => Constant::U32(l.wrapping_shr(c)),
+                        Constant::U64(l) => Constant::U64(l.wrapping_shr(c)),
+
+                        _ => {
+                            self.context().report_error(
+                                node,
+                                format!(
+                                    "Cannot shift left types {} and {}",
+                                    lhs.0.get_type(),
+                                    rhs.0.get_type()
+                                ),
+                            );
+                            l
+                        }
                     }
                 }),
                 _ => {

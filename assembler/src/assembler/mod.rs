@@ -1,11 +1,11 @@
 pub mod context;
 pub mod translation;
 
-use crate::assembler::translation::{CalculationKind, FormKind};
 use crate::context::NodeId;
 use crate::expression::args::{StrOpt, U32Opt, U32Power2Opt};
 use crate::expression::{
-    ArgumentsTypeHint, AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext, Indexed, Value, ValueType
+    ArgumentsTypeHint, AssemblyLabel, AssemblyRegister, Constant, CustomValue,
+    ExpressionEvaluatorContext, Indexed, Value, ValueType,
 };
 use crate::util::IntoStrDelimable;
 use crate::{
@@ -15,27 +15,33 @@ use crate::{
     preprocess::PreProcessor,
 };
 
-pub trait AssemblyLanguage<'a>: Sized + Clone + 'a{
-    type RegType: AssemblyRegister;
+pub trait AssemblyLanguage<'a>: Sized + Clone + 'a {
+    type Reg: AssemblyRegister<'a, Self>;
     type Indexed: Indexed<'a, Self>;
     type CustomValue: CustomValue<'a, Self>;
-    type CustomValueType: CustomValueType<'a, Self>;
+    type Label: AssemblyLabel<'a, Self>;
+    const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
+    const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 
     fn parse_ident_assembly(
         asm: &mut Assembler<'a, '_, Self>,
-        ident: Node<'a, &'a str>,
+        ident: &'a str,
+        node: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Node<'a, Value<'a, Self>>;
 
     fn parse_ident_preprocessor(
         asm: &mut Assembler<'a, '_, Self>,
-        ident: Node<'a, &'a str>,
+        ident: &'a str,
+        node: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Node<'a, Value<'a, Self>> {
-        Self::parse_ident_assembly(asm, ident, hint)
+        Self::parse_ident_assembly(asm, ident, node, hint)
     }
 
-    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: Node<'a, &'a str>);
+    fn add_label_as_data(asm: &mut Assembler<'a, '_, Self>, ident: Self::Label, node: NodeId<'a>);
+
+    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>);
 }
 
 pub struct Assembler<'a, 'b, T: AssemblyLanguage<'a>> {
@@ -86,7 +92,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     fn assemble_line(&mut self) {
         match self.next() {
             Some(Node(Token::Ident(ident), n)) => {
-                T::assemble_mnemonic(self, Node(ident, n));
+                T::assemble_mnemonic(self, ident, n);
                 loop {
                     match self.peek() {
                         None | Some(Node(Token::NewLine, _)) => break,
@@ -235,13 +241,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                             }
                         },
                         Value::Label(l) => {
-                            self.state.ins_or_address_reloc(
-                                0,
-                                l.ident,
-                                l.offset,
-                                CalculationKind::Absolute,
-                                FormKind::Full,
-                            );
+                            T::add_label_as_data(self, l, arg.1);
                         }
                         _ => self
                             .state
@@ -448,6 +448,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluatorContext<'a, L> for Asse
         node: NodeId<'a>,
         hint: ValueType<'a, L>,
     ) -> Node<'a, Value<'a, L>> {
-        L::parse_ident_assembly(self, Node(ident, node), hint)
+        L::parse_ident_assembly(self, ident, node, hint)
     }
 }

@@ -324,7 +324,7 @@ impl RV32IMAState {
                     0b1110011 => match imm_i_u!(ir) {
                         // Zicsr
                         0b000000000000 => self.ecall(mem), // ECALL
-                        0b000000000001 => {}               // EBREAK
+                        0b000000000001 => self.ebreak(),   // EBREAK
                         _ => break 'skip_pc self.invalid_op_code(),
                     },
 
@@ -337,6 +337,10 @@ impl RV32IMAState {
             }
         }
         self.pc.store(pc.wrapping_add(4), O::Relaxed);
+    }
+
+    fn ebreak(&self) {
+        self.exit.store(true, O::Relaxed);
     }
 
     fn ecall(&self, _mem: &SharedMem) {

@@ -1,6 +1,6 @@
 use crate::assembler::AssemblyLanguage;
-use crate::assembler::translation::{CalculationKind, FormKind, Label, Relocation, Section};
-use crate::logs::{LogKind, LogEntry};
+use crate::assembler::translation::{Label, Section};
+use crate::logs::{LogEntry, LogKind};
 use crate::{
     assembler::translation::TranslationUnit,
     context::{Context, NodeId},
@@ -72,25 +72,6 @@ impl<'a, T: AssemblyLanguage<'a>> AssemblerState<'a, T> {
                 Err(_) => unreachable!(),
             }
         }
-    }
-
-    pub fn ins_or_address_reloc(
-        &mut self,
-        data: u32,
-        label: &'a str,
-        offset: i32,
-        calc: CalculationKind,
-        form: FormKind,
-    ) {
-        let sec = self.get_current_section();
-        sec.relocs.push(Relocation {
-            label,
-            value_offset: offset,
-            section_offset: sec.data.len() as u32,
-            form,
-            calc,
-        });
-        *self.add_data_const::<4>(4) = data.to_le_bytes();
     }
 
     pub fn get_current_section(&mut self) -> &mut Section<'a> {

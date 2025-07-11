@@ -7,6 +7,7 @@ pub enum LogKind {
     Error,
     Warning,
     Info,
+    Hint,
     From,
 }
 
@@ -24,25 +25,46 @@ pub struct LogEntry<'a> {
 }
 
 impl<'a> LogEntry<'a> {
-    pub fn new(node_id: NodeId<'a>, kind: LogKind, msg: impl Into<String>) -> Self {
-        Self::default().add(node_id, kind, msg)
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn add(mut self, node_id: NodeId<'a>, kind: LogKind, msg: impl Into<String>) -> Self {
+    pub fn error(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+        self.add(node_id, LogKind::Error, msg)
+    }
+
+    pub fn warning(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+        self.add(node_id, LogKind::Warning, msg)
+    }
+
+    pub fn info(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+        self.add(node_id, LogKind::Info, msg)
+    }
+
+    pub fn hint(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+        self.add(node_id, LogKind::Hint, msg)
+    }
+
+    pub fn add(mut self, node_id: NodeId<'a>, kind: LogKind, msg: impl ToString) -> Self {
         let mut node_id = Some(node_id);
-        let mut msg = Some(msg.into());
+        let mut msg = Some(msg.to_string());
         let mut kind = kind;
+
+        let position = self.parts.len();
         while let Some(node) = node_id {
             let node = *node;
 
             let src = *node.source;
-            self.parts.push(LogPart {
-                node: node_id,
-                span: Some(node.span),
-                source: Some(src),
-                kind,
-                msg: msg.take(),
-            });
+            self.parts.insert(
+                position,
+                LogPart {
+                    node: node_id,
+                    span: Some(node.span),
+                    source: Some(src),
+                    kind,
+                    msg: msg.take(),
+                },
+            );
             kind = LogKind::From;
 
             node_id = node.invoked_by;
@@ -51,16 +73,31 @@ impl<'a> LogEntry<'a> {
         self
     }
 
-    pub fn add_sourceless(&self, kind: LogKind, msg: String) -> LogEntry<'a> {
-        let mut s = Self::default();
-        s.parts.push(LogPart {
+    pub fn error_locless(self, msg: impl ToString) -> Self {
+        self.add_locless(LogKind::Error, msg)
+    }
+
+    pub fn warning_locless(self, msg: impl ToString) -> Self {
+        self.add_locless(LogKind::Warning, msg)
+    }
+
+    pub fn info_locless(self, msg: impl ToString) -> Self {
+        self.add_locless(LogKind::Info, msg)
+    }
+
+    pub fn hint_locless(self, msg: impl ToString) -> Self {
+        self.add_locless(LogKind::Hint, msg)
+    }
+
+    pub fn add_locless(mut self, kind: LogKind, msg: impl ToString) -> LogEntry<'a> {
+        self.parts.push(LogPart {
             node: None,
             source: None,
             span: None,
             kind,
-            msg: Some(msg),
+            msg: Some(msg.to_string()),
         });
-        s
+        self
     }
 }
 
@@ -73,12 +110,13 @@ pub const RESET: &str = "\x1b[0;22m";
 
 impl<'a> std::fmt::Display for LogEntry<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for part in self.parts.iter().rev() {
+        for part in self.parts.iter() {
             match part.kind {
                 LogKind::Error => write!(f, "{BOLD}{RED}error{RESET}{RESET}{BOLD}")?,
                 LogKind::Warning => write!(f, "{BOLD}{YELLOW}warning{RESET}{RESET}{BOLD}")?,
                 LogKind::Info => write!(f, "{BOLD}{BLUE}info{RESET}{RESET}{BOLD}")?,
-                LogKind::From => write!(f, "{BOLD}{GREEN}from{RESET}{RESET}{GREEN}")?,
+                LogKind::From => write!(f, "{BOLD}{GREEN}from{RESET}{RESET}{BOLD}")?,
+                LogKind::Hint => write!(f, "{BOLD}{GREEN}hint{RESET}{RESET}{BOLD}")?,
             }
 
             if let Some(msg) = &part.msg {
@@ -86,6 +124,7 @@ impl<'a> std::fmt::Display for LogEntry<'a> {
             }
 
             let (Some(span), Some(source)) = (part.span, part.source) else {
+                writeln!(f)?;
                 continue;
             };
 
