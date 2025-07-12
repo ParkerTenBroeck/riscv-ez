@@ -1,71 +1,15 @@
 pub mod args;
 pub mod value;
 pub use value::*;
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-
-    And,
-    Xor,
-    Or,
-    Shl,
-    Shr,
-
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-    Eq,
-    Ne,
-}
-
-impl BinOp {
-    pub fn precedence(&self) -> u32 {
-        match self {
-            BinOp::Add => 20 - 4,
-            BinOp::Sub => 20 - 4,
-
-            BinOp::Mul => 20 - 3,
-            BinOp::Div => 20 - 3,
-            BinOp::Rem => 20 - 3,
-
-            BinOp::Shl => 20 - 5,
-            BinOp::Shr => 20 - 5,
-
-            BinOp::Lt => 20 - 6,
-            BinOp::Lte => 20 - 6,
-            BinOp::Gt => 20 - 6,
-            BinOp::Gte => 20 - 6,
-
-            BinOp::Eq => 20 - 7,
-            BinOp::Ne => 20 - 7,
-
-            BinOp::And => 20 - 8,
-            BinOp::Xor => 20 - 9,
-            BinOp::Or => 20 - 10,
-        }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum UnOp {
-    Neg,
-    Not,
-}
+pub mod base;
+pub use base::*;
 
 use crate::assembler::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
-use crate::lex::{Number, Token, TypeHint};
+use crate::lex::{Number, Token};
 use crate::util::IntoStrDelimable;
-use std::fmt::Write;
 use std::marker::PhantomData;
-use std::num::IntErrorKind;
 
 pub type NodeVal<'a, T> = Node<'a, Value<'a, T>>;
 
@@ -135,117 +79,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         self.0.peek()
     }
 
-    fn parse_numeric_literal(
-        &mut self,
-        num: Number<'a>,
-        n: NodeId<'a>,
-        hint: ValueType<'a, L>,
-    ) -> Constant<'a> {
-        let (suffix, radix) = match num.get_hint() {
-            TypeHint::Float if hint.is_integer() => {
-                (num.get_suffix().unwrap_or(L::DEFAULT_FLOAT_POSTFIX), 10)
-            }
-            TypeHint::Float => (
-                num.get_suffix()
-                    .unwrap_or(hint.numeric_suffix().unwrap_or(L::DEFAULT_FLOAT_POSTFIX)),
-                10,
-            ),
-            TypeHint::Hex => (
-                num.get_suffix().unwrap_or(
-                    hint.is_integer()
-                        .then(|| hint.numeric_suffix())
-                        .flatten()
-                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
-                ),
-                16,
-            ),
-            TypeHint::Bin => (
-                num.get_suffix().unwrap_or(
-                    hint.is_integer()
-                        .then(|| hint.numeric_suffix())
-                        .flatten()
-                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
-                ),
-                2,
-            ),
-            TypeHint::Int => (
-                num.get_suffix().unwrap_or(
-                    hint.is_integer()
-                        .then(|| hint.numeric_suffix())
-                        .flatten()
-                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
-                ),
-                10,
-            ),
-            TypeHint::Oct => (
-                num.get_suffix().unwrap_or(
-                    hint.is_integer()
-                        .then(|| hint.numeric_suffix())
-                        .flatten()
-                        .unwrap_or(L::DEFAULT_INTEGER_POSTFIX),
-                ),
-                8,
-            ),
-        };
-
-        macro_rules! integer {
-            ($num:ty) => {
-
-                <$num>::from_str_radix(num.get_num(), radix)
-                    .inspect_err(|e| {
-                        use crate::LogEntry;
-                        match e.kind(){
-                            IntErrorKind::NegOverflow => self.context().report(LogEntry::new().error(n, format!("numeric literal too small to fit in type {suffix}")).hint_locless("consider adding an explicit type suffix to the literal like '3i32' or '34u16'")),
-                            IntErrorKind::PosOverflow => self.context().report(LogEntry::new().error(n, format!("numeric literal too large to fit in type {suffix}")).hint_locless("consider adding an explicit type suffix to the literal like '3i32' or '34u16'")),
-                            _ => self.context().report_error(n, format!("Invalid numeric literal"))
-                        }
-                    })
-                    .unwrap_or(0)
-            };
-        }
-
-        macro_rules! float {
-            ($num:ty) => {
-                num.get_num()
-                    .parse()
-                    .inspect_err(|e| {
-                        self.context()
-                            .report_error(n, format!("Invalid numeric literal {e}"));
-                    })
-                    .unwrap_or(0.0)
-            };
-        }
-
-        match suffix {
-            "i8" => Constant::I8(integer!(i8)),
-            "i16" => Constant::I16(integer!(i16)),
-            "i32" => Constant::I32(integer!(i32)),
-            "i64" => Constant::I64(integer!(i64)),
-            "u8" => Constant::U8(integer!(u8)),
-            "u16" => Constant::U16(integer!(u16)),
-            "u32" => Constant::U32(integer!(u32)),
-            "u64" => Constant::U64(integer!(u64)),
-
-            "f32" => Constant::F32(float!(f32)),
-            "f64" => Constant::F64(float!(f64)),
-
-            suffix => {
-                self.context()
-                    .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
-                if hint.numeric_suffix().is_some() {
-                    if let Value::Constant(c) = hint.default_value() {
-                        c
-                    } else {
-                        Constant::I32(0)
-                    }
-                } else {
-                    Constant::I32(0)
-                }
-            }
-        }
-    }
-
-    fn parse_expr_1(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
+    fn parse_expr_1(&mut self, hint: ValueType<'a, L>, negated: bool) -> NodeVal<'a, L> {
         let expr = match self.next() {
             Some(Node(Token::Ident(ident), node)) => match self.peek() {
                 Some(Node(Token::LPar, _)) => {
@@ -254,7 +88,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         Token::LPar,
                         Token::RPar,
                     );
-                    self.func(ident, node, args, args_node)
+                    self.func_base(ident, node, args, args_node)
                 }
                 _ => self.0.parse_ident(ident, node, hint),
             },
@@ -273,7 +107,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 node,
             ),
             Some(Node(Token::NumericLiteral(num), node)) => Node(
-                Value::Constant(self.parse_numeric_literal(num, node, hint)),
+                Value::Constant(self.parse_numeric_literal_base(num, node, hint, negated)),
                 node,
             ),
             Some(Node(Token::LPar, lhs)) => {
@@ -320,8 +154,33 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     }
                     t => self.context().unexpected_token(t, Token::RBracket, false),
                 };
-                return self.index(expr, rhs, node);
+                return self.index_base(expr, rhs, node);
             }
+            _ => {}
+        }
+
+        expr
+    }
+
+    fn parse_expr_2(&mut self, hint: ValueType<'a, L>, negated: bool) -> NodeVal<'a, L> {
+        match self.peek() {
+            Some(Node(Token::Minus, node)) => {
+                self.next();
+                let expr = self.parse_expr_2(hint, !negated);
+                self.unop_base(unop::UnOp::Neg, node, expr)
+            }
+            Some(Node(Token::LogicalNot, node)) => {
+                self.next();
+                let expr = self.parse_expr_2(hint, false);
+                self.unop_base(unop::UnOp::Not, node, expr)
+            }
+            _ => self.parse_expr_1(hint, negated),
+        }
+    }
+
+    fn parse_expr_3(&mut self, hint: ValueType<'a, L>,) -> NodeVal<'a, L>{
+        let expr = self.parse_expr_2(hint, false);
+        match self.peek() {
             Some(Node(Token::Ident("as"), _)) => {
                 self.next();
 
@@ -331,96 +190,58 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         (node, ty)
                     }
 
-                    t => (
-                        self.context().unexpected_token(t, Token::Ident(""), false),
-                        "i32",
-                    ),
+                    t => {
+                        self.context().unexpected_token(t, Token::Ident(""), false);
+                        return expr;
+                    }
                 };
-                return self.cast(expr, ty, node);
+                self.cast_base(expr, ty, node)
             }
-            _ => {}
+            _ => expr,
         }
-
-        expr
     }
 
-    fn parse_expr_2(&mut self, hint: ValueType<'a, L>, min_prec: u32) -> NodeVal<'a, L> {
-        let mut lhs = self.parse_expr_1(hint);
+    fn parse_expr_4(&mut self, hint: ValueType<'a, L>, min_prec: u32) -> NodeVal<'a, L> {
+        use Token as T;
+        use binop::BinOp as BO;
+        let mut lhs = self.parse_expr_3(hint);
         loop {
             let op = match self.peek() {
-                Some(Node(Token::Plus, _)) if BinOp::Add.precedence() >= min_prec => BinOp::Add,
-                Some(Node(Token::Minus, _)) if BinOp::Sub.precedence() >= min_prec => BinOp::Sub,
-
-                Some(Node(Token::Star, _)) if BinOp::Mul.precedence() >= min_prec => BinOp::Mul,
-                Some(Node(Token::Slash, _)) if BinOp::Div.precedence() >= min_prec => BinOp::Div,
-                Some(Node(Token::Percent, _)) if BinOp::Rem.precedence() >= min_prec => BinOp::Rem,
-
-                Some(Node(Token::LogicalOr, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
-                Some(Node(Token::BitwiseXor, _)) if BinOp::Or.precedence() >= min_prec => BinOp::Or,
-
-                Some(Node(Token::Ampersand, _)) if BinOp::And.precedence() >= min_prec => {
-                    BinOp::And
-                }
-                Some(Node(Token::LogicalAnd, _)) if BinOp::And.precedence() >= min_prec => {
-                    BinOp::And
-                }
-
-                Some(Node(Token::BitwiseXor, _)) if BinOp::Xor.precedence() >= min_prec => {
-                    BinOp::Xor
-                }
-
-                Some(Node(Token::ShiftLeft, _)) if BinOp::Shl.precedence() >= min_prec => {
-                    BinOp::Shl
-                }
-                Some(Node(Token::ShiftRight, _)) if BinOp::Shr.precedence() >= min_prec => {
-                    BinOp::Shr
-                }
-
-                Some(Node(Token::GreaterThan, _)) if BinOp::Gt.precedence() >= min_prec => {
-                    BinOp::Gt
-                }
-                Some(Node(Token::GreaterThanEq, _)) if BinOp::Gte.precedence() >= min_prec => {
-                    BinOp::Gte
-                }
-                Some(Node(Token::LessThan, _)) if BinOp::Lt.precedence() >= min_prec => BinOp::Lt,
-                Some(Node(Token::LessThanEq, _)) if BinOp::Lte.precedence() >= min_prec => {
-                    BinOp::Lte
-                }
-                Some(Node(Token::Equals, _)) if BinOp::Eq.precedence() >= min_prec => BinOp::Eq,
-                Some(Node(Token::NotEquals, _)) if BinOp::Ne.precedence() >= min_prec => BinOp::Ne,
+                Some(Node(T::Plus, _)) if BO::Add.precedence() >= min_prec => BO::Add,
+                Some(Node(T::Minus, _)) if BO::Sub.precedence() >= min_prec => BO::Sub,
+                Some(Node(T::Star, _)) if BO::Mul.precedence() >= min_prec => BO::Mul,
+                Some(Node(T::Slash, _)) if BO::Div.precedence() >= min_prec => BO::Div,
+                Some(Node(T::Percent, _)) if BO::Rem.precedence() >= min_prec => BO::Rem,
+                Some(Node(T::LogicalOr, _)) if BO::Or.precedence() >= min_prec => BO::Or,
+                Some(Node(T::BitwiseOr, _)) if BO::Or.precedence() >= min_prec => BO::Or,
+                Some(Node(T::Ampersand, _)) if BO::And.precedence() >= min_prec => BO::And,
+                Some(Node(T::LogicalAnd, _)) if BO::And.precedence() >= min_prec => BO::And,
+                Some(Node(T::BitwiseXor, _)) if BO::Xor.precedence() >= min_prec => BO::Xor,
+                Some(Node(T::ShiftLeft, _)) if BO::Shl.precedence() >= min_prec => BO::Shl,
+                Some(Node(T::ShiftRight, _)) if BO::Shr.precedence() >= min_prec => BO::Shr,
+                Some(Node(T::GreaterThan, _)) if BO::Gt.precedence() >= min_prec => BO::Gt,
+                Some(Node(T::GreaterThanEq, _)) if BO::Gte.precedence() >= min_prec => BO::Gte,
+                Some(Node(T::LessThan, _)) if BO::Lt.precedence() >= min_prec => BO::Lt,
+                Some(Node(T::LessThanEq, _)) if BO::Lte.precedence() >= min_prec => BO::Lte,
+                Some(Node(T::Equals, _)) if BO::Eq.precedence() >= min_prec => BO::Eq,
+                Some(Node(T::NotEquals, _)) if BO::Ne.precedence() >= min_prec => BO::Ne,
                 _ => break,
             };
             self.next();
 
-            let shift = matches!(op, BinOp::Shl | BinOp::Shr);
+            let shift = matches!(op, BO::Shl | BO::Shr);
 
-            let rhs = self.parse_expr_2(
+            let rhs = self.parse_expr_4(
                 if shift { ValueType::U32 } else { hint },
                 op.precedence() + 1,
             );
-            lhs = self.binop(op, lhs, rhs);
+            lhs = self.binop_base(op, lhs, rhs);
         }
         lhs
     }
 
-    fn parse_expr_3(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
-        match self.peek() {
-            Some(Node(Token::Minus, node)) => {
-                self.next();
-                let expr = self.parse_expr_3(hint);
-                self.unop(UnOp::Neg, node, expr)
-            }
-            Some(Node(Token::LogicalNot, node)) => {
-                self.next();
-                let expr = self.parse_expr_3(hint);
-                self.unop(UnOp::Not, node, expr)
-            }
-            _ => self.parse_expr_2(hint, 0),
-        }
-    }
-
     pub fn parse_expr(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
-        self.parse_expr_3(hint)
+        self.parse_expr_4(hint, 0)
     }
 
     fn parse_char_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> char {
@@ -509,701 +330,5 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 t => _ = self.context().unexpected_token(t, Token::Comma, false),
             }
         }
-    }
-
-    fn func(
-        &mut self,
-        func: &'a str,
-        func_node: NodeId<'a>,
-        args: Vec<NodeVal<'a, L>>,
-        args_node: NodeId<'a>,
-    ) -> NodeVal<'a, L> {
-        let node = self.context().merge_nodes(func_node, args_node);
-        let value = match func {
-            "format" => 'result: {
-                let mut result = String::new();
-                let len = args.len();
-                let mut iter = args.into_iter();
-                match iter.next() {
-                    Some(Node(Value::Constant(Constant::String(format)), _)) => {
-                        let expected = format.matches('%').count();
-                        if expected != len - 1 {
-                            self.context().report_error(
-                                args_node,
-                                format!(
-                                    "wrong number of arguments provided expected {} found {}",
-                                    expected,
-                                    len - 1
-                                ),
-                            )
-                        }
-                        for part in format.split('%') {
-                            result
-                                .write_fmt(format_args!(
-                                    "{}{}",
-                                    part,
-                                    iter.next()
-                                        .map(|e| e.0)
-                                        .unwrap_or(Value::Constant(Constant::String("")))
-                                ))
-                                .unwrap();
-                        }
-                        break 'result Value::Constant(Constant::String(
-                            self.context().alloc_str(result),
-                        ));
-                    }
-                    Some(Node(v, node)) => self.context().report_error(
-                        node,
-                        format!("expected string literal found {}", v.get_type()),
-                    ),
-                    None => self
-                        .context()
-                        .report_error(func_node, "expected string literal found nothing"),
-                }
-
-                Value::Constant(Constant::String(""))
-            }
-            _ => {
-                self.context()
-                    .report_error(func_node, format!("Unknown function {func}"));
-                Value::Constant(Constant::I32(0))
-            }
-        };
-        Node(value, node)
-    }
-
-    fn index(
-        &mut self,
-        lhs: NodeVal<'a, L>,
-        rhs: NodeVal<'a, L>,
-        closing: NodeId<'a>,
-    ) -> NodeVal<'a, L> {
-        let node = self.context().merge_nodes(lhs.1, closing);
-
-        Node(L::Indexed::from_indexed(self.0, node, lhs, rhs), node)
-    }
-
-    fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {
-        self.context().report_error(
-            expr.1,
-            format!("Cannot cast {} to {}", expr.0.get_type(), expected),
-        );
-        expected.default_value()
-    }
-
-    fn cast(&mut self, expr: NodeVal<'a, L>, ty: &'a str, node_id: NodeId<'a>) -> NodeVal<'a, L> {
-        macro_rules! integer {
-            ($ident:ident, $ty:ty) => {
-                match expr.0 {
-                    Value::Constant(Constant::I8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I16(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::I32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::I64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U16(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::F32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::F64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::Bool(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::Char(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    _ => self.cast_error(expr, ValueType::$ident),
-                }
-            };
-        }
-
-        macro_rules! float {
-            ($ident:ident, $ty:ty) => {
-                match expr.0 {
-                    Value::Constant(Constant::I8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::I16(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::I32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::I64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U8(i)) => Value::Constant(Constant::$ident(i as $ty)),
-                    Value::Constant(Constant::U16(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::U64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::F32(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    Value::Constant(Constant::F64(i)) => {
-                        Value::Constant(Constant::$ident(i as $ty))
-                    }
-                    _ => self.cast_error(expr, ValueType::$ident),
-                }
-            };
-        }
-
-        let node = self.context().merge_nodes(expr.1, node_id);
-        let value = match ty {
-            "str" => Value::Constant(Constant::String(
-                self.context().alloc_str(format!("{}", expr.0).as_str()),
-            )),
-            "i8" => integer!(I8, i8),
-            "i16" => integer!(I16, i16),
-            "i32" => integer!(I32, i32),
-            "i64" => integer!(I64, i64),
-            "u8" => integer!(U8, u8),
-            "u16" => integer!(U16, u16),
-            "u32" => integer!(U32, u32),
-            "u64" => integer!(U64, u64),
-            "f32" => float!(F32, f32),
-            "f64" => float!(F64, f64),
-            "char" => match expr.0 {
-                Value::Constant(Constant::U8(i)) => Value::Constant(Constant::Char(i as char)),
-                Value::Constant(Constant::U16(i)) => Value::Constant(Constant::Char(
-                    char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER),
-                )),
-                Value::Constant(Constant::U32(i)) => Value::Constant(Constant::Char(
-                    char::from_u32(i).unwrap_or(char::REPLACEMENT_CHARACTER),
-                )),
-                Value::Constant(Constant::U64(i)) => Value::Constant(Constant::Char(
-                    char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER),
-                )),
-                Value::Constant(Constant::Char(i)) => Value::Constant(Constant::Char(i)),
-                _ => self.cast_error(expr, ValueType::Char),
-            },
-            _ => {
-                self.context()
-                    .report_error(node, format!("Unknown type {ty}"));
-                expr.0
-            }
-        };
-        Node(value, node)
-    }
-
-    fn unop(&mut self, op: UnOp, node: NodeId<'a>, mut expr: NodeVal<'a, L>) -> NodeVal<'a, L> {
-        let node = self.context().merge_nodes(node, expr.1);
-        match op {
-            UnOp::Neg => match &mut expr.0 {
-                Value::Constant(c) => match c {
-                    Constant::I8(i) => *i = -*i,
-                    Constant::I16(i) => *i = -*i,
-                    Constant::I32(i) => *i = -*i,
-                    Constant::I64(i) => *i = -*i,
-                    Constant::F32(i) => *i = -*i,
-                    Constant::F64(i) => *i = -*i,
-                    _ => self.context().report_error(
-                        node,
-                        format!("Cannot negate expression of type {}", expr.0.get_type()),
-                    ),
-                },
-                _ => self.context().report_error(
-                    node,
-                    format!("Cannot negate expression of type {}", expr.0.get_type()),
-                ),
-            },
-            UnOp::Not => match &mut expr.0 {
-                Value::Constant(c) => match c {
-                    Constant::I8(i) => *i = !*i,
-                    Constant::I16(i) => *i = !*i,
-                    Constant::I32(i) => *i = !*i,
-                    Constant::I64(i) => *i = !*i,
-                    Constant::U8(i) => *i = !*i,
-                    Constant::U16(i) => *i = !*i,
-                    Constant::U32(i) => *i = !*i,
-                    Constant::U64(i) => *i = !*i,
-                    Constant::Bool(i) => *i = !*i,
-                    _ => self.context().report_error(
-                        node,
-                        format!("Cannot not expression of type {}", expr.0.get_type()),
-                    ),
-                },
-                _ => self.context().report_error(
-                    node,
-                    format!("Cannot not expression of type {}", expr.0.get_type()),
-                ),
-            },
-        }
-        Node(expr.0, node)
-    }
-
-    fn binop(&mut self, op: BinOp, lhs: NodeVal<'a, L>, rhs: NodeVal<'a, L>) -> NodeVal<'a, L> {
-        macro_rules! constants_grouped {
-            ($l:ident, $r:ident, $($integer:block)?, $($float:block)?, $($string:block)?, $($char:block)?, $($bool:block)?, $error:block) => {
-                Value::Constant(match ($l, $r){
-                    $(
-                        (Constant::I8($l), Constant::I8($r)) => Constant::I8($integer),
-                        (Constant::I16($l), Constant::I16($r)) => Constant::I16($integer),
-                        (Constant::I32($l), Constant::I32($r)) => Constant::I32($integer),
-                        (Constant::I64($l), Constant::I64($r)) => Constant::I64($integer),
-                        (Constant::U8($l), Constant::U8($r)) => Constant::U8($integer),
-                        (Constant::U16($l), Constant::U16($r)) => Constant::U16($integer),
-                        (Constant::U32($l), Constant::U32($r)) => Constant::U32($integer),
-                        (Constant::U64($l), Constant::U64($r)) => Constant::U64($integer),
-                    )?
-                    $(
-                        (Constant::F32($l), Constant::F32($r)) => Constant::F32($float),
-                        (Constant::F64($l), Constant::F64($r)) => Constant::F64($float),
-                    )?
-                    $(
-                        (Constant::String($l), Constant::String($r)) => Constant::String($string),
-                    )?
-                    $(
-                        (Constant::Char($l), Constant::Char($r)) => Constant::Char($char),
-                    )?
-                    $(
-                        (Constant::Bool($l), Constant::Bool($r)) => Constant::Bool($bool),
-                    )?
-
-                    _ => $error
-                })
-            };
-        }
-
-        macro_rules! constants_bool {
-            ($l:ident, $r:ident, $block:block, $error:block) => {
-                Value::Constant(match ($l, $r) {
-                    (Constant::I8($l), Constant::I8($r)) => Constant::Bool($block),
-                    (Constant::I16($l), Constant::I16($r)) => Constant::Bool($block),
-                    (Constant::I32($l), Constant::I32($r)) => Constant::Bool($block),
-                    (Constant::I64($l), Constant::I64($r)) => Constant::Bool($block),
-                    (Constant::U8($l), Constant::U8($r)) => Constant::Bool($block),
-                    (Constant::U16($l), Constant::U16($r)) => Constant::Bool($block),
-                    (Constant::U32($l), Constant::U32($r)) => Constant::Bool($block),
-                    (Constant::U64($l), Constant::U64($r)) => Constant::Bool($block),
-                    (Constant::F32($l), Constant::F32($r)) => Constant::Bool($block),
-                    (Constant::F64($l), Constant::F64($r)) => Constant::Bool($block),
-                    (Constant::String($l), Constant::String($r)) => Constant::Bool($block),
-                    (Constant::Char($l), Constant::Char($r)) => Constant::Bool($block),
-                    (Constant::Bool($l), Constant::Bool($r)) => Constant::Bool($block),
-                    _ => $error,
-                })
-            };
-        }
-
-        let node = self.context().merge_nodes(lhs.1, rhs.1);
-        let value = match op {
-            BinOp::Add => match (lhs.0, rhs.0) {
-                (Value::Constant(Constant::String(l)), r) => Value::Constant(Constant::String(
-                    self.context().alloc_str(format!("{l}{r}")),
-                )),
-                (l, Value::Constant(Constant::String(r))) => Value::Constant(Constant::String(
-                    self.context().alloc_str(format!("{l}{r}")),
-                )),
-
-                (Value::Label(l), Value::Constant(i)) | (Value::Constant(i), Value::Label(l))
-                    if i.is_integer() =>
-                {
-                    let cng = self.context().config().implicit_cast_label_offset;
-                    Value::Label(l.add_constant_offset(
-                        i.cast_with(node, self.context(), cng).unwrap_or_default(),
-                    ))
-                }
-
-                // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
-                //     Value::RegisterOffset(r, i)
-                // }
-                // (Value::Constant(Constant::I32(i)), Value::Register(r)) => {
-                //     Value::RegisterOffset(r, i)
-                // }
-                // (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
-                //     Value::RegisterOffset(r, o.wrapping_add(i))
-                // }
-                // (Value::Constant(Constant::I32(i)), Value::RegisterOffset(r, o)) => {
-                //     Value::RegisterOffset(r, o.wrapping_add(i))
-                // }
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/,
-                    { self.context().report_error(node, format!("Cannot add types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot add types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Sub => match (lhs.0, rhs.0) {
-                (Value::Label(l), Value::Constant(i)) if i.is_integer() => {
-                    let cng = self.context().config().implicit_cast_label_offset;
-                    Value::Label(l.sub_constant_offset(
-                        i.cast_with(node, self.context(), cng).unwrap_or_default(),
-                    ))
-                }
-                // (Value::Register(r), Value::Constant(Constant::I32(i))) => {
-                //     Value::RegisterOffset(r, -i)
-                // }
-                // (Value::RegisterOffset(r, o), Value::Constant(Constant::I32(i))) => {
-                //     Value::RegisterOffset(r, o.wrapping_sub(i))
-                // }
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_sub(r)},/*float*/{l-r},/*str*/,/*char*/,/*bool*/,
-                    { self.context().report_error(node, format!("Cannot subtract types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot subtract types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Mul => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_mul(r)},/*float*/{l*r},/*str*/,/*char*/,/*bool*/,
-                    { self.context().report_error(node, format!("Cannot multiply types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot multiply types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Div => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{
-                        if r!=0{
-                            l.wrapping_div(r)
-                        }else{
-                            self.context().report_error(node, "divide by zero");
-                            0
-                        }
-                    },/*float*/{l/r},/*str*/,/*char*/,/*bool*/,
-                    { self.context().report_error(node, format!("Cannot divide types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot divide types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Rem => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{
-                        if r!=0{
-                            l.wrapping_rem(r)
-                        }else{
-                            self.context().report_error(node, "remainder by zero");
-                            0
-                        }
-                    },/*float*/{l%r},/*str*/,/*char*/,/*bool*/,
-                    { self.context().report_error(node, format!("Cannot remainder types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot remainder types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Xor => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l^r},/*float*/,/*str*/,/*char*/,/*bool*/{l^r},
-                    { self.context().report_error(node, format!("Cannot xor types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot xor types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::And => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l&r},/*float*/,/*str*/,/*char*/,/*bool*/{l&r},
-                    { self.context().report_error(node, format!("Cannot and types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot and types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Or => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l|r},/*float*/,/*str*/,/*char*/,/*bool*/{l|r},
-                    { self.context().report_error(node, format!("Cannot or types {} and {}", lhs.0.get_type(), rhs.0.get_type())); l }
-                ),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot or types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Shl => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                    let v = self.context().config().implicit_cast_shift_value;
-                    let ctx = self.context();
-                    let c = r.cast_with(node, ctx, v).unwrap_or(0);
-                    match l {
-                        Constant::I8(l) => Constant::I8(l.wrapping_shl(c)),
-                        Constant::I16(l) => Constant::I16(l.wrapping_shl(c)),
-                        Constant::I32(l) => Constant::I32(l.wrapping_shl(c)),
-                        Constant::I64(l) => Constant::I64(l.wrapping_shl(c)),
-                        Constant::U8(l) => Constant::U8(l.wrapping_shl(c)),
-                        Constant::U16(l) => Constant::U16(l.wrapping_shl(c)),
-                        Constant::U32(l) => Constant::U32(l.wrapping_shl(c)),
-                        Constant::U64(l) => Constant::U64(l.wrapping_shl(c)),
-
-                        _ => {
-                            self.context().report_error(
-                                node,
-                                format!(
-                                    "Cannot shift left types {} and {}",
-                                    lhs.0.get_type(),
-                                    rhs.0.get_type()
-                                ),
-                            );
-                            l
-                        }
-                    }
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot shift left types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Shr => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                    let v = self.context().config().implicit_cast_shift_value;
-                    let ctx = self.context();
-                    let c = r.cast_with(node, ctx, v).unwrap_or(0);
-                    match l {
-                        Constant::I8(l) => Constant::I8(l.wrapping_shr(c)),
-                        Constant::I16(l) => Constant::I16(l.wrapping_shr(c)),
-                        Constant::I32(l) => Constant::I32(l.wrapping_shr(c)),
-                        Constant::I64(l) => Constant::I64(l.wrapping_shr(c)),
-                        Constant::U8(l) => Constant::U8(l.wrapping_shr(c)),
-                        Constant::U16(l) => Constant::U16(l.wrapping_shr(c)),
-                        Constant::U32(l) => Constant::U32(l.wrapping_shr(c)),
-                        Constant::U64(l) => Constant::U64(l.wrapping_shr(c)),
-
-                        _ => {
-                            self.context().report_error(
-                                node,
-                                format!(
-                                    "Cannot shift left types {} and {}",
-                                    lhs.0.get_type(),
-                                    rhs.0.get_type()
-                                ),
-                            );
-                            l
-                        }
-                    }
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot shift right types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-
-            BinOp::Lt => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l < r }, {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    l
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Lte => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l <= r }, {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    l
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Gt => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l > r }, {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    l
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Gte => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l >= r }, {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    l
-                }),
-                _ => {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "Cannot compare types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    lhs.0
-                }
-            },
-            BinOp::Eq => {
-                if lhs.0.get_type() == rhs.0.get_type() {
-                    Value::Constant(Constant::Bool(lhs.0 == rhs.0))
-                } else {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "cannot compare differing types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    Value::Constant(Constant::Bool(lhs.0 == rhs.0))
-                }
-            }
-            BinOp::Ne => {
-                if lhs.0.get_type() == rhs.0.get_type() {
-                    Value::Constant(Constant::Bool(lhs.0 != rhs.0))
-                } else {
-                    self.context().report_error(
-                        node,
-                        format!(
-                            "cannot compare differing types {} and {}",
-                            lhs.0.get_type(),
-                            rhs.0.get_type()
-                        ),
-                    );
-                    Value::Constant(Constant::Bool(lhs.0 != rhs.0))
-                }
-            }
-        };
-        Node(value, node)
     }
 }
