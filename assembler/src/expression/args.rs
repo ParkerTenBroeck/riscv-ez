@@ -1,4 +1,4 @@
-use crate::assembler::AssemblyLanguage;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
     ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, ImplicitCastTo, NodeVal, Value,
@@ -164,17 +164,42 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
         args: Node<'a, Vec<NodeVal<'a, L>>>,
     ) -> Self;
 
-    fn args(ctx: &mut impl ExpressionEvaluatorContext<'a, L>, fb: NodeId<'a>) -> Self
-    where
-        Self: Sized;
+    fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, L>) -> R) -> R;
+
+    fn args(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        fb: NodeId<'a>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
+        Self::with_hint(|args| ctx.args(fb, args))
+    }
 
     fn args_delim(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
         start: Token<'a>,
         end: Token<'a>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
+        Self::with_hint(|args| ctx.args_delim(start, end, args))
+    }
+
+    fn coerced_args(ctx: &mut impl ExpressionEvaluatorContext<'a, L>, fb: NodeId<'a>) -> Self
+    where
+        Self: Sized,
+    {
+        let args = Self::args(ctx, fb);
+        Self::from_args(ctx, args)
+    }
+
+    fn coerced_args_delim(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        start: Token<'a>,
+        end: Token<'a>,
     ) -> Self
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        let args = Self::args_delim(ctx, start, end);
+        Self::from_args(ctx, args)
+    }
 }
 
 fn wrong_number_args<'a>(
@@ -225,26 +250,8 @@ macro_rules! nya {
     };
     (!impl, $($t:ident),*$(,)?) => {
         impl<'a, AL: AssemblyLanguage<'a>, $($t: CoercedArg<'a, AL>,)*> CoercedArgs<'a, AL> for ($($t,)*) {
-
-            fn args(ctx: &mut impl ExpressionEvaluatorContext<'a, AL>, fb: NodeId<'a>) -> Self
-            where
-                Self: Sized,
-            {
-                let args = ctx.args(fb, ArgumentsTypeHint::Individual(&[$($t::HINT,)*]));
-                Self::from_args(ctx, args)
-            }
-
-            fn args_delim(
-                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
-                start: Token<'a>,
-                end: Token<'a>,
-            ) -> Self
-            where
-                Self: Sized,
-            {
-                let args: Node<'a, Vec<Node<'a, Value<'a, AL>>>> =
-                    ctx.args_delim(start, end, ArgumentsTypeHint::Individual(&[$($t::HINT,)*]));
-                Self::from_args(ctx, args)
+            fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, AL>) -> R) -> R{
+                func(ArgumentsTypeHint::Individual(&[$($t::HINT,)*]))
             }
 
             fn from_args(

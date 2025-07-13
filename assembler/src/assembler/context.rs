@@ -1,4 +1,4 @@
-use crate::assembler::AssemblyLanguage;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::assembler::translation::{Label, Section};
 use crate::logs::{LogEntry, LogKind};
 use crate::{

@@ -1,5 +1,5 @@
 use crate::{
-    assembler::{AssemblyLanguage, context::AssemblerState},
+    assembler::{context::AssemblerState, lang::AssemblyLanguage},
     context::{Node, NodeId, NodeInfo, SourceId},
     lex::{Lexer, Token},
     preprocess::{PreProcessor, PreProcessorIter},

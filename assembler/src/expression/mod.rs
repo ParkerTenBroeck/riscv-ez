@@ -4,7 +4,7 @@ pub use value::*;
 pub mod base;
 pub use base::*;
 
-use crate::assembler::AssemblyLanguage;
+use crate::assembler::{Assembler, lang::AssemblyLanguage};
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token};
@@ -13,16 +13,24 @@ use std::marker::PhantomData;
 
 pub type NodeVal<'a, T> = Node<'a, Value<'a, T>>;
 
+pub enum ExprKind {
+    Assembler,
+    PreProcessor,
+    Linker,
+}
+
 pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
+    const KIND: ExprKind;
+
     fn next(&mut self) -> Option<Node<'a, Token<'a>>>;
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>>;
-    fn context(&mut self) -> &mut Context<'a>;
-    fn parse_ident(
-        &mut self,
-        ident: &'a str,
-        node: NodeId<'a>,
-        hint: ValueType<'a, L>,
-    ) -> NodeVal<'a, L>;
+    fn context(&mut self) -> &mut Context<'a> {
+        &mut self.asm().state.context
+    }
+    fn asm(&mut self) -> Assembler<'a, '_, L>;
+    fn eval(&mut self) -> ExpressionEvaluator<'a, '_, L, Self> {
+        ExpressionEvaluator(self, PhantomData)
+    }
 
     fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {
         ExpressionEvaluator(self, PhantomData).parse_expr(hint)
@@ -48,14 +56,14 @@ pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
     where
         Self: Sized,
     {
-        T::args(self, fb)
+        T::coerced_args(self, fb)
     }
 
     fn coerced_delim<T: CoercedArgs<'a, L>>(&mut self, start: Token<'a>, end: Token<'a>) -> T
     where
         Self: Sized,
     {
-        T::args_delim(self, start, end)
+        T::coerced_args_delim(self, start, end)
     }
 }
 
@@ -90,7 +98,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     );
                     self.func_base(ident, node, args, args_node)
                 }
-                _ => self.0.parse_ident(ident, node, hint),
+                _ => Node(L::parse_ident(self.0, Node(ident, node), hint), node),
             },
             Some(Node(Token::TrueLiteral, node)) => {
                 Node(Value::Constant(Constant::Bool(true)), node)
@@ -107,7 +115,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 node,
             ),
             Some(Node(Token::NumericLiteral(num), node)) => Node(
-                Value::Constant(self.parse_numeric_literal_base(num, node, hint, negated)),
+                L::parse_numeric_literal(self.0, Node(num, node), negated, hint),
                 node,
             ),
             Some(Node(Token::LPar, lhs)) => {
@@ -143,18 +151,22 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         };
 
         match self.peek() {
-            Some(Node(Token::LBracket, _)) => {
+            Some(Node(Token::LBracket, opening)) => {
                 self.next();
                 let rhs = self.parse_expr(hint);
 
-                let node = match self.peek() {
-                    Some(Node(Token::RBracket, node)) => {
+                let closing = match self.peek() {
+                    Some(Node(Token::RBracket, closing)) => {
                         self.next();
-                        node
+                        closing
                     }
                     t => self.context().unexpected_token(t, Token::RBracket, false),
                 };
-                return self.index_base(expr, rhs, node);
+                let node = self.context().merge_nodes(expr.1, closing);
+                return Node(
+                    L::eval_index(self.0, node, expr, opening, rhs, closing, hint),
+                    node,
+                );
             }
             _ => {}
         }
@@ -164,30 +176,38 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     fn parse_expr_2(&mut self, hint: ValueType<'a, L>, negated: bool) -> NodeVal<'a, L> {
         match self.peek() {
-            Some(Node(Token::Minus, node)) => {
+            Some(Node(Token::Minus, op_node)) => {
                 self.next();
                 let expr = self.parse_expr_2(hint, !negated);
-                self.unop_base(unop::UnOp::Neg, node, expr)
+                let node = self.context().merge_nodes(op_node, expr.1);
+                Node(
+                    L::eval_unnop(self.0, node, Node(unop::UnOp::Neg, node), expr, hint),
+                    node,
+                )
             }
-            Some(Node(Token::LogicalNot, node)) => {
+            Some(Node(Token::LogicalNot, op_node)) => {
                 self.next();
                 let expr = self.parse_expr_2(hint, false);
-                self.unop_base(unop::UnOp::Not, node, expr)
+                let node = self.context().merge_nodes(op_node, expr.1);
+                Node(
+                    L::eval_unnop(self.0, node, Node(unop::UnOp::Not, node), expr, hint),
+                    node,
+                )
             }
             _ => self.parse_expr_1(hint, negated),
         }
     }
 
-    fn parse_expr_3(&mut self, hint: ValueType<'a, L>,) -> NodeVal<'a, L>{
+    fn parse_expr_3(&mut self, hint: ValueType<'a, L>) -> NodeVal<'a, L> {
         let expr = self.parse_expr_2(hint, false);
         match self.peek() {
-            Some(Node(Token::Ident("as"), _)) => {
+            Some(Node(Token::Ident("as"), as_node)) => {
                 self.next();
 
-                let (node, ty) = match self.peek() {
+                let ty = match self.peek() {
                     Some(Node(Token::Ident(ty), node)) => {
                         self.next();
-                        (node, ty)
+                        Node(ty, node)
                     }
 
                     t => {
@@ -195,47 +215,50 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         return expr;
                     }
                 };
-                self.cast_base(expr, ty, node)
+                let node = self.context().merge_nodes(expr.1, ty.1);
+                Node(L::eval_cast(self.0, node, expr, as_node, ty, hint), node)
             }
             _ => expr,
         }
     }
 
     fn parse_expr_4(&mut self, hint: ValueType<'a, L>, min_prec: u32) -> NodeVal<'a, L> {
+        use Node as N;
         use Token as T;
         use binop::BinOp as BO;
         let mut lhs = self.parse_expr_3(hint);
         loop {
             let op = match self.peek() {
-                Some(Node(T::Plus, _)) if BO::Add.precedence() >= min_prec => BO::Add,
-                Some(Node(T::Minus, _)) if BO::Sub.precedence() >= min_prec => BO::Sub,
-                Some(Node(T::Star, _)) if BO::Mul.precedence() >= min_prec => BO::Mul,
-                Some(Node(T::Slash, _)) if BO::Div.precedence() >= min_prec => BO::Div,
-                Some(Node(T::Percent, _)) if BO::Rem.precedence() >= min_prec => BO::Rem,
-                Some(Node(T::LogicalOr, _)) if BO::Or.precedence() >= min_prec => BO::Or,
-                Some(Node(T::BitwiseOr, _)) if BO::Or.precedence() >= min_prec => BO::Or,
-                Some(Node(T::Ampersand, _)) if BO::And.precedence() >= min_prec => BO::And,
-                Some(Node(T::LogicalAnd, _)) if BO::And.precedence() >= min_prec => BO::And,
-                Some(Node(T::BitwiseXor, _)) if BO::Xor.precedence() >= min_prec => BO::Xor,
-                Some(Node(T::ShiftLeft, _)) if BO::Shl.precedence() >= min_prec => BO::Shl,
-                Some(Node(T::ShiftRight, _)) if BO::Shr.precedence() >= min_prec => BO::Shr,
-                Some(Node(T::GreaterThan, _)) if BO::Gt.precedence() >= min_prec => BO::Gt,
-                Some(Node(T::GreaterThanEq, _)) if BO::Gte.precedence() >= min_prec => BO::Gte,
-                Some(Node(T::LessThan, _)) if BO::Lt.precedence() >= min_prec => BO::Lt,
-                Some(Node(T::LessThanEq, _)) if BO::Lte.precedence() >= min_prec => BO::Lte,
-                Some(Node(T::Equals, _)) if BO::Eq.precedence() >= min_prec => BO::Eq,
-                Some(Node(T::NotEquals, _)) if BO::Ne.precedence() >= min_prec => BO::Ne,
+                Some(N(T::Plus, n)) if BO::Add.precedence() >= min_prec => N(BO::Add, n),
+                Some(N(T::Minus, n)) if BO::Sub.precedence() >= min_prec => N(BO::Sub, n),
+                Some(N(T::Star, n)) if BO::Mul.precedence() >= min_prec => N(BO::Mul, n),
+                Some(N(T::Slash, n)) if BO::Div.precedence() >= min_prec => N(BO::Div, n),
+                Some(N(T::Percent, n)) if BO::Rem.precedence() >= min_prec => N(BO::Rem, n),
+                Some(N(T::LogicalOr, n)) if BO::Or.precedence() >= min_prec => N(BO::Or, n),
+                Some(N(T::BitwiseOr, n)) if BO::Or.precedence() >= min_prec => N(BO::Or, n),
+                Some(N(T::Ampersand, n)) if BO::And.precedence() >= min_prec => N(BO::And, n),
+                Some(N(T::LogicalAnd, n)) if BO::And.precedence() >= min_prec => N(BO::And, n),
+                Some(N(T::BitwiseXor, n)) if BO::Xor.precedence() >= min_prec => N(BO::Xor, n),
+                Some(N(T::ShiftLeft, n)) if BO::Shl.precedence() >= min_prec => N(BO::Shl, n),
+                Some(N(T::ShiftRight, n)) if BO::Shr.precedence() >= min_prec => N(BO::Shr, n),
+                Some(N(T::GreaterThan, n)) if BO::Gt.precedence() >= min_prec => N(BO::Gt, n),
+                Some(N(T::GreaterThanEq, n)) if BO::Gte.precedence() >= min_prec => N(BO::Gte, n),
+                Some(N(T::LessThan, n)) if BO::Lt.precedence() >= min_prec => N(BO::Lt, n),
+                Some(N(T::LessThanEq, n)) if BO::Lte.precedence() >= min_prec => N(BO::Lte, n),
+                Some(N(T::Equals, n)) if BO::Eq.precedence() >= min_prec => N(BO::Eq, n),
+                Some(N(T::NotEquals, n)) if BO::Ne.precedence() >= min_prec => N(BO::Ne, n),
                 _ => break,
             };
             self.next();
 
-            let shift = matches!(op, BO::Shl | BO::Shr);
+            let shift = matches!(op.0, BO::Shl | BO::Shr);
 
             let rhs = self.parse_expr_4(
                 if shift { ValueType::U32 } else { hint },
-                op.precedence() + 1,
+                op.0.precedence() + 1,
             );
-            lhs = self.binop_base(op, lhs, rhs);
+            let node = self.context().merge_nodes(lhs.1, rhs.1);
+            lhs = Node(L::eval_binop(self.0, node, lhs, op, rhs, hint), node);
         }
         lhs
     }

@@ -35,6 +35,11 @@ impl<'a> Label<'a> {
             meta: LabelMeta::Unset,
         }
     }
+
+    pub fn offset(mut self, offset: i32) -> Self {
+        self.offset = self.offset.wrapping_add(offset);
+        self
+    }
 }
 
 impl<'a> Display for Label<'a> {
@@ -59,14 +64,4 @@ impl<'a> Display for Label<'a> {
 
 impl<'a> AssemblyLabel<'a, RiscvAssembler> for Label<'a> {
     type Offset = i32;
-
-    fn add_constant_offset(mut self, offset: Self::Offset) -> Self {
-        self.offset += offset;
-        self
-    }
-
-    fn sub_constant_offset(mut self, offset: Self::Offset) -> Self {
-        self.offset -= offset;
-        self
-    }
 }

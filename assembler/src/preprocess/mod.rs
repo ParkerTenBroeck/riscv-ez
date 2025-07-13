@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use crate::assembler::Assembler;
-use crate::assembler::AssemblyLanguage;
 use crate::assembler::context::AssemblerState;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::expression::ExpressionEvaluatorContext;
 use crate::expression::ValueType;
 use crate::preprocess::defined_macro::TokenIter;

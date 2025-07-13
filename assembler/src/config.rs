@@ -52,6 +52,7 @@ pub struct AssemblerConfig {
     pub implicit_cast_label_offset: ImplicitCastConfig,
     pub implicit_cast_shift_value: ImplicitCastConfig,
 }
+
 impl AssemblerConfig {
     pub fn new() -> Self {
         Self {

@@ -1,6 +1,6 @@
 use crate::expression::ValueType;
 use crate::{
-    assembler::AssemblyLanguage,
+    assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
     expression::{Constant, ExpressionEvaluator, ExpressionEvaluatorContext, NodeVal, Value},
 };
@@ -10,10 +10,13 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 {
     pub fn cast_base(
         &mut self,
+        node: NodeId<'a>,
         expr: NodeVal<'a, L>,
-        ty: &'a str,
-        node_id: NodeId<'a>,
-    ) -> NodeVal<'a, L> {
+        _: NodeId<'a>,
+        ty: Node<'a, &'a str>,
+        _: ValueType<'a, L>,
+    ) -> Value<'a, L> {
+        let ty = ty.0;
         macro_rules! integer {
             ($ident:ident, $ty:ty) => {
                 match expr.0 {
@@ -88,7 +91,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             };
         }
 
-        let node = self.context().merge_nodes(expr.1, node_id);
         let value = match ty {
             "str" => Value::Constant(Constant::String(
                 self.context().alloc_str(format!("{}", expr.0).as_str()),
@@ -123,7 +125,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 expr.0
             }
         };
-        Node(value, node)
+        value
     }
 
     pub fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {

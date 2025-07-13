@@ -1,6 +1,6 @@
 use crate::label::Label;
 use crate::{Register, RiscvAssembler};
-use assembler::assembler::{Assembler, AssemblyLanguage};
+use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, Immediate};
 use assembler::expression::{

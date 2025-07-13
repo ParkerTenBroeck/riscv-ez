@@ -6,6 +6,7 @@ pub mod label;
 pub mod opcodes;
 pub mod reg;
 
+use assembler::expression::binop::BinOp;
 use indexed::*;
 use opcodes::*;
 use reg::*;
@@ -16,12 +17,12 @@ use std::str::FromStr;
 
 use crate::args::{FloatReg, RegReg};
 use crate::label::Label;
-use assembler::assembler::{Assembler, AssemblyLanguage};
+use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, Immediate};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext, Indexed,
-    Value, ValueType,
+    AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext,
+    ImplicitCastTo, Indexed, Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
@@ -35,16 +36,15 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     type CustomValue = Infallible;
     type Label = Label<'a>;
 
-    fn parse_ident_assembly(
-        _: &mut Assembler<'a, '_, Self>,
-        ident: &'a str,
-        node: NodeId<'a>,
+    fn parse_ident(
+        _: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        Node(ident, node): Node<'a, &'a str>,
         _: ValueType<'a, RiscvAssembler>,
-    ) -> Node<'a, Value<'a, Self>> {
+    ) -> Value<'a, Self> {
         if let Ok(reg) = Register::from_str(ident) {
-            Node(Value::Register(reg), node)
+            Value::Register(reg)
         } else {
-            Node(Value::Label(Label::new(ident)), node)
+            Value::Label(Label::new(ident))
         }
     }
 
@@ -137,6 +137,181 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         //     FormKind::Full,
         // );
         todo!()
+    }
+
+    fn eval_index(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        node: NodeId<'a>,
+        lhs: assembler::expression::NodeVal<'a, Self>,
+        opening: NodeId<'a>,
+        rhs: assembler::expression::NodeVal<'a, Self>,
+        closing: NodeId<'a>,
+        hint: ValueType<'a, Self>,
+    ) -> Value<'a, Self> {
+        match (rhs.0, lhs.0) {
+            (Value::Register(r), Value::Constant(Constant::I32(i))) => {
+                Value::Indexed(MemoryIndex::RegisterOffset(r, i))
+            }
+            (Value::Constant(Constant::I32(i)), Value::Register(r)) => {
+                Value::Indexed(MemoryIndex::RegisterOffset(r, i))
+            }
+            (
+                Value::Indexed(MemoryIndex::RegisterOffset(r, o)),
+                Value::Constant(Constant::I32(i)),
+            ) => Value::Indexed(MemoryIndex::RegisterOffset(r, o.wrapping_add(i))),
+            (
+                Value::Constant(Constant::I32(i)),
+                Value::Indexed(MemoryIndex::RegisterOffset(r, o)),
+            ) => Value::Indexed(MemoryIndex::RegisterOffset(r, o.wrapping_add(i))),
+
+            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(Label {
+                ident: l.ident,
+                offset: l.offset.wrapping_add(i),
+                meta: l.meta,
+            }),
+            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(Label {
+                ident: l.ident,
+                offset: l.offset.wrapping_add(i),
+                meta: l.meta,
+            }),
+            (Value::Label(l), Value::Register(r)) => {
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l))
+            }
+            (Value::Register(r), Value::Label(l)) => {
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l))
+            }
+
+            (Value::Label(l), Value::Indexed(MemoryIndex::RegisterOffset(r, i))) => {
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(
+                    r,
+                    Label {
+                        ident: l.ident,
+                        offset: l.offset.wrapping_add(i),
+                        meta: l.meta,
+                    },
+                ))
+            }
+            (Value::Indexed(MemoryIndex::RegisterOffset(r, i)), Value::Label(l)) => {
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(
+                    r,
+                    Label {
+                        ident: l.ident,
+                        offset: l.offset.wrapping_add(i),
+                        meta: l.meta,
+                    },
+                ))
+            }
+            _ => ctx
+                .eval()
+                .index_base(node, lhs, opening, rhs, closing, hint),
+        }
+    }
+
+    fn eval_binop(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        node: NodeId<'a>,
+        lhs: assembler::expression::NodeVal<'a, Self>,
+        op: Node<'a, assembler::expression::binop::BinOp>,
+        rhs: assembler::expression::NodeVal<'a, Self>,
+        hint: ValueType<'a, Self>,
+    ) -> Value<'a, Self> {
+        let lbl_config = ctx.context().config().implicit_cast_label_offset;
+        match (op.0, lhs, rhs) {
+            (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Indexed(idx), _))
+            | (BinOp::Add, Node(Value::Indexed(idx), _), Node(Value::Constant(c), cn))
+                if c.is_integer() =>
+            {
+                match idx {
+                    MemoryIndex::LabelRegisterOffset(register, label) => {
+                        Value::Indexed(MemoryIndex::LabelRegisterOffset(
+                            register,
+                            label.offset(
+                                c.cast_with(cn, ctx.context(), lbl_config)
+                                    .unwrap_or_default(),
+                            ),
+                        ))
+                    }
+                    MemoryIndex::RegisterOffset(register, offset) => {
+                        Value::Indexed(MemoryIndex::RegisterOffset(
+                            register,
+                            offset.wrapping_add(
+                                c.cast_with(cn, ctx.context(), lbl_config)
+                                    .unwrap_or_default(),
+                            ),
+                        ))
+                    }
+                }
+            }
+
+            (BinOp::Sub, Node(Value::Indexed(idx), _), Node(Value::Constant(c), cn))
+                if c.is_integer() =>
+            {
+                match idx {
+                    MemoryIndex::LabelRegisterOffset(register, label) => {
+                        Value::Indexed(MemoryIndex::LabelRegisterOffset(
+                            register,
+                            label.offset(
+                                c.cast_with(cn, ctx.context(), lbl_config)
+                                    .unwrap_or(0i32)
+                                    .wrapping_neg(),
+                            ),
+                        ))
+                    }
+                    MemoryIndex::RegisterOffset(register, offset) => {
+                        Value::Indexed(MemoryIndex::RegisterOffset(
+                            register,
+                            offset.wrapping_add(
+                                c.cast_with(cn, ctx.context(), lbl_config)
+                                    .unwrap_or(0i32)
+                                    .wrapping_neg(),
+                            ),
+                        ))
+                    }
+                }
+            }
+
+            (BinOp::Add, Node(Value::Register(reg), _), Node(Value::Constant(c), cn))
+            | (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Register(reg), _))
+                if c.is_integer() =>
+            {
+                Value::Indexed(MemoryIndex::RegisterOffset(
+                    reg,
+                    c.cast_with(cn, ctx.context(), lbl_config).unwrap_or(0i32),
+                ))
+            }
+
+            (BinOp::Sub, Node(Value::Register(reg), _), Node(Value::Constant(c), cn))
+                if c.is_integer() =>
+            {
+                Value::Indexed(MemoryIndex::RegisterOffset(
+                    reg,
+                    c.cast_with(cn, ctx.context(), lbl_config)
+                        .unwrap_or(0i32)
+                        .wrapping_neg(),
+                ))
+            }
+
+            (BinOp::Add, Node(Value::Label(l), _), Node(Value::Constant(c), cn))
+            | (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Label(l), _))
+                if c.is_integer() =>
+            {
+                Value::Label(l.offset(c.cast_with(cn, ctx.context(), lbl_config).unwrap_or(0i32)))
+            }
+
+            (BinOp::Sub, Node(Value::Label(l), _), Node(Value::Constant(c), cn))
+                if c.is_integer() =>
+            {
+                Value::Label(
+                    l.offset(
+                        c.cast_with(cn, ctx.context(), lbl_config)
+                            .unwrap_or(0i32)
+                            .wrapping_neg(),
+                    ),
+                )
+            }
+
+            _ => ctx.eval().binop_base(node, lhs, op, rhs, hint),
+        }
     }
 }
 

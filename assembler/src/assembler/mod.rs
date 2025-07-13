@@ -1,48 +1,19 @@
 pub mod context;
+pub mod lang;
 pub mod translation;
 
-use crate::context::NodeId;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::expression::args::{StrOpt, U32Opt, U32Power2Opt};
 use crate::expression::{
-    ArgumentsTypeHint, AssemblyLabel, AssemblyRegister, Constant, CustomValue,
-    ExpressionEvaluatorContext, Indexed, Value, ValueType,
+    ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, Value, ValueType,
 };
 use crate::util::IntoStrDelimable;
 use crate::{
     assembler::{context::AssemblerState, translation::Section},
-    context::{Context, Node},
+    context::Node,
     lex::Token,
     preprocess::PreProcessor,
 };
-
-pub trait AssemblyLanguage<'a>: Sized + Clone + 'a {
-    type Reg: AssemblyRegister<'a, Self>;
-    type Indexed: Indexed<'a, Self>;
-    type CustomValue: CustomValue<'a, Self>;
-    type Label: AssemblyLabel<'a, Self>;
-    const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
-    const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
-
-    fn parse_ident_assembly(
-        asm: &mut Assembler<'a, '_, Self>,
-        ident: &'a str,
-        node: NodeId<'a>,
-        hint: ValueType<'a, Self>,
-    ) -> Node<'a, Value<'a, Self>>;
-
-    fn parse_ident_preprocessor(
-        asm: &mut Assembler<'a, '_, Self>,
-        ident: &'a str,
-        node: NodeId<'a>,
-        hint: ValueType<'a, Self>,
-    ) -> Node<'a, Value<'a, Self>> {
-        Self::parse_ident_assembly(asm, ident, node, hint)
-    }
-
-    fn add_label_as_data(asm: &mut Assembler<'a, '_, Self>, ident: Self::Label, node: NodeId<'a>);
-
-    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>);
-}
 
 pub struct Assembler<'a, 'b, T: AssemblyLanguage<'a>> {
     pub state: &'b mut AssemblerState<'a, T>,
@@ -127,6 +98,12 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
 
     pub fn assemble_mnemonic_default(&mut self, Node(mnemonic, n): Node<'a, &'a str>) {
         match mnemonic {
+            ".dbg" => {
+                let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
+                self.state
+                    .context
+                    .report_info(args_node, format!("{args:#?}"))
+            }
             ".info" => {
                 let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
                 self.state
@@ -430,24 +407,19 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
 }
 
 impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluatorContext<'a, L> for Assembler<'a, 'b, L> {
+    const KIND: crate::expression::ExprKind = crate::expression::ExprKind::Assembler;
+
+    fn asm(&mut self) -> Assembler<'a, '_, L> {
+        Assembler {
+            state: self.state,
+            preprocessor: self.preprocessor,
+        }
+    }
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor.next(&mut self.state)
     }
 
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor.peek(&mut self.state)
-    }
-
-    fn context(&mut self) -> &mut Context<'a> {
-        &mut self.state.context
-    }
-
-    fn parse_ident(
-        &mut self,
-        ident: &'a str,
-        node: NodeId<'a>,
-        hint: ValueType<'a, L>,
-    ) -> Node<'a, Value<'a, L>> {
-        L::parse_ident_assembly(self, ident, node, hint)
     }
 }

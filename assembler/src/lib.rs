@@ -1,5 +1,5 @@
 use crate::assembler::context::AssemblerState;
-use crate::assembler::{Assembler, AssemblyLanguage};
+use crate::assembler::{Assembler, lang::AssemblyLanguage};
 
 use crate::config::AssemblerConfig;
 use crate::context::Context;

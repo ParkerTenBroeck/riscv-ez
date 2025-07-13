@@ -2,18 +2,14 @@ use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Index;
 
-use crate::assembler::AssemblyLanguage;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::config::ImplicitCastConfig;
 use crate::context::{Context, NodeId};
-use crate::expression::{ExpressionEvaluatorContext, NodeVal};
 
 pub trait AssemblyLabel<'a, L: AssemblyLanguage<'a>>:
     Sized + Default + std::fmt::Display + std::fmt::Debug + Copy + Clone + Eq + PartialEq
 {
     type Offset: ImplicitCastFrom<'a, Constant<'a>> + Default;
-
-    fn add_constant_offset(self, offset: Self::Offset) -> Self;
-    fn sub_constant_offset(self, offset: Self::Offset) -> Self;
 }
 
 pub trait AssemblyRegister<'a, L: AssemblyLanguage<'a>>:
@@ -23,12 +19,6 @@ pub trait AssemblyRegister<'a, L: AssemblyLanguage<'a>>:
 pub trait Indexed<'a, L: AssemblyLanguage<'a>>:
     Debug + Clone + Copy + PartialEq + Display + Default + Sized
 {
-    fn from_indexed(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        node: NodeId<'a>,
-        lhs: NodeVal<'a, L>,
-        rhs: NodeVal<'a, L>,
-    ) -> Value<'a, L>;
 }
 
 pub trait CustomValue<'a, L: AssemblyLanguage<'a>>:
@@ -179,13 +169,32 @@ impl<'a, L: AssemblyLanguage<'a>> CustomValue<'a, L> for Infallible {
 
 //----------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value<'a, L: AssemblyLanguage<'a>> {
     Constant(Constant<'a>),
     Label(L::Label),
     Indexed(L::Indexed),
     Register(L::Reg),
     Custom(L::CustomValue),
+}
+
+impl<'a, L> core::fmt::Debug for Value<'a, L>
+where
+    L: AssemblyLanguage<'a>,
+    L::Label: core::fmt::Debug,
+    L::Indexed: core::fmt::Debug,
+    L::Reg: core::fmt::Debug,
+    L::CustomValue: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            Value::Constant(f0) => f.debug_tuple("Constant").field(&f0).finish(),
+            Value::Label(f0) => f.debug_tuple("Label").field(&f0).finish(),
+            Value::Indexed(f0) => f.debug_tuple("Indexed").field(&f0).finish(),
+            Value::Register(f0) => f.debug_tuple("Register").field(&f0).finish(),
+            Value::Custom(f0) => f.debug_tuple("Custom").field(&f0).finish(),
+        }
+    }
 }
 
 impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for Value<'a, L> {

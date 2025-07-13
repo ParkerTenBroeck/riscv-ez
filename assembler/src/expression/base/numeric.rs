@@ -1,6 +1,6 @@
 use crate::{
-    assembler::AssemblyLanguage,
-    context::NodeId,
+    assembler::lang::AssemblyLanguage,
+    context::Node,
     expression::{Constant, ExpressionEvaluator, ExpressionEvaluatorContext, Value, ValueType},
     lex::{Number, TypeHint},
 };
@@ -12,11 +12,10 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 {
     pub fn parse_numeric_literal_base(
         &mut self,
-        num: Number<'a>,
-        n: NodeId<'a>,
-        hint: ValueType<'a, L>,
+        Node(num, n): Node<'a, Number<'a>>,
         negated: bool,
-    ) -> Constant<'a> {
+        hint: ValueType<'a, L>,
+    ) -> Value<'a, L> {
         let mut buf = [0u8; 32];
         let suffix = if let Some(suffix) = num.get_suffix() {
             let mut index = 0;
@@ -25,11 +24,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     if index + c.len_utf8() > buf.len() {
                         self.context()
                             .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
-                        return if let Value::Constant(c) = hint.default_value() {
-                            c
-                        } else {
-                            Constant::I32(0)
-                        };
+                        return hint.default_value();
                     }
                     c.encode_utf8(&mut buf[index..]);
                     index += c.len_utf8();
@@ -101,11 +96,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     if index + c.len_utf8() > buf.len() {
                         self.context()
                             .report_error(n, format!("numeric literal too long"));
-                        return if let Value::Constant(c) = hint.default_value() {
-                            c
-                        } else {
-                            Constant::I32(0)
-                        };
+                        return hint.default_value();
                     }
                     c.encode_utf8(&mut buf[index..]);
                     index += c.len_utf8();
@@ -146,7 +137,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             };
         }
 
-        match suffix {
+        Value::Constant(match suffix {
             "i8" => Constant::I8(integer!(i8)),
             "i16" => Constant::I16(integer!(i16)),
             "i32" => Constant::I32(integer!(i32)),
@@ -162,12 +153,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             suffix => {
                 self.context()
                     .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
-                if let Value::Constant(c) = hint.default_value() {
-                    c
-                } else {
-                    Constant::I32(0)
-                }
+                return hint.default_value();
             }
-        }
+        })
     }
 }
