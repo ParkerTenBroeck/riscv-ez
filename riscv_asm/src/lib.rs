@@ -50,12 +50,12 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
 
     fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
-            "lui" => match asm.coerced(n) {
+            "lui" => match asm.coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {}
                 (RegReg(r), Immediate::Label(_)) => {}
             },
-            "auipc" => match asm.coerced(n) {
+            "auipc" => match asm.coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {}
                 (RegReg(r), Immediate::Label(_)) => {}
@@ -98,7 +98,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             "rem" => Self::reg_reg_only(asm, n, RTypeOpCode::Rem),
             "remu" => Self::reg_reg_only(asm, n, RTypeOpCode::Remu),
 
-            "li" => match asm.coerced(n) {
+            "li" => match asm.coerced(n).0 {
                 // (RegReg(r), Immediate::SignedConstant(c)) if c <= i16::MAX as i32 && c >= i16::MIN as i32 => {
                 //     Self::instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(asm, c as u32))
                 // }
@@ -321,17 +321,17 @@ impl RiscvAssembler {
     }
 
     fn reg_reg_only<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.coerced(n);
+        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.coerced(n).0;
         Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
     fn float_reg_only_3<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.coerced(n);
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.coerced(n).0;
         Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
     fn float_reg_only_4<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = asm.coerced(n);
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = asm.coerced(n).0;
         Self::instruction(
             asm,
             ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2() | rs3.rs3(),
@@ -339,7 +339,7 @@ impl RiscvAssembler {
     }
 
     fn no_args<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: u32) {
-        let _: () = asm.coerced(n);
+        let _: () = asm.coerced(n).0;
         Self::instruction(asm, ins);
     }
 }

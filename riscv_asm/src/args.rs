@@ -9,16 +9,17 @@ use assembler::expression::{
 };
 use std::fmt::{Display, Formatter};
 
-pub enum RegOffset<'a, L: AssemblyLanguage<'a>> {
-    Constant(L::Reg, i32),
-    Label(L::Reg, Label<'a>),
+pub enum RegOffset<'a> {
+    Constant(Register, i32),
+    Label(Register, Label<'a>),
 }
-impl<'a, L: AssemblyLanguage<'a>> Default for RegOffset<'a, L> {
+impl<'a> Default for RegOffset<'a> {
     fn default() -> Self {
-        Self::Constant(L::Reg::default(), 0)
+        Self::Constant(Register::default(), 0)
     }
 }
-impl<'a> CoercedArg<'a, RiscvAssembler> for RegOffset<'a, RiscvAssembler> {
+impl<'a> CoercedArg<'a> for RegOffset<'a> {
+    type LANG = RiscvAssembler;
     const TYPE_REPR: &'static str = "indexed|register|label|<integer>";
     const HINT: ValueType<'a, RiscvAssembler> = ValueType::<'a, RiscvAssembler>::Indexed;
 
@@ -46,7 +47,8 @@ impl<'a> CoercedArg<'a, RiscvAssembler> for RegOffset<'a, RiscvAssembler> {
 
 #[derive(Default)]
 pub struct RegReg(pub Register);
-impl<'a> CoercedArg<'a, RiscvAssembler> for RegReg {
+impl<'a> CoercedArg<'a> for RegReg {
+    type LANG = RiscvAssembler;
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType<'a, RiscvAssembler> = ValueType::Register;
 
@@ -71,7 +73,8 @@ impl<'a> CoercedArg<'a, RiscvAssembler> for RegReg {
 
 #[derive(Default)]
 pub struct FloatReg(pub Register);
-impl<'a> CoercedArg<'a, RiscvAssembler> for FloatReg {
+impl<'a> CoercedArg<'a> for FloatReg {
+    type LANG = RiscvAssembler;
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType<'a, RiscvAssembler> = ValueType::Register;
 

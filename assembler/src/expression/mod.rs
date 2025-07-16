@@ -35,35 +35,78 @@ pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
     fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {
         ExpressionEvaluator(self, PhantomData).parse_expr(hint)
     }
+
     fn args(
         &mut self,
-        fb: NodeId<'a>,
+        init: NodeId<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
-        ExpressionEvaluator(self, PhantomData).parse_arguments(hint, fb)
+        ExpressionEvaluator(self, PhantomData).parse_arguments(init, hint)
     }
 
     fn args_delim(
         &mut self,
+        init: NodeId<'a>,
         start: Token<'a>,
         end: Token<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
-        ExpressionEvaluator(self, PhantomData).parse_arguments_delim(hint, start, end)
+        ExpressionEvaluator(self, PhantomData).parse_arguments_delim(init, start, end, hint)
     }
 
-    fn coerced<T: CoercedArgs<'a, L>>(&mut self, fb: NodeId<'a>) -> T
+    fn coerced<T: CoercedArgs<'a, L>>(&mut self, init: NodeId<'a>) -> Node<'a, T>
     where
         Self: Sized,
     {
-        T::coerced_args(self, fb)
+        T::coerced_args(self, init)
     }
 
-    fn coerced_delim<T: CoercedArgs<'a, L>>(&mut self, start: Token<'a>, end: Token<'a>) -> T
+    fn coerced_delim<T: CoercedArgs<'a, L>>(
+        &mut self,
+        init: NodeId<'a>,
+        start: Token<'a>,
+        end: Token<'a>,
+    ) -> Node<'a, T>
     where
         Self: Sized,
     {
-        T::coerced_args_delim(self, start, end)
+        T::coerced_args_delim(self, init, start, end)
+    }
+}
+
+pub struct FuncParamParser<'a, 'b> {
+    func: Node<'a, &'a str>,
+    func_node: &'b mut Option<NodeId<'a>>,
+}
+
+impl<'a, 'b> FuncParamParser<'a, 'b> {
+    pub fn func(&self) -> &'a str {
+        self.func.0
+    }
+
+    pub fn coerced_args<
+        A: CoercedArgs<'a, L>,
+        L: AssemblyLanguage<'a>,
+        T: ExpressionEvaluatorContext<'a, L> + Sized,
+    >(
+        self,
+        ctx: &mut T,
+    ) -> Node<'a, A> {
+        let args = A::coerced_args_delim(ctx, self.func.1, Token::LPar, Token::RPar);
+        *self.func_node = Some(args.1);
+        args
+    }
+
+    pub fn args<L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>(
+        self,
+        ctx: &mut T,
+    ) -> Node<'a, Vec<Node<'a, Value<'a, L>>>> {
+        ctx.args_delim(
+            self.func.1,
+            Token::LPar,
+            Token::RPar,
+            ArgumentsTypeHint::None,
+        )
     }
 }
 
@@ -91,12 +134,30 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         let expr = match self.next() {
             Some(Node(Token::Ident(ident), node)) => match self.peek() {
                 Some(Node(Token::LPar, _)) => {
-                    let Node(args, args_node) = self.parse_arguments_delim(
-                        ArgumentsTypeHint::None,
-                        Token::LPar,
-                        Token::RPar,
+                    let mut loc = None;
+                    let res = L::eval_func(
+                        self.0,
+                        FuncParamParser {
+                            func: Node(ident, node),
+                            func_node: &mut loc,
+                        },
+                        hint,
                     );
-                    self.func_base(ident, node, args, args_node)
+
+                    let loc = if let Some(loc) = loc {
+                        loc
+                    } else {
+                        let loc = self.parse_arguments_delim(
+                            node,
+                            Token::LPar,
+                            Token::RPar,
+                            ArgumentsTypeHint::None,
+                        );
+                        self.context().report_error(loc.1, "Function arguments never consumer... This is a error on the developers part");
+                        loc.1
+                    };
+
+                    Node(res, loc)
                 }
                 _ => Node(L::parse_ident(self.0, Node(ident, node), hint), node),
             },
@@ -287,35 +348,35 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn parse_arguments_delim(
         &mut self,
-        hint: ArgumentsTypeHint<'a, '_, L>,
+        init: NodeId<'a>,
         opening: Token<'a>,
         closing: Token<'a>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();
 
-        let start = match self.peek() {
-            Some(Node(t, n)) if t == opening => {
+        match self.peek() {
+            Some(Node(t, _)) if t == opening => {
                 self.next();
-                n
             }
-            t => self.context().unexpected_token(t, opening, true),
+            t => {
+                self.context().unexpected_token(t, opening, true);
+            }
         };
         loop {
-            args.push(self.parse_expr(hint[args.len()]));
             match self.peek() {
-                Some(Node(Token::Comma, _)) => {
-                    self.next();
-                }
                 Some(Node(t, end)) if t == closing => {
                     self.next();
-                    return Node(args, self.context().merge_nodes(start, end));
+                    return Node(args, self.context().merge_nodes(init, end));
                 }
-                t @ Some(_) => {
-                    _ = self.context().unexpected_token(
-                        t,
-                        [Token::Comma, closing].iter().delim("|"),
-                        true,
-                    )
+                Some(_) => {
+                    args.push(self.parse_expr(hint[args.len()]));
+                    match self.peek() {
+                        Some(Node(Token::Comma, _)) => {
+                            self.next();
+                        }
+                        _ => {}
+                    }
                 }
                 None => {
                     let end = self.context().unexpected_token(
@@ -323,7 +384,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         [Token::Comma, closing].iter().delim("|"),
                         true,
                     );
-                    return Node(args, self.context().merge_nodes(start, end));
+                    return Node(args, self.context().merge_nodes(init, end));
                 }
             }
         }
@@ -331,26 +392,29 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn parse_arguments(
         &mut self,
+        init: NodeId<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
-        fallback_node: NodeId<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();
-        match self.peek() {
-            Some(Node(Token::NewLine, _)) | None => return Node(args, fallback_node),
-            _ => {}
-        }
+
         loop {
-            args.push(self.parse_expr(hint[args.len()]));
             match self.peek() {
-                Some(Node(Token::Comma, _)) => {
-                    self.next();
-                }
                 Some(Node(Token::NewLine, _)) | None => {
-                    let left = args.first().map(|n| n.1).unwrap_or(fallback_node);
-                    let right = args.last().map(|n| n.1).unwrap_or(fallback_node);
-                    return Node(args, self.context().merge_nodes(left, right));
+                    if let Some(Node(_, last)) = args.last().copied() {
+                        return Node(args, self.context().merge_nodes(init, last));
+                    } else {
+                        return Node(args, init);
+                    }
                 }
-                t => _ = self.context().unexpected_token(t, Token::Comma, false),
+                _ => {
+                    args.push(self.parse_expr(hint[args.len()]));
+                    match self.peek() {
+                        Some(Node(Token::Comma, _)) => {
+                            self.next();
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
     }

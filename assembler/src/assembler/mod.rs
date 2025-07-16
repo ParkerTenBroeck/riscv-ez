@@ -3,7 +3,7 @@ pub mod lang;
 pub mod translation;
 
 use crate::assembler::lang::AssemblyLanguage;
-use crate::expression::args::{StrOpt, U32Opt, U32Power2Opt};
+use crate::expression::args::{StrOpt, U32Opt, U32Pow2Opt};
 use crate::expression::{
     ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, Value, ValueType,
 };
@@ -124,21 +124,21 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             }
 
             ".global" => {
-                if let (Node(StrOpt(Some(_label)), node),) = self.coerced(n) {
+                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
                     self.state
                         .context
                         .report_warning(node, "not implemented yet");
                 }
             }
             ".local" => {
-                if let (Node(StrOpt(Some(_label)), node),) = self.coerced(n) {
+                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
                     self.state
                         .context
                         .report_warning(node, "not implemented yet");
                 }
             }
             ".weak" => {
-                if let (Node(StrOpt(Some(_label)), node),) = self.coerced(n) {
+                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
                     self.state
                         .context
                         .report_warning(node, "not implemented yet");
@@ -146,12 +146,12 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             }
 
             ".section" => {
-                if let (StrOpt(Some(sec)),) = self.coerced(n) {
+                if let StrOpt::Val(Some(sec)) = self.coerced(n).0 {
                     self.state.set_current_section(sec);
                 }
             }
             ".org" => {
-                if let (Node(U32Opt(Some(org)), node),) = self.coerced(n) {
+                if let Node(U32Opt::Val(Some(org)), node) = self.coerced(n).0 {
                     if self.state.get_current_section().start.is_some() {
                         self.state
                             .context
@@ -161,16 +161,15 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                 }
             }
             ".space" => {
-                if let (U32Opt(Some(size)),) = self.coerced(n) {
+                if let U32Opt::Val(Some(size)) = self.coerced(n).0 {
                     self.state.add_data(size, 1);
                 }
             }
             ".align" => {
-                if let (U32Power2Opt(Some(align)),) = self.coerced(n) {
+                if let U32Pow2Opt::Val(Some(align)) = self.coerced(n).0 {
                     self.state.add_data(0, align);
                 }
             }
-
             ".data" => {
                 for arg in self.args(n, ArgumentsTypeHint::None).0 {
                     let align = arg.0.get_align().unwrap_or(1);

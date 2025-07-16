@@ -1,3 +1,6 @@
+use std::convert::Infallible;
+use std::marker::PhantomData;
+
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
@@ -7,64 +10,181 @@ use crate::expression::{
 use crate::lex::Token;
 use crate::util::IntoStrDelimable;
 
-#[derive(Default)]
-pub struct U32Opt(pub Option<u32>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Opt {
-    const TYPE_REPR: &'static str = "<integer>";
-    const HINT: ValueType<'a, L> = ValueType::U32;
-
-    fn from_arg(
-        context: &mut Context<'a>,
-        node: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        match value {
-            Value::Constant(c) if c.is_integer() => Ok(U32Opt(c.cast(node, context))),
-            _ => Err(None),
+macro_rules! integer {
+    ($($ty:ty, $kind:expr, $vt:ident, $opt:ident, $($pow:ident)?),* $(,)?) => {$(
+        #[non_exhaustive]
+        pub enum $opt<L>{
+            Val(Option<$ty>),
+            __(Infallible, PhantomData<L>)
         }
-    }
+        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<L> {
+            type LANG = L;
+            const TYPE_REPR: &'static str = $kind;
+            const HINT: ValueType<'a, L> = ValueType::$vt;
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Default::default()
-    }
-}
+            fn from_arg(
+                context: &mut Context<'a>,
+                node: NodeId<'a>,
+                value: Value<'a, L>,
+            ) -> Result<Self, Option<String>> {
+                match value {
+                    Value::Constant(c) if c.is_integer() => Ok($opt::Val(c.cast(node, context))),
+                    _ => Err(None),
+                }
+            }
 
-#[derive(Default)]
-pub struct U32Power2Opt(pub Option<u32>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for U32Power2Opt {
-    const TYPE_REPR: &'static str = "<integer>";
-    const HINT: ValueType<'a, L> = ValueType::U32;
-
-    fn from_arg(
-        context: &mut Context<'a>,
-        node: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        fn chk_pow<'a>(context: &mut Context<'a>, value: u32, node: NodeId<'a>) -> Option<u32> {
-            if value.is_power_of_two() {
-                Some(value)
-            } else {
-                context.report_error(node, "Value is not a power of two");
-                None
+            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+                Self::Val(None)
             }
         }
-        match value {
-            Value::Constant(c) => {
-                let value = c.cast(node, context).ok_or(None)?;
-                Ok(U32Power2Opt(chk_pow(context, value, node)))
-            }
-            _ => Err(None),
-        }
-    }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Default::default()
-    }
+        #[non_exhaustive]
+        pub enum $vt<L>{
+            Val($ty),
+            __(Infallible, PhantomData<L>)
+        }
+        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $vt<L> {
+            type LANG = L;
+            const TYPE_REPR: &'static str = $kind;
+            const HINT: ValueType<'a, L> = ValueType::$vt;
+
+            fn from_arg(
+                context: &mut Context<'a>,
+                node: NodeId<'a>,
+                value: Value<'a, L>,
+            ) -> Result<Self, Option<String>> {
+                match value {
+                    Value::Constant(c) if c.is_integer() => Ok(Self::Val(c.cast(node, context).unwrap_or_default())),
+                    _ => Err(None),
+                }
+            }
+
+            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+                Self::Val(<$ty>::default())
+            }
+        }
+
+        $(
+            #[non_exhaustive]
+            pub enum $pow<L>{
+                Val(Option<$ty>),
+                __(Infallible, PhantomData<L>)
+            }
+            impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $pow<L> {
+                type LANG = L;
+                const TYPE_REPR: &'static str = $kind;
+                const HINT: ValueType<'a, L> = ValueType::$vt;
+
+                fn from_arg(
+                    context: &mut Context<'a>,
+                    node: NodeId<'a>,
+                    value: Value<'a, L>,
+                ) -> Result<Self, Option<String>> {
+                    match value {
+                        Value::Constant(c) => {
+                            let value: $ty = c.cast(node, context).ok_or(None)?;
+                            Ok(Self::Val(if value.is_power_of_two() {
+                                    Some(value)
+                                } else {
+                                    context.report_error(node, "Value is not a power of two");
+                                    None
+                                }
+                            ))
+                        }
+                        _ => Err(None),
+                    }
+                }
+
+                fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+                    Self::Val(None)
+                }
+            }
+        )?
+
+    )*};
 }
 
-#[derive(Default)]
-pub struct StrOpt<'a>(pub Option<&'a str>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for StrOpt<'a> {
+macro_rules! value {
+    ($($ty:ty, $kind:expr, $vt:ident, $opt:ident),* $(,)?) => {$(
+        #[non_exhaustive]
+        pub enum $opt<L>{
+            Val(Option<$ty>),
+            __(Infallible, PhantomData<L>)
+        }
+        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<L> {
+            type LANG = L;
+            const TYPE_REPR: &'static str = $kind;
+            const HINT: ValueType<'a, L> = ValueType::String;
+
+            fn from_arg(
+                _: &mut Context<'a>,
+                _: NodeId<'a>,
+                value: Value<'a, L>,
+            ) -> Result<Self, Option<String>> {
+                match value {
+                    Value::Constant(Constant::$vt(v)) => Ok(Self::Val(Some(v))),
+                    _ => Err(None),
+                }
+            }
+
+            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+               Self::Val(None)
+            }
+        }
+
+        #[non_exhaustive]
+        pub enum $vt<L>{
+            Val($ty),
+            __(Infallible, PhantomData<L>)
+        }
+        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $vt<L> {
+            type LANG = L;
+            const TYPE_REPR: &'static str = $kind;
+            const HINT: ValueType<'a, L> = ValueType::String;
+
+            fn from_arg(
+                _: &mut Context<'a>,
+                _: NodeId<'a>,
+                value: Value<'a, L>,
+            ) -> Result<Self, Option<String>> {
+                match value {
+                    Value::Constant(Constant::$vt(v)) => Ok(Self::Val(v)),
+                    _ => Err(None),
+                }
+            }
+
+            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+                Self::Val(<$ty>::default())
+            }
+        }
+    )*};
+}
+
+integer!(
+    i8, "<integer>", I8, I8Opt, ,
+    i16, "<integer>", I16, I16Opt, ,
+    i32, "<integer>", I32, I32Opt, ,
+    i64, "<integer>", I64, I64Opt, ,
+
+    u8, "<integer>", U8, U8Opt, U8Pow2Opt,
+    u16, "<integer>", U16, U16Opt, U16Pow2Opt,
+    u32, "<integer>", U32, U32Opt, U32Pow2Opt,
+    u64, "<integer>", U64, U64Opt, U64Pow2Opt,
+
+
+    f32, "<float>", F32, F32Opt, ,
+    f64, "<float>", F64, F64Opt, ,
+);
+
+value!(char, "char", Char, CharOpt, bool, "bool", Bool, BoolOpt,);
+
+#[non_exhaustive]
+pub enum StrOpt<'a, L> {
+    Val(Option<&'a str>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
+    type LANG = L;
     const TYPE_REPR: &'static str = "str";
     const HINT: ValueType<'a, L> = ValueType::String;
 
@@ -74,13 +194,57 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for StrOpt<'a> {
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
-            Value::Constant(Constant::String(str)) => Ok(StrOpt(Some(str))),
+            Value::Constant(Constant::String(str)) => Ok(Self::Val(Some(str))),
             _ => Err(None),
         }
     }
 
     fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Default::default()
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum Str<'a, L> {
+    Val(&'a str),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Str<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "str";
+    const HINT: ValueType<'a, L> = ValueType::String;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::String(str)) => Ok(Self::Val(str)),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val("")
+    }
+}
+
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Value<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "any";
+    const HINT: ValueType<'a, L> = ValueType::Any;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, Self::LANG>,
+    ) -> Result<Self, Option<String>> {
+        Ok(value)
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Constant(Constant::I32(0))
     }
 }
 
@@ -94,7 +258,8 @@ impl<'a, L: AssemblyLanguage<'a>> Default for Immediate<'a, L> {
         Self::UnsignedConstant(0)
     }
 }
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for Immediate<'a, L> {
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Immediate<'a, L> {
+    type LANG = L;
     const TYPE_REPR: &'static str = "<integer>|label";
     const HINT: ValueType<'a, L> = ValueType::I32;
 
@@ -129,7 +294,8 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a, L> for Immediate<'a, L> {
     }
 }
 
-impl<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, L>> CoercedArg<'a, L> for Node<'a, T> {
+impl<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>> CoercedArg<'a> for Node<'a, T> {
+    type LANG = L;
     const TYPE_REPR: &'static str = T::TYPE_REPR;
     const HINT: ValueType<'a, L> = T::HINT;
 
@@ -146,13 +312,14 @@ impl<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, L>> CoercedArg<'a, L> for No
     }
 }
 
-pub trait CoercedArg<'a, L: AssemblyLanguage<'a>>: Sized {
+pub trait CoercedArg<'a>: Sized {
+    type LANG: AssemblyLanguage<'a>;
     const TYPE_REPR: &'static str;
-    const HINT: ValueType<'a, L>;
+    const HINT: ValueType<'a, Self::LANG>;
     fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
-        value: Value<'a, L>,
+        value: Value<'a, Self::LANG>,
     ) -> Result<Self, Option<String>>;
 
     fn default(context: &mut Context<'a>, node: NodeId<'a>) -> Self;
@@ -162,7 +329,9 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
     fn from_args(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
         args: Node<'a, Vec<NodeVal<'a, L>>>,
-    ) -> Self;
+    ) -> Node<'a, Self>
+    where
+        Self: Sized;
 
     fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, L>) -> R) -> R;
 
@@ -175,29 +344,34 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
 
     fn args_delim(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        init: NodeId<'a>,
         start: Token<'a>,
         end: Token<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
-        Self::with_hint(|args| ctx.args_delim(start, end, args))
+        Self::with_hint(|args| ctx.args_delim(init, start, end, args))
     }
 
-    fn coerced_args(ctx: &mut impl ExpressionEvaluatorContext<'a, L>, fb: NodeId<'a>) -> Self
+    fn coerced_args(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        init: NodeId<'a>,
+    ) -> Node<'a, Self>
     where
         Self: Sized,
     {
-        let args = Self::args(ctx, fb);
+        let args = Self::args(ctx, init);
         Self::from_args(ctx, args)
     }
 
     fn coerced_args_delim(
         ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        init: NodeId<'a>,
         start: Token<'a>,
         end: Token<'a>,
-    ) -> Self
+    ) -> Node<'a, Self>
     where
         Self: Sized,
     {
-        let args = Self::args_delim(ctx, start, end);
+        let args = Self::args_delim(ctx, init, start, end);
         Self::from_args(ctx, args)
     }
 }
@@ -207,18 +381,20 @@ fn wrong_number_args<'a>(
     node: NodeId<'a>,
     args: Vec<Node<'a, Value<'a, impl AssemblyLanguage<'a>>>>,
     expected: &[&str],
+    vargs: bool,
 ) {
+    let vargs = if vargs { "*" } else { "" };
     context.report_error(
         node,
         format!(
-            "Wrong number of arguments, expected [{}] got [{}]",
+            "Wrong number of arguments, expected [{}{vargs}] got [{}]",
             expected.iter().delim(", "),
             args.iter().map(|i| i.0.get_type()).delim(", "),
         ),
     );
 }
 
-fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, L>>(
+fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>>(
     context: &mut Context<'a>,
     Node(arg, node): Node<'a, Value<'a, L>>,
 ) -> T {
@@ -249,7 +425,9 @@ macro_rules! nya {
         nya!(!impl, $($t,)*);
     };
     (!impl, $($t:ident),*$(,)?) => {
-        impl<'a, AL: AssemblyLanguage<'a>, $($t: CoercedArg<'a, AL>,)*> CoercedArgs<'a, AL> for ($($t,)*) {
+
+        #[allow(unused_parens)]
+        impl<'a, $($t: CoercedArg<'a, LANG=AL>,)* AL: AssemblyLanguage<'a>> CoercedArgs<'a, AL> for ($($t),*) {
             fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, AL>) -> R) -> R{
                 func(ArgumentsTypeHint::Individual(&[$($t::HINT,)*]))
             }
@@ -257,13 +435,35 @@ macro_rules! nya {
             fn from_args(
                 ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
-            ) -> Self {
+            ) -> Node<'a, Self> {
                 if args.len() != nya!(count: $($t,)*) {
-                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)*]);
-                    ($($t::default(ctx.context(), node),)*)
+                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)*], false);
+                    Node(($($t::default(ctx.context(), node)),*), node)
                 }else{
                     nya!(ctx, args, 0, $($t,)*);
-                    ($($t,)*)
+                    Node(($($t),*), node)
+                }
+            }
+        }
+
+        #[allow(unused_parens)]
+        impl<'a, $($t: CoercedArg<'a, LANG=AL>,)* VV: CoercedArg<'a, LANG=AL>, AL: AssemblyLanguage<'a>> CoercedArgs<'a, AL> for ($($t,)* Vec<VV>) {
+            fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, AL>) -> R) -> R{
+                func(ArgumentsTypeHint::Comb(&[$($t::HINT,)*], VV::HINT))
+            }
+
+            fn from_args(
+                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
+                Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
+            ) -> Node<'a, Self> {
+                #[allow(unused_comparisons)]
+                if args.len() < nya!(count: $($t,)*) {
+                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)* VV::TYPE_REPR], true);
+                    Node(($($t::default(ctx.context(), node),)* Vec::new()), node)
+                }else{
+                    nya!(ctx, args, 0, $($t,)*);
+                    let vv = args.into_iter().skip(nya!(count: $($t,)*)).map(|a|{coerce_argument(ctx.context(), a)}).collect();
+                    Node(($($t,)* vv), node)
                 }
             }
         }

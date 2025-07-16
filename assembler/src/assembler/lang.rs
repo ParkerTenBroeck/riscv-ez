@@ -2,8 +2,8 @@ use crate::{
     assembler::Assembler,
     context::{Node, NodeId},
     expression::{
-        AssemblyLabel, AssemblyRegister, CustomValue, ExpressionEvaluatorContext, Indexed, NodeVal,
-        Value, ValueType, binop::BinOp, unop::UnOp,
+        AssemblyLabel, AssemblyRegister, CustomValue, ExpressionEvaluatorContext, FuncParamParser,
+        Indexed, NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
     },
     lex::Number,
 };
@@ -29,6 +29,14 @@ pub trait AssemblyLanguage<'a>: Sized + Clone + 'a {
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         ctx.eval().parse_numeric_literal_base(num, negated, hint)
+    }
+
+    fn eval_func(
+        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        func: FuncParamParser<'a, '_>,
+        hint: ValueType<'a, Self>,
+    ) -> Value<'a, Self> {
+        ctx.eval().func_base(func, hint)
     }
 
     fn eval_binop(

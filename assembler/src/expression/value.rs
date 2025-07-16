@@ -472,7 +472,7 @@ impl<'a, To: ImplicitCastFrom<'a, From>, From> ImplicitCastTo<'a, To> for From {
 }
 
 macro_rules! implicit_cast_impl {
-    ($into:ty, identity: $identity:ident, $(identity_inv_sign: $identity_sign_change:ident,)? narrowing: [$($narrowing:ident),*], widening: [$($widening:ident),*], f2i: [$($f2i:ident),*], i2f: [$($i2f:ident),*] $(,)?) => {
+    ($into:ty, identity: $identity:ident, $(identity_inv_sign: $identity_sign_change:ident,)? $(fnarrow: $fnarrow:ident,)? $(fwide: $fwide:ident,)? narrowing: [$($narrowing:ident),*], widening: [$($widening:ident),*], f2i: [$($f2i:ident),*], i2f: [$($i2f:ident),*] $(,)?) => {
         impl<'a> ImplicitCastFrom<'a, Constant<'a>> for $into {
             fn cast_with(
                 from: Constant<'a>,
@@ -490,6 +490,20 @@ macro_rules! implicit_cast_impl {
                         LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
                         LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
                     },)?
+                    $(
+                        Constant::$fnarrow(i) => match cfg.narrowing {
+                            LO::Error => implicit_cast_impl!(!error, node, ctx, $fnarrow, $into),
+                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as f32)}, $fnarrow, $into),
+                            LO::None => {Some(i as  f32)},
+                        }
+                    )?
+                    $(
+                        Constant::$fwide(i) => match cfg.widening {
+                            LO::Error => implicit_cast_impl!(!error, node, ctx, $fwide, $into),
+                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as  f64)}, $fwide, $into),
+                            LO::None => Some(i as f64),
+                        }
+                    )?
                     $(
                         Constant::$narrowing(i) => match cfg.narrowing {
                             LO::Error => implicit_cast_impl!(!error, node, ctx, $narrowing, $into),
@@ -512,7 +526,7 @@ macro_rules! implicit_cast_impl {
                         },
                     )*
                     $(
-                        Constant::$f2i(i) => compiler_error!(),
+                        Constant::$f2i(i) => implicit_cast_impl!(!error, node, ctx, $f2i, $into),
                     )*
                     Constant::Char(_) => implicit_cast_impl!(!error, node, ctx, Char, $into),
                     Constant::Bool(_) => implicit_cast_impl!(!error, node, ctx, Bool, $into),
@@ -665,6 +679,24 @@ implicit_cast_impl!(
     f2i: [],
     i2f: [F32, F64],
 );
+implicit_cast_impl!(
+    f32,
+    identity: F32,
+    fnarrow: F64,
+    narrowing: [],
+    widening: [],
+    f2i: [],
+    i2f: [U8, I8, I16, U16, I32, U32, I64, U64],
+);
+implicit_cast_impl!(
+    f64,
+    identity: F64,
+    fwide: F32,
+    narrowing: [],
+    widening: [],
+    f2i: [],
+    i2f: [U8, I8, I16, U16, I32, U32, I64, U64],
+);
 
 impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
     pub fn is_numeric(&self) -> bool {
@@ -721,6 +753,7 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum ArgumentsTypeHint<'a, 'b, L: AssemblyLanguage<'a>> {
     Mono(ValueType<'a, L>),
+    Comb(&'b [ValueType<'a, L>], ValueType<'a, L>),
     Individual(&'b [ValueType<'a, L>]),
     None,
 }
@@ -733,6 +766,13 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> Index<usize> for ArgumentsTypeHint<'a, 'b,
             ArgumentsTypeHint::Mono(ty) => ty,
             ArgumentsTypeHint::Individual(ty) => ty.get(index).unwrap_or(&ValueType::Any),
             ArgumentsTypeHint::None => &ValueType::Any,
+            ArgumentsTypeHint::Comb(value_types, value_type) => {
+                if let Some(hint) = value_types.get(index) {
+                    hint
+                } else {
+                    value_type
+                }
+            }
         }
     }
 }
