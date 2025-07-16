@@ -106,7 +106,7 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
             Token::LPar,
             Token::RPar,
             ArgumentsTypeHint::None,
-        );        
+        );
         *self.func_node = Some(args.1);
         args
     }

@@ -46,6 +46,14 @@ pub const fn imm_31_12_u(imm: u32) -> u32 {
     (imm & 0xFFFFF) << 12
 }
 
+pub const fn into_12_bit_sign(value: i32) -> bool {
+    (-1 & !0x7FF) <= value && value <= 0x7FF
+}
+
+pub const fn into_12_bit_sign_usg(value: u32) -> bool {
+    value <= 0x7FF
+}
+
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum RTypeOpCode {

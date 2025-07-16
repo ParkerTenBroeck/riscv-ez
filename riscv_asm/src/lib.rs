@@ -81,27 +81,32 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             "sh" => Self::no_args(asm, n, 0),
             "sw" => Self::no_args(asm, n, 0),
 
-            "add" => Self::reg_reg_only(asm, n, RTypeOpCode::Add),
-            "sub" => Self::reg_reg_only(asm, n, RTypeOpCode::Sub),
-            "xor" => Self::reg_reg_only(asm, n, RTypeOpCode::Xor),
-            "or" => Self::reg_reg_only(asm, n, RTypeOpCode::Or),
-            "and" => Self::reg_reg_only(asm, n, RTypeOpCode::And),
-            "slt" => Self::reg_reg_only(asm, n, RTypeOpCode::Slt),
-            "sltu" => Self::reg_reg_only(asm, n, RTypeOpCode::Sltu),
+            "add" => Self::three_int_reg(asm, n, RTypeOpCode::Add),
+            "sub" => Self::three_int_reg(asm, n, RTypeOpCode::Sub),
+            "xor" => Self::three_int_reg(asm, n, RTypeOpCode::Xor),
+            "or" => Self::three_int_reg(asm, n, RTypeOpCode::Or),
+            "and" => Self::three_int_reg(asm, n, RTypeOpCode::And),
+            "slt" => Self::three_int_reg(asm, n, RTypeOpCode::Slt),
+            "sltu" => Self::three_int_reg(asm, n, RTypeOpCode::Sltu),
 
-            "mul" => Self::reg_reg_only(asm, n, RTypeOpCode::Mul),
-            "mulh" => Self::reg_reg_only(asm, n, RTypeOpCode::Mulh),
-            "mulsu" => Self::reg_reg_only(asm, n, RTypeOpCode::Mulsu),
-            "mulu" => Self::reg_reg_only(asm, n, RTypeOpCode::Mulu),
-            "div" => Self::reg_reg_only(asm, n, RTypeOpCode::Div),
-            "divu" => Self::reg_reg_only(asm, n, RTypeOpCode::Divu),
-            "rem" => Self::reg_reg_only(asm, n, RTypeOpCode::Rem),
-            "remu" => Self::reg_reg_only(asm, n, RTypeOpCode::Remu),
+            "mul" => Self::three_int_reg(asm, n, RTypeOpCode::Mul),
+            "mulh" => Self::three_int_reg(asm, n, RTypeOpCode::Mulh),
+            "mulsu" => Self::three_int_reg(asm, n, RTypeOpCode::Mulsu),
+            "mulu" => Self::three_int_reg(asm, n, RTypeOpCode::Mulu),
+            "div" => Self::three_int_reg(asm, n, RTypeOpCode::Div),
+            "divu" => Self::three_int_reg(asm, n, RTypeOpCode::Divu),
+            "rem" => Self::three_int_reg(asm, n, RTypeOpCode::Rem),
+            "remu" => Self::three_int_reg(asm, n, RTypeOpCode::Remu),
 
-            "li" => match asm.coerced(n).0 {
-                // (RegReg(r), Immediate::SignedConstant(c)) if c <= i16::MAX as i32 && c >= i16::MIN as i32 => {
-                //     Self::instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(asm, c as u32))
-                // }
+            "nop" => Self::no_args(asm, n, ITypeOpCode::Addi as u32),
+
+            "li" | "la  " => match asm.coerced(n).0 {
+                (RegReg(r), Immediate::SignedConstant(c)) if into_12_bit_sign(c) => {
+                    Self::instruction(
+                        asm,
+                        ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c as u32),
+                    );
+                }
                 (RegReg(r), Immediate::SignedConstant(c)) => {
                     Self::instruction(
                         asm,
@@ -112,9 +117,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c as u32),
                     );
                 }
-                // (RegReg(r), Immediate::UnsignedConstant(c)) if c <= i16::MAX as u32 => {
-                //     Self::instruction(ITypeOpCode::Addi as u32 | r.rd() | instructions::imm_11_0_s(asm, c))
-                // }
+                (RegReg(r), Immediate::UnsignedConstant(c)) if into_12_bit_sign_usg(c) => {
+                    Self::instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
+                }
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {
                     Self::instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
                     Self::instruction(asm, UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c));
@@ -140,58 +145,98 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     }
 
     fn eval_func(
-            ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
-            func: assembler::expression::FuncParamParser<'a, '_>,
-            hint: ValueType<'a, Self>,
-        ) -> Value<'a, Self> {
-        match func.func(){
-            "size" => match func.coerced_args(ctx){
-                Node(Value::Constant(c), _) => Value::Constant(Constant::U32(c.get_size().unwrap_or(1))),
+        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        func: assembler::expression::FuncParamParser<'a, '_>,
+        hint: ValueType<'a, Self>,
+    ) -> Value<'a, Self> {
+        match func.func() {
+            "size" => match func.coerced_args(ctx) {
+                Node(Value::Constant(c), _) => {
+                    Value::Constant(Constant::U32(c.get_size().unwrap_or(1)))
+                }
                 Node(Value::Label(mut l), n) => {
-                    if l.meta.kind.is_some(){
-                        ctx.context().report_error(n, "label relocation kind is already set");
+                    if l.meta.kind.is_some() {
+                        ctx.context()
+                            .report_error(n, "label relocation kind is already set");
                     }
                     l.meta.kind = Some(label::RelocKind::Size);
                     Value::Label(l)
-                },
+                }
                 Node(v, n) => {
-                    ctx.context().report_error(n, format!("cannot get the size for type {}", v.get_type()));
+                    ctx.context()
+                        .report_error(n, format!("cannot get the size for type {}", v.get_type()));
                     Value::Constant(Constant::U32(1))
                 }
             },
-            "align" => match func.coerced_args(ctx){
-                Node(Value::Constant(c), _) => Value::Constant(Constant::U32(c.get_align().unwrap_or(1))),
+            "align" => match func.coerced_args(ctx) {
+                Node(Value::Constant(c), _) => {
+                    Value::Constant(Constant::U32(c.get_align().unwrap_or(1)))
+                }
                 Node(Value::Label(mut l), n) => {
-                    if l.meta.kind.is_some(){
-                        ctx.context().report_error(n, "label relocation kind is already set");
+                    if l.meta.kind.is_some() {
+                        ctx.context()
+                            .report_error(n, "label relocation kind is already set");
                     }
                     l.meta.kind = Some(label::RelocKind::Align);
                     Value::Label(l)
-                },
+                }
                 Node(v, n) => {
-                    ctx.context().report_error(n, format!("cannot get the alignment for type {}", v.get_type()));
+                    ctx.context().report_error(
+                        n,
+                        format!("cannot get the alignment for type {}", v.get_type()),
+                    );
                     Value::Constant(Constant::U32(1))
                 }
             },
-            "pc_rel" => if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0{
-               if l.meta.kind.is_some(){
-                        ctx.context().report_error(n, "label relocation kind is already set");
+            "pcrel" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.meta.kind.is_some() {
+                        ctx.context()
+                            .report_error(n, "label relocation kind is already set");
+                    }
+                    l.meta.kind = Some(label::RelocKind::PcRel);
+                    Value::Label(l)
+                } else {
+                    Value::Label(Label::default())
                 }
-                l.meta.kind = Some(label::RelocKind::PcRel);
-                Value::Label(l)
-            }else{
-                Value::Label(Label::default())
             }
-            "absolute" => if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0{
-               if l.meta.kind.is_some(){
-                        ctx.context().report_error(n, "label relocation kind is already set");
+            "absolute" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.meta.kind.is_some() {
+                        ctx.context()
+                            .report_error(n, "label relocation kind is already set");
+                    }
+                    l.meta.kind = Some(label::RelocKind::Absolute);
+                    Value::Label(l)
+                } else {
+                    Value::Label(Label::default())
                 }
-                l.meta.kind = Some(label::RelocKind::Absolute);
-                Value::Label(l)
-            }else{
-                Value::Label(Label::default())
             }
-            _ => ctx.eval().func_base(func, hint)
+            "hi" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.meta.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.meta.pattern = Some(label::RelocPattern::High);
+                    Value::Label(l)
+                } else {
+                    Value::Label(Label::default())
+                }
+            }
+            "lo" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.meta.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.meta.pattern = Some(label::RelocPattern::Low);
+                    Value::Label(l)
+                } else {
+                    Value::Label(Label::default())
+                }
+            }
+            _ => ctx.eval().func_base(func, hint),
         }
     }
 
@@ -376,8 +421,13 @@ impl RiscvAssembler {
         *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
 
-    fn reg_reg_only<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+    fn three_int_reg<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
         let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.coerced(n).0;
+        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+    }
+
+    fn two_int_reg<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (RegReg(rd), RegReg(rs1)) = asm.coerced(n).0;
         Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 

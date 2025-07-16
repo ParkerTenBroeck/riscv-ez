@@ -8,7 +8,7 @@ use crate::{
     lex::Number,
 };
 
-pub trait AssemblyLanguage<'a>: Sized + Clone + 'a {
+pub trait AssemblyLanguage<'a>: Sized + 'a {
     type Reg: AssemblyRegister<'a, Self>;
     type Indexed: Indexed<'a, Self>;
     type CustomValue: CustomValue<'a, Self>;

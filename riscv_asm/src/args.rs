@@ -2,7 +2,7 @@ use crate::label::Label;
 use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
-use assembler::expression::args::{CoercedArg};
+use assembler::expression::args::CoercedArg;
 use assembler::expression::{
     AssemblyRegister, Constant, ExpressionEvaluatorContext, ImplicitCastFrom, ImplicitCastTo as _,
     Indexed, Value, ValueType,
@@ -96,7 +96,6 @@ impl<'a> CoercedArg<'a> for FloatReg {
         Default::default()
     }
 }
-
 
 pub enum Immediate<'a, L: AssemblyLanguage<'a>> {
     SignedConstant(i32),

@@ -5,22 +5,45 @@ use assembler::expression::{AssemblyLabel, AssemblyRegister};
 use crate::RiscvAssembler;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
-pub struct LabelMeta{
+pub struct LabelMeta {
     pub kind: Option<RelocKind>,
     pub pattern: Option<RelocPattern>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum RelocPattern{
+pub enum RelocPattern {
+    High,
+    Low,
+}
 
+impl std::fmt::Display for RelocPattern {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RelocPattern::High => write!(f, "hi"),
+            RelocPattern::Low => write!(f, "lo"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RelocKind {
     PcRel,
     Absolute,
+    GotPcRel,
     Size,
     Align,
+}
+
+impl std::fmt::Display for RelocKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RelocKind::PcRel => write!(f, "pcrel"),
+            RelocKind::Absolute => write!(f, "absolute"),
+            RelocKind::GotPcRel => write!(f, "got_pcrel"),
+            RelocKind::Size => write!(f, "size"),
+            RelocKind::Align => write!(f, "align"),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -47,15 +70,11 @@ impl<'a> Label<'a> {
 
 impl<'a> Display for Label<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.meta.kind {
-            Some(RelocKind::PcRel) => write!(f, "pc_rel(")?,
-            Some(RelocKind::Absolute) => write!(f, "absolute(")?,
-            Some(RelocKind::Size) => write!(f, "size(")?,
-            Some(RelocKind::Align) => write!(f, "align(")?,
-            _ => {}
+        if let Some(kind) = self.meta.kind {
+            write!(f, "{kind}")?
         }
-        match self.meta.pattern {
-            _ => {}
+        if let Some(pattern) = self.meta.pattern {
+            write!(f, "{pattern}")?
         }
         write!(f, "{}", self.ident)?;
         if self.offset != 0 {

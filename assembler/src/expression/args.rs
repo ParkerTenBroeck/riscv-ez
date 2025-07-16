@@ -205,7 +205,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
 }
 
 pub struct Reg<'a, L: AssemblyLanguage<'a>>(pub L::Reg);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType<'a, L> = ValueType::Register;
@@ -227,7 +227,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L>{
 }
 
 pub struct RegOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Reg>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType<'a, L> = ValueType::Register;
@@ -249,7 +249,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L>{
 }
 
 pub struct Label<'a, L: AssemblyLanguage<'a>>(L::Label);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "label";
     const HINT: ValueType<'a, L> = ValueType::Label;
@@ -271,7 +271,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L>{
 }
 
 pub struct LabelOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Label>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "label";
     const HINT: ValueType<'a, L> = ValueType::Label;
@@ -292,9 +292,8 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L>{
     }
 }
 
-
 pub struct Indexed<'a, L: AssemblyLanguage<'a>>(pub L::Indexed);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Indexed<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Indexed<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "indexed";
     const HINT: ValueType<'a, L> = ValueType::Indexed;
@@ -316,7 +315,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Indexed<'a, L>{
 }
 
 pub struct IndexedOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Indexed>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedOpt<'a, L>{
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedOpt<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "indexed";
     const HINT: ValueType<'a, L> = ValueType::Indexed;

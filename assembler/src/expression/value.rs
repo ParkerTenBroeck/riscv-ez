@@ -37,7 +37,7 @@ pub trait CustomValueType<'a, L: AssemblyLanguage<'a>>:
 
 //----------------------------------------------------------------------------
 
-#[derive(Debug, Eq, Clone)]
+#[derive(Debug, Eq)]
 pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
     Any,
 
@@ -89,6 +89,12 @@ impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for ValueType<'a, L> {
             (ValueType::Custom(f0_self), ValueType::Custom(f0_other)) => f0_self.eq(f0_other),
             _unused => false,
         }
+    }
+}
+
+impl<'a, L: AssemblyLanguage<'a>> Clone for ValueType<'a, L> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
@@ -169,7 +175,6 @@ impl<'a, L: AssemblyLanguage<'a>> CustomValue<'a, L> for Infallible {
 
 //----------------------------------------------------------------------------
 
-#[derive(Clone)]
 pub enum Value<'a, L: AssemblyLanguage<'a>> {
     Constant(Constant<'a>),
     Label(L::Label),
@@ -206,6 +211,12 @@ impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for Value<'a, L> {
             (Value::Register(f0_self), Value::Register(f0_other)) => f0_self.eq(f0_other),
             _unused => false,
         }
+    }
+}
+
+impl<'a, L: AssemblyLanguage<'a>> Clone for Value<'a, L> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 

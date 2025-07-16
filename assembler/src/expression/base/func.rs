@@ -45,7 +45,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                             .unwrap();
                     }
 
-
                     Value::Constant(Constant::String(self.context().alloc_str(result)))
                 } else {
                     Value::Constant(Constant::String(""))
