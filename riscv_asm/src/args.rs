@@ -2,7 +2,7 @@ use crate::label::Label;
 use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
-use assembler::expression::args::{CoercedArg, Immediate};
+use assembler::expression::args::{CoercedArg};
 use assembler::expression::{
     AssemblyRegister, Constant, ExpressionEvaluatorContext, ImplicitCastFrom, ImplicitCastTo as _,
     Indexed, Value, ValueType,
@@ -88,6 +88,53 @@ impl<'a> CoercedArg<'a> for FloatReg {
                 "Expected floating register found regular register".into(),
             )),
             Value::Register(r) => Ok(FloatReg(Register(r.0 & 0b11111))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Default::default()
+    }
+}
+
+
+pub enum Immediate<'a, L: AssemblyLanguage<'a>> {
+    SignedConstant(i32),
+    UnsignedConstant(u32),
+    Label(L::Label),
+}
+impl<'a, L: AssemblyLanguage<'a>> Default for Immediate<'a, L> {
+    fn default() -> Self {
+        Self::UnsignedConstant(0)
+    }
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Immediate<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "<integer>|label";
+    const HINT: ValueType<'a, L> = ValueType::I32;
+
+    fn from_arg(
+        context: &mut Context<'a>,
+        node: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(c) => match c {
+                c if c.is_signed_integer() => Ok(Immediate::SignedConstant(
+                    c.cast(node, context).ok_or(None)?,
+                )),
+                c if c.is_unsigned_integer() => Ok(Immediate::UnsignedConstant(
+                    c.cast(node, context).ok_or(None)?,
+                )),
+                _ => {
+                    context.report_error(
+                        node,
+                        format!("expected <integer> constant found {}", value.get_type()),
+                    );
+                    Err(None)
+                }
+            },
+            Value::Label(label) => Ok(Immediate::Label(label)),
             _ => Err(None),
         }
     }

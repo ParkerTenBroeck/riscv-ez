@@ -18,11 +18,11 @@ impl<'a> Display for MemoryIndex<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
             MemoryIndex::LabelRegisterOffset(reg, l) => {
-                if l.meta.is_unset() && l.offset != 0 {
+                if l.meta.kind.is_none() && l.meta.pattern.is_none() && l.offset != 0 {
                     write!(f, "(")?;
                 }
                 write!(f, "{l}")?;
-                if l.meta.is_unset() && l.offset != 0 {
+                if l.meta.kind.is_none() && l.meta.pattern.is_none() && l.offset != 0 {
                     write!(f, ")")?;
                 }
                 if reg.0 != 0 {

@@ -15,11 +15,11 @@ use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::args::{FloatReg, RegReg};
+use crate::args::{FloatReg, Immediate, RegReg};
 use crate::label::Label;
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
-use assembler::expression::args::{CoercedArg, Immediate};
+use assembler::expression::args::{CoercedArg, LabelOpt};
 use assembler::expression::{
     AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext,
     ImplicitCastTo, Indexed, Value, ValueType,
@@ -137,6 +137,62 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         //     FormKind::Full,
         // );
         todo!()
+    }
+
+    fn eval_func(
+            ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+            func: assembler::expression::FuncParamParser<'a, '_>,
+            hint: ValueType<'a, Self>,
+        ) -> Value<'a, Self> {
+        match func.func(){
+            "size" => match func.coerced_args(ctx){
+                Node(Value::Constant(c), _) => Value::Constant(Constant::U32(c.get_size().unwrap_or(1))),
+                Node(Value::Label(mut l), n) => {
+                    if l.meta.kind.is_some(){
+                        ctx.context().report_error(n, "label relocation kind is already set");
+                    }
+                    l.meta.kind = Some(label::RelocKind::Size);
+                    Value::Label(l)
+                },
+                Node(v, n) => {
+                    ctx.context().report_error(n, format!("cannot get the size for type {}", v.get_type()));
+                    Value::Constant(Constant::U32(1))
+                }
+            },
+            "align" => match func.coerced_args(ctx){
+                Node(Value::Constant(c), _) => Value::Constant(Constant::U32(c.get_align().unwrap_or(1))),
+                Node(Value::Label(mut l), n) => {
+                    if l.meta.kind.is_some(){
+                        ctx.context().report_error(n, "label relocation kind is already set");
+                    }
+                    l.meta.kind = Some(label::RelocKind::Align);
+                    Value::Label(l)
+                },
+                Node(v, n) => {
+                    ctx.context().report_error(n, format!("cannot get the alignment for type {}", v.get_type()));
+                    Value::Constant(Constant::U32(1))
+                }
+            },
+            "pc_rel" => if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0{
+               if l.meta.kind.is_some(){
+                        ctx.context().report_error(n, "label relocation kind is already set");
+                }
+                l.meta.kind = Some(label::RelocKind::PcRel);
+                Value::Label(l)
+            }else{
+                Value::Label(Label::default())
+            }
+            "absolute" => if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0{
+               if l.meta.kind.is_some(){
+                        ctx.context().report_error(n, "label relocation kind is already set");
+                }
+                l.meta.kind = Some(label::RelocKind::Absolute);
+                Value::Label(l)
+            }else{
+                Value::Label(Label::default())
+            }
+            _ => ctx.eval().func_base(func, hint)
+        }
     }
 
     fn eval_index(

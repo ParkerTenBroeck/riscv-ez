@@ -101,12 +101,14 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
         self,
         ctx: &mut T,
     ) -> Node<'a, Vec<Node<'a, Value<'a, L>>>> {
-        ctx.args_delim(
+        let args = ctx.args_delim(
             self.func.1,
             Token::LPar,
             Token::RPar,
             ArgumentsTypeHint::None,
-        )
+        );        
+        *self.func_node = Some(args.1);
+        args
     }
 }
 

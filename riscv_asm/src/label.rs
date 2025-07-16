@@ -5,19 +5,22 @@ use assembler::expression::{AssemblyLabel, AssemblyRegister};
 use crate::RiscvAssembler;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
-pub enum LabelMeta {
+pub struct LabelMeta{
+    pub kind: Option<RelocKind>,
+    pub pattern: Option<RelocPattern>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RelocPattern{
+
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RelocKind {
     PcRel,
     Absolute,
     Size,
     Align,
-    #[default]
-    Unset,
-}
-
-impl LabelMeta {
-    pub fn is_unset(&self) -> bool {
-        matches!(self, LabelMeta::Unset)
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -32,7 +35,7 @@ impl<'a> Label<'a> {
         Label {
             ident,
             offset: 0,
-            meta: LabelMeta::Unset,
+            meta: Default::default(),
         }
     }
 
@@ -44,18 +47,24 @@ impl<'a> Label<'a> {
 
 impl<'a> Display for Label<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.meta {
-            LabelMeta::PcRel => write!(f, "pc_rel(")?,
-            LabelMeta::Absolute => write!(f, "absolute(")?,
-            LabelMeta::Size => write!(f, "size(")?,
-            LabelMeta::Align => write!(f, "align(")?,
-            LabelMeta::Unset => {}
+        match self.meta.kind {
+            Some(RelocKind::PcRel) => write!(f, "pc_rel(")?,
+            Some(RelocKind::Absolute) => write!(f, "absolute(")?,
+            Some(RelocKind::Size) => write!(f, "size(")?,
+            Some(RelocKind::Align) => write!(f, "align(")?,
+            _ => {}
+        }
+        match self.meta.pattern {
+            _ => {}
         }
         write!(f, "{}", self.ident)?;
         if self.offset != 0 {
             write!(f, "+{}", self.offset)?;
         }
-        if !self.meta.is_unset() {
+        if !self.meta.kind.is_none() {
+            write!(f, ")")?;
+        }
+        if !self.meta.pattern.is_none() {
             write!(f, ")")?;
         }
         Ok(())

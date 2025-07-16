@@ -204,6 +204,139 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
     }
 }
 
+pub struct Reg<'a, L: AssemblyLanguage<'a>>(pub L::Reg);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "register";
+    const HINT: ValueType<'a, L> = ValueType::Register;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Register(reg) => Ok(Self(reg)),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(L::Reg::default())
+    }
+}
+
+pub struct RegOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Reg>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "register";
+    const HINT: ValueType<'a, L> = ValueType::Register;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Register(reg) => Ok(Self(Some(reg))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(None)
+    }
+}
+
+pub struct Label<'a, L: AssemblyLanguage<'a>>(L::Label);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "label";
+    const HINT: ValueType<'a, L> = ValueType::Label;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Label(reg) => Ok(Self(reg)),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(L::Label::default())
+    }
+}
+
+pub struct LabelOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Label>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "label";
+    const HINT: ValueType<'a, L> = ValueType::Label;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Label(reg) => Ok(Self(Some(reg))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(None)
+    }
+}
+
+
+pub struct Indexed<'a, L: AssemblyLanguage<'a>>(pub L::Indexed);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Indexed<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "indexed";
+    const HINT: ValueType<'a, L> = ValueType::Indexed;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Indexed(reg) => Ok(Self(reg)),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(L::Indexed::default())
+    }
+}
+
+pub struct IndexedOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Indexed>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedOpt<'a, L>{
+    type LANG = L;
+    const TYPE_REPR: &'static str = "indexed";
+    const HINT: ValueType<'a, L> = ValueType::Indexed;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Indexed(reg) => Ok(Self(Some(reg))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self(None)
+    }
+}
+
 #[non_exhaustive]
 pub enum Str<'a, L> {
     Val(&'a str),
@@ -245,52 +378,6 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Value<'a, L> {
 
     fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
         Self::Constant(Constant::I32(0))
-    }
-}
-
-pub enum Immediate<'a, L: AssemblyLanguage<'a>> {
-    SignedConstant(i32),
-    UnsignedConstant(u32),
-    Label(L::Label),
-}
-impl<'a, L: AssemblyLanguage<'a>> Default for Immediate<'a, L> {
-    fn default() -> Self {
-        Self::UnsignedConstant(0)
-    }
-}
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Immediate<'a, L> {
-    type LANG = L;
-    const TYPE_REPR: &'static str = "<integer>|label";
-    const HINT: ValueType<'a, L> = ValueType::I32;
-
-    fn from_arg(
-        context: &mut Context<'a>,
-        node: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        match value {
-            Value::Constant(c) => match c {
-                c if c.is_signed_integer() => Ok(Immediate::SignedConstant(
-                    c.cast(node, context).ok_or(None)?,
-                )),
-                c if c.is_unsigned_integer() => Ok(Immediate::UnsignedConstant(
-                    c.cast(node, context).ok_or(None)?,
-                )),
-                _ => {
-                    context.report_error(
-                        node,
-                        format!("expected <integer> constant found {}", value.get_type()),
-                    );
-                    Err(None)
-                }
-            },
-            Value::Label(label) => Ok(Immediate::Label(label)),
-            _ => Err(None),
-        }
-    }
-
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Default::default()
     }
 }
 
