@@ -21,8 +21,7 @@ use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, LabelOpt};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, ExpressionEvaluatorContext,
-    ImplicitCastTo, Indexed, Value, ValueType,
+    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExpressionEvaluatorContext, ImplicitCastTo, Indexed, Value, ValueType
 };
 use std::fmt::{Display, Formatter};
 
@@ -33,7 +32,7 @@ pub struct RiscvAssembler;
 impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     type Reg = Register;
     type Indexed = MemoryIndex<'a>;
-    type CustomValue = Infallible;
+    type CustomValue = EmptyCustomValue<Self>;
     type Label = Label<'a>;
 
     fn parse_ident(
@@ -98,9 +97,12 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             "rem" => Self::three_int_reg(asm, n, RTypeOpCode::Rem),
             "remu" => Self::three_int_reg(asm, n, RTypeOpCode::Remu),
 
+            "ecall" => Self::no_args(asm, n, ITypeOpCode::ECall as u32),
+            "ebreak" => Self::no_args(asm, n, ITypeOpCode::EBreak as u32),
+
             "nop" => Self::no_args(asm, n, ITypeOpCode::Addi as u32),
 
-            "li" | "la  " => match asm.coerced(n).0 {
+            "li" | "la" => match asm.coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) if into_12_bit_sign(c) => {
                     Self::instruction(
                         asm,

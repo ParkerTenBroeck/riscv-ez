@@ -9,10 +9,10 @@ use crate::{
 };
 
 pub trait AssemblyLanguage<'a>: Sized + 'a {
-    type Reg: AssemblyRegister<'a, Self>;
-    type Indexed: Indexed<'a, Self>;
-    type CustomValue: CustomValue<'a, Self>;
-    type Label: AssemblyLabel<'a, Self>;
+    type Reg: AssemblyRegister<'a, Lang = Self>;
+    type Indexed: Indexed<'a, Lang = Self>;
+    type CustomValue: CustomValue<'a, Lang = Self>;
+    type Label: AssemblyLabel<'a, Lang = Self>;
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 

@@ -235,6 +235,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             }
 
             BinOp::Lt => match (lhs.0, rhs.0) {
+                #[allow(clippy::bool_comparison)]
                 (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l < r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
@@ -243,6 +244,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Gt => match (lhs.0, rhs.0) {
+                #[allow(clippy::bool_comparison)]
                 (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l > r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },

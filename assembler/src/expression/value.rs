@@ -1,38 +1,45 @@
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
 use std::ops::Index;
 
 use crate::assembler::lang::AssemblyLanguage;
 use crate::config::ImplicitCastConfig;
 use crate::context::{Context, NodeId};
 
-pub trait AssemblyLabel<'a, L: AssemblyLanguage<'a>>:
+pub trait AssemblyLabel<'a>:
     Sized + Default + std::fmt::Display + std::fmt::Debug + Copy + Clone + Eq + PartialEq
 {
+    type Lang: AssemblyLanguage<'a>;
     type Offset: ImplicitCastFrom<'a, Constant<'a>> + Default;
 }
 
-pub trait AssemblyRegister<'a, L: AssemblyLanguage<'a>>:
+pub trait AssemblyRegister<'a>:
     Debug + Clone + Copy + PartialEq + Display + Default + Sized
 {
+    type Lang: AssemblyLanguage<'a>;
 }
-pub trait Indexed<'a, L: AssemblyLanguage<'a>>:
+pub trait Indexed<'a>:
     Debug + Clone + Copy + PartialEq + Display + Default + Sized
 {
+    type Lang: AssemblyLanguage<'a>;
 }
 
-pub trait CustomValue<'a, L: AssemblyLanguage<'a>>:
+pub trait CustomValue<'a>:
     Debug + Clone + Copy + PartialEq + Eq + Display + Sized
 {
-    type CustomValueType: CustomValueType<'a, L>;
+    type Lang: AssemblyLanguage<'a>;
+    type CustomValueType: CustomValueType<'a, CustomValue = Self>;
     fn get_align(&self) -> Option<u32>;
     fn get_size(&self) -> Option<u32>;
     fn get_type(&self) -> Self::CustomValueType;
 }
-pub trait CustomValueType<'a, L: AssemblyLanguage<'a>>:
-    Debug + Clone + Copy + PartialEq + Eq + Display + Sized + 'static
+pub trait CustomValueType<'a>:
+    Debug + Clone + Copy + PartialEq + Eq + Display + Sized
 {
-    fn default_value(&self) -> L::CustomValue;
+    type Lang: AssemblyLanguage<'a>;
+    type CustomValue: CustomValue<'a, CustomValueType = Self>;
+    fn default_value(&self) -> Self::CustomValue;
 }
 
 //----------------------------------------------------------------------------
@@ -63,7 +70,7 @@ pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
 
     Bool,
     Char,
-    Custom(<L::CustomValue as CustomValue<'a, L>>::CustomValueType),
+    Custom(<L::CustomValue as CustomValue<'a>>::CustomValueType),
 }
 
 impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for ValueType<'a, L> {
@@ -152,14 +159,45 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
 
 //----------------------------------------------------------------------------
 
-impl<'a, L: AssemblyLanguage<'a>> CustomValueType<'a, L> for Infallible {
-    fn default_value(&self) -> L::CustomValue {
+
+pub enum EmptyCustomValue<L>{
+    __(Infallible, PhantomData<L>)
+}
+
+impl<T> Copy for EmptyCustomValue<T>{}
+impl<T> Clone for EmptyCustomValue<T>{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> std::fmt::Display for EmptyCustomValue<T>{
+    fn fmt(&self, _: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+impl<T> std::fmt::Debug for EmptyCustomValue<T>{
+    fn fmt(&self, _: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+impl<T> Eq for EmptyCustomValue<T>{}
+impl<T> PartialEq for EmptyCustomValue<T>{
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
+}
+
+impl<'a, L: AssemblyLanguage<'a>> CustomValueType<'a> for EmptyCustomValue<L> {
+    type Lang = L;
+    type CustomValue = EmptyCustomValue<L>;
+    fn default_value(&self) -> Self::CustomValue {
         unreachable!()
     }
 }
 
-impl<'a, L: AssemblyLanguage<'a>> CustomValue<'a, L> for Infallible {
-    type CustomValueType = Infallible;
+impl<'a, L: AssemblyLanguage<'a>> CustomValue<'a> for EmptyCustomValue<L> {
+    type Lang = L;
+    type CustomValueType = EmptyCustomValue<L>;
     fn get_align(&self) -> Option<u32> {
         unreachable!()
     }

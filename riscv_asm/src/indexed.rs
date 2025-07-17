@@ -12,7 +12,9 @@ pub enum MemoryIndex<'a> {
     RegisterOffset(Register, i32),
 }
 
-impl<'a> Indexed<'a, RiscvAssembler> for MemoryIndex<'a> {}
+impl<'a> Indexed<'a> for MemoryIndex<'a> {
+    type Lang = RiscvAssembler;
+}
 
 impl<'a> Display for MemoryIndex<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

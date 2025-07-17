@@ -90,6 +90,7 @@ impl<'a> Display for Label<'a> {
     }
 }
 
-impl<'a> AssemblyLabel<'a, RiscvAssembler> for Label<'a> {
+impl<'a> AssemblyLabel<'a> for Label<'a> {
+    type Lang = RiscvAssembler;
     type Offset = i32;
 }
