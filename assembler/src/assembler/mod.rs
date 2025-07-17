@@ -20,6 +20,12 @@ pub struct Assembler<'a, 'b, T: AssemblyLanguage<'a>> {
     pub preprocessor: &'b mut PreProcessor<'a, T>,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum Endianess {
+    Little,
+    Big,
+}
+
 impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     pub fn new(
         state: &'b mut AssemblerState<'a, T>,
@@ -93,6 +99,56 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
 
         while !matches!(self.peek(), None | Some(Node(Token::NewLine, _))) {
             self.next();
+        }
+    }
+
+    pub fn add_constant_default(&mut self, endianess: Endianess, constant: Node<'a, Constant<'a>>) {
+        let align = constant.0.get_align().unwrap_or(1);
+        match endianess {
+            Endianess::Little => match constant.0 {
+                Constant::I8(v) => *self.state.add_data_const::<1>(align) = v.to_le_bytes(),
+                Constant::I16(v) => *self.state.add_data_const::<2>(align) = v.to_le_bytes(),
+                Constant::I32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
+                Constant::I64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
+                Constant::U8(v) => *self.state.add_data_const::<1>(align) = v.to_le_bytes(),
+                Constant::U16(v) => *self.state.add_data_const::<2>(align) = v.to_le_bytes(),
+                Constant::U32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
+                Constant::U64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
+                Constant::F32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
+                Constant::F64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
+                Constant::String(v) => self
+                    .state
+                    .add_data(v.len() as u32, align)
+                    .copy_from_slice(v.as_bytes()),
+                Constant::Char(v) => {
+                    *self.state.add_data_const::<4>(align) = (v as u32).to_le_bytes()
+                }
+                Constant::Bool(v) => {
+                    *self.state.add_data_const::<1>(align) = (v as u8).to_le_bytes()
+                }
+            },
+            Endianess::Big => match constant.0 {
+                Constant::I8(v) => *self.state.add_data_const::<1>(align) = v.to_be_bytes(),
+                Constant::I16(v) => *self.state.add_data_const::<2>(align) = v.to_be_bytes(),
+                Constant::I32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
+                Constant::I64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
+                Constant::U8(v) => *self.state.add_data_const::<1>(align) = v.to_be_bytes(),
+                Constant::U16(v) => *self.state.add_data_const::<2>(align) = v.to_be_bytes(),
+                Constant::U32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
+                Constant::U64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
+                Constant::F32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
+                Constant::F64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
+                Constant::String(v) => self
+                    .state
+                    .add_data(v.len() as u32, align)
+                    .copy_from_slice(v.as_bytes()),
+                Constant::Char(v) => {
+                    *self.state.add_data_const::<4>(align) = (v as u32).to_be_bytes()
+                }
+                Constant::Bool(v) => {
+                    *self.state.add_data_const::<1>(align) = (v as u8).to_be_bytes()
+                }
+            },
         }
     }
 
@@ -172,58 +228,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             }
             ".data" => {
                 for arg in self.args(n, ArgumentsTypeHint::None).0 {
-                    let align = arg.0.get_align().unwrap_or(1);
-                    match arg.0 {
-                        Value::Constant(v) => match v {
-                            Constant::I8(v) => {
-                                *self.state.add_data_const::<1>(align) = v.to_le_bytes()
-                            }
-                            Constant::I16(v) => {
-                                *self.state.add_data_const::<2>(align) = v.to_le_bytes()
-                            }
-                            Constant::I32(v) => {
-                                *self.state.add_data_const::<4>(align) = v.to_le_bytes()
-                            }
-                            Constant::I64(v) => {
-                                *self.state.add_data_const::<8>(align) = v.to_le_bytes()
-                            }
-                            Constant::U8(v) => {
-                                *self.state.add_data_const::<1>(align) = v.to_le_bytes()
-                            }
-                            Constant::U16(v) => {
-                                *self.state.add_data_const::<2>(align) = v.to_le_bytes()
-                            }
-                            Constant::U32(v) => {
-                                *self.state.add_data_const::<4>(align) = v.to_le_bytes()
-                            }
-                            Constant::U64(v) => {
-                                *self.state.add_data_const::<8>(align) = v.to_le_bytes()
-                            }
-                            Constant::F32(v) => {
-                                *self.state.add_data_const::<4>(align) = v.to_le_bytes()
-                            }
-                            Constant::F64(v) => {
-                                *self.state.add_data_const::<8>(align) = v.to_le_bytes()
-                            }
-                            Constant::String(v) => self
-                                .state
-                                .add_data(v.len() as u32, align)
-                                .copy_from_slice(v.as_bytes()),
-                            Constant::Char(v) => {
-                                *self.state.add_data_const::<4>(align) = (v as u32).to_le_bytes()
-                            }
-                            Constant::Bool(v) => {
-                                *self.state.add_data_const::<1>(align) = (v as u8).to_le_bytes()
-                            }
-                        },
-                        Value::Label(l) => {
-                            T::add_label_as_data(self, l, arg.1);
-                        }
-                        _ => self
-                            .state
-                            .context
-                            .report_error(arg.1, format!("invalid type {}", arg.0.get_type())),
-                    }
+                    T::add_value_as_data(self, arg);
                 }
             }
 

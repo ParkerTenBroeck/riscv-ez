@@ -2,8 +2,8 @@ use crate::{
     assembler::Assembler,
     context::{Node, NodeId},
     expression::{
-        AssemblyLabel, AssemblyRegister, CustomValue, ExpressionEvaluatorContext, FuncParamParser,
-        Indexed, NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
+        AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExpressionEvaluatorContext,
+        FuncParamParser, Indexed, NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
     },
     lex::Number,
 };
@@ -84,7 +84,8 @@ pub trait AssemblyLanguage<'a>: Sized + 'a {
         ctx.eval().cast_base(node, expr, as_node, ty, hint)
     }
 
-    fn add_label_as_data(asm: &mut Assembler<'a, '_, Self>, ident: Self::Label, node: NodeId<'a>);
+    fn add_value_as_data(asm: &mut Assembler<'a, '_, Self>, value: NodeVal<'a, Self>);
+    fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, value: Node<'a, Constant<'a>>);
 
     fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>);
 }

@@ -94,8 +94,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             for c in num.get_num().chars() {
                 if c != '_' {
                     if index + c.len_utf8() > buf.len() {
-                        self.context()
-                            .report_error(n, "numeric literal too long");
+                        self.context().report_error(n, "numeric literal too long");
                         return hint.default_value();
                     }
                     c.encode_utf8(&mut buf[index..]);

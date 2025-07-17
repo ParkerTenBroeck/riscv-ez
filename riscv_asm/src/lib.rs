@@ -6,6 +6,7 @@ pub mod label;
 pub mod opcodes;
 pub mod reg;
 
+use assembler::assembler::Endianess;
 use assembler::expression::binop::BinOp;
 use indexed::*;
 use opcodes::*;
@@ -21,7 +22,8 @@ use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, LabelOpt};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExpressionEvaluatorContext, ImplicitCastTo, Indexed, Value, ValueType
+    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue,
+    ExpressionEvaluatorContext, ImplicitCastTo, Indexed, Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
@@ -133,17 +135,6 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             },
             _ => asm.assemble_mnemonic_default(Node(mnemonic, n)),
         }
-    }
-
-    fn add_label_as_data(asm: &mut Assembler<'a, '_, Self>, l: Self::Label, node: NodeId<'a>) {
-        // asm.state.ins_or_address_reloc(
-        //     0,
-        //     l.ident,
-        //     l.offset,
-        //     CalculationKind::Absolute,
-        //     FormKind::Full,
-        // );
-        todo!()
     }
 
     fn eval_func(
@@ -415,6 +406,23 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
 
             _ => ctx.eval().binop_base(node, lhs, op, rhs, hint),
         }
+    }
+
+    fn add_value_as_data(
+        asm: &mut Assembler<'a, '_, Self>,
+        value: assembler::expression::NodeVal<'a, Self>,
+    ) {
+        match value.0 {
+            Value::Constant(constant) => Self::add_constant_as_data(asm, Node(constant, value.1)),
+            _ => asm.context().report_error(
+                value.1,
+                format!("cannot use {} as data", value.0.get_type()),
+            ),
+        }
+    }
+
+    fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, constant: Node<'a, Constant<'a>>) {
+        asm.add_constant_default(Endianess::Little, constant);
     }
 }
 

@@ -19,24 +19,18 @@ pub trait AssemblyRegister<'a>:
 {
     type Lang: AssemblyLanguage<'a>;
 }
-pub trait Indexed<'a>:
-    Debug + Clone + Copy + PartialEq + Display + Default + Sized
-{
+pub trait Indexed<'a>: Debug + Clone + Copy + PartialEq + Display + Default + Sized {
     type Lang: AssemblyLanguage<'a>;
 }
 
-pub trait CustomValue<'a>:
-    Debug + Clone + Copy + PartialEq + Eq + Display + Sized
-{
+pub trait CustomValue<'a>: Debug + Clone + Copy + PartialEq + Eq + Display + Sized {
     type Lang: AssemblyLanguage<'a>;
     type CustomValueType: CustomValueType<'a, CustomValue = Self>;
     fn get_align(&self) -> Option<u32>;
     fn get_size(&self) -> Option<u32>;
     fn get_type(&self) -> Self::CustomValueType;
 }
-pub trait CustomValueType<'a>:
-    Debug + Clone + Copy + PartialEq + Eq + Display + Sized
-{
+pub trait CustomValueType<'a>: Debug + Clone + Copy + PartialEq + Eq + Display + Sized {
     type Lang: AssemblyLanguage<'a>;
     type CustomValue: CustomValue<'a, CustomValueType = Self>;
     fn default_value(&self) -> Self::CustomValue;
@@ -159,29 +153,28 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
 
 //----------------------------------------------------------------------------
 
-
-pub enum EmptyCustomValue<L>{
-    __(Infallible, PhantomData<L>)
+pub enum EmptyCustomValue<L> {
+    __(Infallible, PhantomData<L>),
 }
 
-impl<T> Copy for EmptyCustomValue<T>{}
-impl<T> Clone for EmptyCustomValue<T>{
+impl<T> Copy for EmptyCustomValue<T> {}
+impl<T> Clone for EmptyCustomValue<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<T> std::fmt::Display for EmptyCustomValue<T>{
+impl<T> std::fmt::Display for EmptyCustomValue<T> {
     fn fmt(&self, _: &mut Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
-impl<T> std::fmt::Debug for EmptyCustomValue<T>{
+impl<T> std::fmt::Debug for EmptyCustomValue<T> {
     fn fmt(&self, _: &mut Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
-impl<T> Eq for EmptyCustomValue<T>{}
-impl<T> PartialEq for EmptyCustomValue<T>{
+impl<T> Eq for EmptyCustomValue<T> {}
+impl<T> PartialEq for EmptyCustomValue<T> {
     fn eq(&self, _: &Self) -> bool {
         false
     }
