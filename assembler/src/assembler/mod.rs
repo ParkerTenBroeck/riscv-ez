@@ -32,7 +32,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     }
 
     pub fn assemble(&mut self, path: impl Into<String>) -> Vec<u8> {
-        if let Some(src) = self.preprocessor.begin(&mut self.state, path) {
+        if let Some(src) = self.preprocessor.begin(self.state, path) {
             self.state.context.set_top_level_src(src);
         }
 
@@ -415,10 +415,10 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluatorContext<'a, L> for Asse
         }
     }
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.preprocessor.next(&mut self.state)
+        self.preprocessor.next(self.state)
     }
 
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.preprocessor.peek(&mut self.state)
+        self.preprocessor.peek(self.state)
     }
 }

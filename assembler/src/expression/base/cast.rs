@@ -91,7 +91,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             };
         }
 
-        let value = match ty {
+        match ty {
             "str" => Value::Constant(Constant::String(
                 self.context().alloc_str(format!("{}", expr.0).as_str()),
             )),
@@ -124,8 +124,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     .report_error(node, format!("Unknown type {ty}"));
                 expr.0
             }
-        };
-        value
+        }
     }
 
     pub fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {

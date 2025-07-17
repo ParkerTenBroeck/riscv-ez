@@ -62,7 +62,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         let func_name = func.func.0;
         let node = func.args(self.0).1;
         self.context()
-            .report_error(node, format!("Unknown function {}", func_name));
+            .report_error(node, format!("Unknown function {func_name}"));
         hint.default_value()
     }
 }

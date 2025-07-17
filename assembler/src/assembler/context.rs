@@ -68,7 +68,7 @@ impl<'a, T: AssemblyLanguage<'a>> AssemblerState<'a, T> {
             )
         } else {
             match data.try_into() {
-                Ok(value) => return value,
+                Ok(value) => value,
                 Err(_) => unreachable!(),
             }
         }

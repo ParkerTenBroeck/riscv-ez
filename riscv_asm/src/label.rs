@@ -80,10 +80,10 @@ impl<'a> Display for Label<'a> {
         if self.offset != 0 {
             write!(f, "+{}", self.offset)?;
         }
-        if !self.meta.kind.is_none() {
+        if self.meta.kind.is_some() {
             write!(f, ")")?;
         }
-        if !self.meta.pattern.is_none() {
+        if self.meta.pattern.is_some() {
             write!(f, ")")?;
         }
         Ok(())

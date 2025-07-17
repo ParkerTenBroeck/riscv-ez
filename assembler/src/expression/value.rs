@@ -266,10 +266,7 @@ impl<'a, L: AssemblyLanguage<'a>> Value<'a, L> {
     }
 
     pub fn is_true(&self) -> bool {
-        match self {
-            Value::Constant(Constant::Bool(true)) => true,
-            _ => false,
-        }
+        matches!(self, Value::Constant(Constant::Bool(true)))
     }
 }
 
@@ -297,10 +294,7 @@ pub enum Constant<'a> {
 
 impl<'a> Constant<'a> {
     pub fn is_float(&self) -> bool {
-        match self {
-            Self::F32(_) | Self::F64(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::F32(_) | Self::F64(_))
     }
 
     pub fn get_type<L: AssemblyLanguage<'a>>(&self) -> ValueType<'a, L> {
@@ -330,17 +324,17 @@ impl<'a> Constant<'a> {
     }
 
     pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U64(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U64(_)
+        )
     }
 
     pub fn is_signed_integer(&self) -> bool {
-        match self {
-            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_)
+        )
     }
 
     pub fn get_align(&self) -> Option<u32> {
@@ -407,26 +401,7 @@ where
     Self: Sized,
 {
     fn cast(self, node: NodeId<'a>, ctx: &mut Context<'a>) -> Option<To> {
-        self.cast_supressing(node, ctx, false, false, false, false, false, false)
-    }
-    fn cast_supressing(
-        self,
-        node: NodeId<'a>,
-        ctx: &mut Context<'a>,
-        narrowing: bool,
-        widening: bool,
-        sign: bool,
-        lossy: bool,
-        f2i: bool,
-        i2f: bool,
-    ) -> Option<To> {
-        self.cast_with(
-            node,
-            ctx,
-            ctx.config()
-                .implicit_cast_defaults
-                .supress(narrowing, widening, sign, lossy, f2i, i2f),
-        )
+        Self::cast_with(self, node, ctx, ctx.config().implicit_cast_defaults)
     }
     fn cast_with(
         self,
@@ -440,29 +415,6 @@ pub trait ImplicitCastFrom<'a, From>
 where
     Self: Sized,
 {
-    fn cast(from: From, node: NodeId<'a>, ctx: &mut Context<'a>) -> Option<Self> {
-        Self::cast_supressing(from, node, ctx, false, false, false, false, false, false)
-    }
-    fn cast_supressing(
-        from: From,
-        node: NodeId<'a>,
-        ctx: &mut Context<'a>,
-        narrowing: bool,
-        widening: bool,
-        sign: bool,
-        lossy: bool,
-        f2i: bool,
-        i2f: bool,
-    ) -> Option<Self> {
-        Self::cast_with(
-            from,
-            node,
-            ctx,
-            ctx.config()
-                .implicit_cast_defaults
-                .supress(narrowing, widening, sign, lossy, f2i, i2f),
-        )
-    }
     fn cast_with(
         from: From,
         node: NodeId<'a>,

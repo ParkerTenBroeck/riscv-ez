@@ -119,7 +119,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             };
         }
 
-        let value = match op {
+        match op {
             BinOp::Add => match (lhs.0, rhs.0) {
                 (Value::Constant(Constant::String(l)), r) => Value::Constant(Constant::String(
                     self.context().alloc_str(format!("{l}{r}")),
@@ -264,8 +264,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     self.invalid_binop(op, node, lhs, rhs, hint)
                 }
             }
-        };
-        value
+        }
     }
 
     pub fn invalid_binop(

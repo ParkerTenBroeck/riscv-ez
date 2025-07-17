@@ -63,6 +63,12 @@ pub struct PreProcessor<'a, T: AssemblyLanguage<'a>> {
     peek: Option<Node<'a, Token<'a>>>,
 }
 
+impl<'a, T: AssemblyLanguage<'a>> Default for PreProcessor<'a, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     pub fn new() -> Self {
         Self {

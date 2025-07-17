@@ -86,3 +86,9 @@ impl AssemblerConfig {
         }
     }
 }
+
+impl Default for AssemblerConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}

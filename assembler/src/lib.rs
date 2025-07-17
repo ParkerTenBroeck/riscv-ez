@@ -78,7 +78,7 @@ pub fn assemble_and_link<'a>(
     lang: impl AssemblyLanguage<'a>,
 ) -> AssemblerResult<'a> {
     let now = Instant::now();
-    let context = Context::new(&bump, AssemblerConfig::new(), move |path, _ctx| {
+    let context = Context::new(bump, AssemblerConfig::new(), move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
             Ok(contents.as_str())
         } else {

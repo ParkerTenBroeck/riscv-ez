@@ -116,7 +116,7 @@ pub struct ExpressionEvaluator<
     'a,
     'b,
     L: AssemblyLanguage<'a>,
-    T: ExpressionEvaluatorContext<'a, L> + ?Sized,
+    T: ExpressionEvaluatorContext<'a, L>,
 >(&'b mut T, PhantomData<(&'a (), L)>);
 
 impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
@@ -213,25 +213,22 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             ),
         };
 
-        match self.peek() {
-            Some(Node(Token::LBracket, opening)) => {
-                self.next();
-                let rhs = self.parse_expr(hint);
+        if let Some(Node(Token::LBracket, opening)) = self.peek() {
+            self.next();
+            let rhs = self.parse_expr(hint);
 
-                let closing = match self.peek() {
-                    Some(Node(Token::RBracket, closing)) => {
-                        self.next();
-                        closing
-                    }
-                    t => self.context().unexpected_token(t, Token::RBracket, false),
-                };
-                let node = self.context().merge_nodes(expr.1, closing);
-                return Node(
-                    L::eval_index(self.0, node, expr, opening, rhs, closing, hint),
-                    node,
-                );
-            }
-            _ => {}
+            let closing = match self.peek() {
+                Some(Node(Token::RBracket, closing)) => {
+                    self.next();
+                    closing
+                }
+                t => self.context().unexpected_token(t, Token::RBracket, false),
+            };
+            let node = self.context().merge_nodes(expr.1, closing);
+            return Node(
+                L::eval_index(self.0, node, expr, opening, rhs, closing, hint),
+                node,
+            );
         }
 
         expr
@@ -373,11 +370,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 }
                 Some(_) => {
                     args.push(self.parse_expr(hint[args.len()]));
-                    match self.peek() {
-                        Some(Node(Token::Comma, _)) => {
-                            self.next();
-                        }
-                        _ => {}
+                    if let Some(Node(Token::Comma, _)) = self.peek() {
+                        self.next();
                     }
                 }
                 None => {
@@ -410,11 +404,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 }
                 _ => {
                     args.push(self.parse_expr(hint[args.len()]));
-                    match self.peek() {
-                        Some(Node(Token::Comma, _)) => {
-                            self.next();
-                        }
-                        _ => {}
+                    if let Some(Node(Token::Comma, _)) = self.peek() {
+                        self.next();
                     }
                 }
             }

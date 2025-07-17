@@ -428,7 +428,7 @@ impl RiscvAssembler {
 
     fn two_int_reg<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
         let (RegReg(rd), RegReg(rs1)) = asm.coerced(n).0;
-        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1());
     }
 
     fn float_reg_only_3<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
