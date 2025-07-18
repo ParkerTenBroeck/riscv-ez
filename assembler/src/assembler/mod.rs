@@ -4,9 +4,7 @@ pub mod translation;
 
 use crate::assembler::lang::AssemblyLanguage;
 use crate::expression::args::{StrOpt, U32Opt, U32Pow2Opt};
-use crate::expression::{
-    ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, Value, ValueType,
-};
+use crate::expression::{ArgumentsTypeHint, Constant, ExpressionEvaluatorContext};
 use crate::util::IntoStrDelimable;
 use crate::{
     assembler::{context::AssemblerState, translation::Section},
@@ -153,6 +151,14 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     }
 
     pub fn assemble_mnemonic_default(&mut self, Node(mnemonic, n): Node<'a, &'a str>) {
+        macro_rules! constant {
+            ($kind:ident) => {
+                for Node(crate::expression::args::$kind::Val(arg), n) in self.coerced::<Vec<_>>(n).0
+                {
+                    T::add_constant_as_data(self, Node(Constant::$kind(arg), n));
+                }
+            };
+        }
         match mnemonic {
             ".dbg" => {
                 let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
@@ -231,179 +237,25 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                     T::add_value_as_data(self, arg);
                 }
             }
-
-            ".string" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U8)).0 {
-                    if let Value::Constant(Constant::String(v)) = arg.0 {
-                        self.state
-                            .add_data(v.len() as u32, 1)
-                            .copy_from_slice(v.as_bytes())
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected string", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
             ".stringz" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U8)).0 {
-                    if let Value::Constant(Constant::String(v)) = arg.0 {
-                        self.state
-                            .add_data(v.len() as u32, 1)
-                            .copy_from_slice(v.as_bytes());
-                        self.state.add_data(1, 1);
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected string", arg.0.get_type()),
-                        )
-                    }
+                for Node(crate::expression::args::Str::Val(arg), n) in self.coerced::<Vec<_>>(n).0 {
+                    T::add_constant_as_data(self, Node(Constant::String(arg), n));
+                    T::add_constant_as_data(self, Node(Constant::U8(0), n));
                 }
             }
-
-            ".u8" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U8)).0 {
-                    if let Value::Constant(Constant::U8(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<1>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected u8", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".u16" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U16)).0 {
-                    if let Value::Constant(Constant::U16(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<2>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected u16", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".u32" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U32)).0 {
-                    if let Value::Constant(Constant::U32(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected u32", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".u64" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::U64)).0 {
-                    if let Value::Constant(Constant::U64(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected u64", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-
-            ".i8" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::I8)).0 {
-                    if let Value::Constant(Constant::I8(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<1>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected i8", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".i16" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::I16)).0 {
-                    if let Value::Constant(Constant::I16(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<2>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected i16", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".i32" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::I32)).0 {
-                    if let Value::Constant(Constant::I32(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected i32", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".i64" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::I64)).0 {
-                    if let Value::Constant(Constant::I64(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected i64", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-
-            ".f32" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::F32)).0 {
-                    if let Value::Constant(Constant::F32(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<4>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected f32", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
-            ".f64" => {
-                for arg in self.args(n, ArgumentsTypeHint::Mono(ValueType::F64)).0 {
-                    if let Value::Constant(Constant::F64(v)) = arg.0 {
-                        *self
-                            .state
-                            .add_data_const::<8>(arg.0.get_align().unwrap_or(1)) = v.to_le_bytes();
-                    } else {
-                        self.state.context.report_error(
-                            arg.1,
-                            format!("invalid type {} expected f64", arg.0.get_type()),
-                        )
-                    }
-                }
-            }
+            ".string" => constant!(U8),
+            ".u8" => constant!(U8),
+            ".u16" => constant!(U16),
+            ".u32" => constant!(U32),
+            ".u64" => constant!(U64),
+            ".i8" => constant!(I8),
+            ".i16" => constant!(I16),
+            ".i32" => constant!(I32),
+            ".i64" => constant!(I64),
+            ".f32" => constant!(F32),
+            ".f64" => constant!(F64),
+            ".bool" => constant!(Bool),
+            ".char" => constant!(Char),
 
             _ => self.unknown_mnemonic(Node(mnemonic, n)),
         }

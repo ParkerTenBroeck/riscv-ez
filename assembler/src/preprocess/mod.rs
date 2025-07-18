@@ -4,11 +4,13 @@ pub mod if_else;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::fmt::Write;
 
 use crate::assembler::Assembler;
 use crate::assembler::context::AssemblerState;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::expression::ExpressionEvaluatorContext;
+use crate::expression::Value;
 use crate::expression::ValueType;
 use crate::preprocess::defined_macro::TokenIter;
 use crate::preprocess::file::FileIter;
@@ -206,7 +208,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         state: &mut AssemblerState<'a, T>,
         tag: &'a str,
         n: NodeId<'a>,
-    ) {
+    ) -> Option<Node<'a, Token<'a>>> {
         match tag {
             "include" => match self.stack_next(state) {
                 Some(Node(Token::StringLiteral(str), node)) => self.include(state, str, node),
@@ -262,6 +264,16 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                     },
                 );
             }
+            "concat" => {
+                let Node(parts, node): Node<'_, Vec<Value<'a, T>>> =
+                    Assembler::new(state, self).coerced_delim(n, Token::LPar, Token::RPar);
+                let mut ident = String::new();
+                for part in parts.into_iter() {
+                    ident.write_fmt(format_args!("{part}")).unwrap();
+                }
+                let ident = state.context.alloc_str(ident);
+                return Some(Node(Token::Ident(ident), node));
+            }
             "define" => {
                 let ident = match self.stack_next(state) {
                     Some(Node(Token::Ident(str), _)) => str,
@@ -288,6 +300,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                     .report_error(n, format!("Unknown preprocessor tag '{unknown}'"));
             }
         }
+        None
     }
 
     fn handle_identifier(
@@ -344,7 +357,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
             match next {
                 Some(Node(Token::PreProcessorTag(tag), n)) => {
-                    self.handle_preprocessor_tag(state, tag, n)
+                    if let Some(tok) = self.handle_preprocessor_tag(state, tag, n) {
+                        return Some(tok);
+                    }
                 }
                 t @ Some(Node(Token::Ident(ident), n)) => {
                     if self.handle_identifier(state, ident, n) {
