@@ -1,6 +1,21 @@
 { pkgs ? import <nixpkgs> {} }:
 
 with pkgs;
+
+let
+  rustupToolchain = "nightly";
+
+  rustBuildTargetTripple = "riscv32gc-unknown-linux-gnu";
+  rustBuildHostTripple = "x86_64-unknown-linux-gnu";
+  riscv-cross = import pkgs.path {
+    crossSystem = {
+      config = "riscv64-none-elf";
+    };
+  };
+
+  riscv = riscv-cross.stdenv.cc;
+
+in
 #let
 #  mkShell = pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; };
 #in mkShell
@@ -23,6 +38,8 @@ with pkgs;
       # Replace llvmPackages with llvmPackages_X, where X is the latest LLVM version (at the time of writing, 16)
       llvmPackages.bintools
       rustup
+
+      riscv
       
         libGL
         libxkbcommon
