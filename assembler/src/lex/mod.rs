@@ -24,7 +24,6 @@ pub enum LexError<'a> {
     UnfinishedEscapeSequence(&'a str),
     UnclosedStringLiteral,
     EmptyExponent,
-    InvalidBase2Digit(char),
     NoNumberAfterBasePrefix,
     NumberParseError(NumberError),
 }
@@ -41,7 +40,6 @@ impl<'a> std::fmt::Display for LexError<'a> {
             }
             LexError::UnclosedStringLiteral => write!(f, "unclosed string literal"),
             LexError::EmptyExponent => write!(f, "empty exponent"),
-            LexError::InvalidBase2Digit(digit) => write!(f, "invalid base 2 digit {digit:?}"),
             LexError::NoNumberAfterBasePrefix => write!(f, "no number after base prefix"),
             LexError::NumberParseError(err) => write!(f, "{err}"),
         }
