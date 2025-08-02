@@ -14,6 +14,7 @@ pub mod config;
 pub mod context;
 pub mod expression;
 pub mod lex;
+pub mod linker;
 pub mod logs;
 pub mod preprocess;
 pub mod util;

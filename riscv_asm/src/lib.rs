@@ -5,6 +5,7 @@ pub mod indexed;
 pub mod label;
 pub mod opcodes;
 pub mod reg;
+pub mod reloc;
 
 use assembler::assembler::Endianess;
 use assembler::expression::binop::BinOp;
