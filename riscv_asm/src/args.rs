@@ -1,4 +1,4 @@
-use crate::label::Label;
+use crate::label::{Label, LabelExpr};
 use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
@@ -11,7 +11,7 @@ use std::fmt::{Display, Formatter};
 
 pub enum RegOffset<'a> {
     Constant(Register, i32),
-    Label(Register, Label<'a>),
+    Label(Register, LabelExpr<'a>),
 }
 impl<'a> Default for RegOffset<'a> {
     fn default() -> Self {

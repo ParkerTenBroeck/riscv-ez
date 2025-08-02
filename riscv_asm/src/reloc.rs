@@ -1,12 +1,10 @@
-pub struct Reloc {
+pub struct Reloc {}
 
-}
-
-pub enum Kind{
+pub enum Kind {
     PcRel,
 }
 
-pub enum Pattern{
+pub enum Pattern {
     S12,
     I12,
     J20,

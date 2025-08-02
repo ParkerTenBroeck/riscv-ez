@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use crate::args::{FloatReg, Immediate, RegReg};
-use crate::label::Label;
+use crate::label::{Label, LabelExpr};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, LabelOpt};
@@ -36,7 +36,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     type Reg = Register;
     type Indexed = MemoryIndex<'a>;
     type CustomValue = EmptyCustomValue<Self>;
-    type Label = Label<'a>;
+    type Label = LabelExpr<'a>;
 
     fn parse_ident(
         _: &mut impl ExpressionEvaluatorContext<'a, Self>,
@@ -46,7 +46,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         if let Ok(reg) = Register::from_str(ident) {
             Value::Register(reg)
         } else {
-            Value::Label(Label::new(ident))
+            Value::Label(LabelExpr::new(ident))
         }
     }
 
@@ -144,90 +144,152 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         match func.func() {
-            "size" => match func.coerced_args(ctx) {
-                Node(Value::Constant(c), _) => {
-                    Value::Constant(Constant::U32(c.get_size().unwrap_or(1)))
-                }
-                Node(Value::Label(mut l), n) => {
-                    if l.meta.kind.is_some() {
-                        ctx.context()
-                            .report_error(n, "label relocation kind is already set");
-                    }
-                    l.meta.kind = Some(label::RelocKind::Size);
-                    Value::Label(l)
-                }
-                Node(v, n) => {
-                    ctx.context()
-                        .report_error(n, format!("cannot get the size for type {}", v.get_type()));
-                    Value::Constant(Constant::U32(1))
-                }
-            },
-            "align" => match func.coerced_args(ctx) {
-                Node(Value::Constant(c), _) => {
-                    Value::Constant(Constant::U32(c.get_align().unwrap_or(1)))
-                }
-                Node(Value::Label(mut l), n) => {
-                    if l.meta.kind.is_some() {
-                        ctx.context()
-                            .report_error(n, "label relocation kind is already set");
-                    }
-                    l.meta.kind = Some(label::RelocKind::Align);
-                    Value::Label(l)
-                }
-                Node(v, n) => {
-                    ctx.context().report_error(
-                        n,
-                        format!("cannot get the alignment for type {}", v.get_type()),
-                    );
-                    Value::Constant(Constant::U32(1))
-                }
-            },
+            // "size" => match func.coerced_args(ctx) {
+            //     Node(Value::Constant(c), _) => {
+            //         Value::Constant(Constant::U32(c.get_size().unwrap_or(1)))
+            //     }
+            //     Node(Value::Label(mut l), n) => {
+            //         if l.meta.kind.is_some() {
+            //             ctx.context()
+            //                 .report_error(n, "label relocation kind is already set");
+            //         }
+            //         l.meta.kind = Some(label::RelocKind::Size);
+            //         Value::Label(l)
+            //     }
+            //     Node(v, n) => {
+            //         ctx.context()
+            //             .report_error(n, format!("cannot get the size for type {}", v.get_type()));
+            //         Value::Constant(Constant::U32(1))
+            //     }
+            // },
+            // "align" => match func.coerced_args(ctx) {
+            //     Node(Value::Constant(c), _) => {
+            //         Value::Constant(Constant::U32(c.get_align().unwrap_or(1)))
+            //     }
+            //     Node(Value::Label(mut l), n) => {
+            //         if l.meta.kind.is_some() {
+            //             ctx.context()
+            //                 .report_error(n, "label relocation kind is already set");
+            //         }
+            //         l.meta.kind = Some(label::RelocKind::Align);
+            //         Value::Label(l)
+            //     }
+            //     Node(v, n) => {
+            //         ctx.context().report_error(
+            //             n,
+            //             format!("cannot get the alignment for type {}", v.get_type()),
+            //         );
+            //         Value::Constant(Constant::U32(1))
+            //     }
+            // },
             "pcrel" => {
                 if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
-                    if l.meta.kind.is_some() {
-                        ctx.context()
-                            .report_error(n, "label relocation kind is already set");
+                    match l.ty {
+                        label::LabelExprType::Empty => {}
+                        label::LabelExprType::Unspecified(label) => {
+                            l.ty = label::LabelExprType::PcRel(label)
+                        }
+                        label::LabelExprType::Sub(_, _) => ctx
+                            .context()
+                            .report_error(n, "cannot set relocation on label subtraction"),
+                        _ => ctx
+                            .context()
+                            .report_error(n, "label relocation kind is already set"),
                     }
-                    l.meta.kind = Some(label::RelocKind::PcRel);
                     Value::Label(l)
                 } else {
-                    Value::Label(Label::default())
+                    Value::Label(LabelExpr::default())
                 }
             }
             "absolute" => {
                 if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
-                    if l.meta.kind.is_some() {
-                        ctx.context()
-                            .report_error(n, "label relocation kind is already set");
+                    match l.ty {
+                        label::LabelExprType::Empty => {}
+                        label::LabelExprType::Unspecified(label) => {
+                            l.ty = label::LabelExprType::Absolute(label)
+                        }
+                        label::LabelExprType::Sub(_, _) => ctx
+                            .context()
+                            .report_error(n, "cannot set relocation on label subtraction"),
+                        _ => ctx
+                            .context()
+                            .report_error(n, "label relocation kind is already set"),
                     }
-                    l.meta.kind = Some(label::RelocKind::Absolute);
                     Value::Label(l)
                 } else {
-                    Value::Label(Label::default())
+                    Value::Label(LabelExpr::default())
                 }
             }
             "hi" => {
                 if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
-                    if l.meta.pattern.is_some() {
+                    if l.pattern.is_some() {
                         ctx.context()
                             .report_error(n, "label pattern kind is already set");
                     }
-                    l.meta.pattern = Some(label::RelocPattern::High);
+                    l.pattern = Some(label::RelocPattern::High);
                     Value::Label(l)
                 } else {
-                    Value::Label(Label::default())
+                    Value::Label(LabelExpr::default())
                 }
             }
             "lo" => {
                 if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
-                    if l.meta.pattern.is_some() {
+                    if l.pattern.is_some() {
                         ctx.context()
                             .report_error(n, "label pattern kind is already set");
                     }
-                    l.meta.pattern = Some(label::RelocPattern::Low);
+                    l.pattern = Some(label::RelocPattern::Low);
                     Value::Label(l)
                 } else {
-                    Value::Label(Label::default())
+                    Value::Label(LabelExpr::default())
+                }
+            }
+            "u8" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.pattern = Some(label::RelocPattern::U8);
+                    Value::Label(l)
+                } else {
+                    Value::Label(LabelExpr::default())
+                }
+            }
+            "u16" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.pattern = Some(label::RelocPattern::U16);
+                    Value::Label(l)
+                } else {
+                    Value::Label(LabelExpr::default())
+                }
+            }
+            "u32" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.pattern = Some(label::RelocPattern::U32);
+                    Value::Label(l)
+                } else {
+                    Value::Label(LabelExpr::default())
+                }
+            }
+            "u64" => {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                    if l.pattern.is_some() {
+                        ctx.context()
+                            .report_error(n, "label pattern kind is already set");
+                    }
+                    l.pattern = Some(label::RelocPattern::U64);
+                    Value::Label(l)
+                } else {
+                    Value::Label(LabelExpr::default())
                 }
             }
             _ => ctx.eval().func_base(func, hint),
@@ -259,16 +321,8 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 Value::Indexed(MemoryIndex::RegisterOffset(r, o)),
             ) => Value::Indexed(MemoryIndex::RegisterOffset(r, o.wrapping_add(i))),
 
-            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(Label {
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: l.meta,
-            }),
-            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(Label {
-                ident: l.ident,
-                offset: l.offset.wrapping_add(i),
-                meta: l.meta,
-            }),
+            (Value::Label(l), Value::Constant(Constant::I32(i))) => Value::Label(l.offset(i)),
+            (Value::Constant(Constant::I32(i)), Value::Label(l)) => Value::Label(l.offset(i)),
             (Value::Label(l), Value::Register(r)) => {
                 Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l))
             }
@@ -277,24 +331,10 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             }
 
             (Value::Label(l), Value::Indexed(MemoryIndex::RegisterOffset(r, i))) => {
-                Value::Indexed(MemoryIndex::LabelRegisterOffset(
-                    r,
-                    Label {
-                        ident: l.ident,
-                        offset: l.offset.wrapping_add(i),
-                        meta: l.meta,
-                    },
-                ))
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l.offset(i)))
             }
             (Value::Indexed(MemoryIndex::RegisterOffset(r, i)), Value::Label(l)) => {
-                Value::Indexed(MemoryIndex::LabelRegisterOffset(
-                    r,
-                    Label {
-                        ident: l.ident,
-                        offset: l.offset.wrapping_add(i),
-                        meta: l.meta,
-                    },
-                ))
+                Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l.offset(i)))
             }
             _ => ctx
                 .eval()
@@ -384,6 +424,32 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         .unwrap_or(0i32)
                         .wrapping_neg(),
                 ))
+            }
+
+            (BinOp::Sub, Node(Value::Label(lhs), _), Node(Value::Label(rhs), _)) =>
+            {
+                if lhs.pattern.is_some() || rhs.pattern.is_some(){
+                    ctx.context().report_error(node, "both lhs and rhs must not have a specified representation");
+                    return Value::Label(LabelExpr::default());
+                }
+                match (lhs.ty, rhs.ty){
+                    (label::LabelExprType::Unspecified(llhs),label::LabelExprType::Unspecified(lrhs)) => {
+                        return Value::Label(LabelExpr{
+                            ty: label::LabelExprType::Sub(llhs, lrhs),
+                            offset: lhs.offset.wrapping_add(rhs.offset),
+                            pattern: None,
+                        })
+                    }
+                    (label::LabelExprType::Sub(_, _),_)
+                    |(_,label::LabelExprType::Sub(_, _))
+                    |(label::LabelExprType::Sub(_, _),label::LabelExprType::Sub(_, _)) => {
+                        ctx.context().report_error(node, "can only have the difference between two labels");
+                    }
+                    _ => {
+                        ctx.context().report_error(node, "both lhs and rhs must not have a specified relocation kind");
+                    }
+                };
+                Value::Label(LabelExpr::default())
             }
 
             (BinOp::Add, Node(Value::Label(l), _), Node(Value::Constant(c), cn))

@@ -243,7 +243,11 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                     T::add_constant_as_data(self, Node(Constant::U8(0), n));
                 }
             }
-            ".string" => constant!(U8),
+            ".string" => {
+                for Node(crate::expression::args::Str::Val(arg), n) in self.coerced::<Vec<_>>(n).0 {
+                    T::add_constant_as_data(self, Node(Constant::String(arg), n));
+                }
+            }
             ".u8" => constant!(U8),
             ".u16" => constant!(U16),
             ".u32" => constant!(U32),

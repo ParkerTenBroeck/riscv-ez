@@ -14,6 +14,10 @@ pub struct LabelMeta {
 pub enum RelocPattern {
     High,
     Low,
+    U8,
+    U16,
+    U32,
+    U64,
 }
 
 impl std::fmt::Display for RelocPattern {
@@ -21,6 +25,10 @@ impl std::fmt::Display for RelocPattern {
         match self {
             RelocPattern::High => write!(f, "hi"),
             RelocPattern::Low => write!(f, "lo"),
+            RelocPattern::U8 => write!(f, "u8"),
+            RelocPattern::U16 => write!(f, "u16"),
+            RelocPattern::U32 => write!(f, "u32"),
+            RelocPattern::U64 => write!(f, "u64"),
         }
     }
 }
@@ -49,16 +57,30 @@ impl std::fmt::Display for RelocKind {
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct Label<'a> {
     pub ident: &'a str,
-    pub offset: i32,
-    pub meta: LabelMeta,
 }
 
-impl<'a> Label<'a> {
-    pub fn new(ident: &'a str) -> Self {
-        Label {
-            ident,
-            offset: 0,
-            meta: Default::default(),
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub enum LabelExprType<'a> {
+    #[default]
+    Empty,
+    Unspecified(Label<'a>),
+    PcRel(Label<'a>),
+    Absolute(Label<'a>),
+    Sub(Label<'a>, Label<'a>),
+}
+
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub struct LabelExpr<'a> {
+    pub ty: LabelExprType<'a>,
+    pub offset: i32,
+    pub pattern: Option<RelocPattern>,
+}
+impl<'a> LabelExpr<'a> {
+    pub fn needs_parens(&self) -> bool {
+        match self.ty {
+            LabelExprType::Sub(_, _) => self.pattern.is_none(),
+            LabelExprType::Unspecified(l) => self.offset != 0,
+            _ => false,
         }
     }
 
@@ -66,31 +88,71 @@ impl<'a> Label<'a> {
         self.offset = self.offset.wrapping_add(offset);
         self
     }
+
+    pub fn new(ident: &'a str) -> Self {
+        Self {
+            ty: LabelExprType::Unspecified(Label::new(ident)),
+            offset: 0,
+            pattern: None,
+        }
+    }
 }
 
-impl<'a> Display for Label<'a> {
+impl<'a> Label<'a> {
+    pub fn new(ident: &'a str) -> Self {
+        Label { ident }
+    }
+}
+
+impl<'a> Display for LabelExpr<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(kind) = self.meta.kind {
-            write!(f, "{kind}")?
+        if let Some(pattern) = self.pattern {
+            match pattern {
+                RelocPattern::High => write!(f, "hi(")?,
+                RelocPattern::Low => write!(f, "lo(")?,
+                RelocPattern::U8 => write!(f, "u8(")?,
+                RelocPattern::U16 => write!(f, "u16(")?,
+                RelocPattern::U32 => write!(f, "u32(")?,
+                RelocPattern::U64 => write!(f, "u64(")?,
+            }
         }
-        if let Some(pattern) = self.meta.pattern {
-            write!(f, "{pattern}")?
+        match self.ty {
+            LabelExprType::Empty => write!(f, "<EMPTY>")?,
+
+            LabelExprType::Unspecified(label) if self.offset != 0 => {
+                write!(f, "{label}{:+}", self.offset)?
+            }
+            LabelExprType::Unspecified(label) => write!(f, "{label}")?,
+
+            LabelExprType::PcRel(label) if self.offset != 0 => {
+                write!(f, "pcrel({label}{:+})", self.offset)?
+            }
+            LabelExprType::PcRel(label) => write!(f, "pcrel({label})")?,
+
+            LabelExprType::Absolute(label) if self.offset != 0 => {
+                write!(f, "absolute({label}{:+})", self.offset)?
+            }
+            LabelExprType::Absolute(label) => write!(f, "absolute({label})")?,
+
+            LabelExprType::Sub(lhs, rhs) if self.offset != 0 => {
+                write!(f, "{lhs}-{rhs}{:+}", self.offset)?
+            }
+            LabelExprType::Sub(lhs, rhs) => write!(f, "{lhs}-{rhs}")?,
         }
-        write!(f, "{}", self.ident)?;
-        if self.offset != 0 {
-            write!(f, "+{}", self.offset)?;
-        }
-        if self.meta.kind.is_some() {
-            write!(f, ")")?;
-        }
-        if self.meta.pattern.is_some() {
+        if self.pattern.is_some() {
             write!(f, ")")?;
         }
         Ok(())
     }
 }
 
-impl<'a> AssemblyLabel<'a> for Label<'a> {
+impl<'a> Display for Label<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ident)
+    }
+}
+
+impl<'a> AssemblyLabel<'a> for LabelExpr<'a> {
     type Lang = RiscvAssembler;
     type Offset = i32;
 }
