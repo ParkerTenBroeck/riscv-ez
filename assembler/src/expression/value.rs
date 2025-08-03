@@ -278,7 +278,7 @@ impl<'a, L: AssemblyLanguage<'a>> Value<'a, L> {
 
     pub fn get_size(&self) -> Option<u32> {
         match *self {
-            Value::Constant(c) => c.get_size(),
+            Value::Constant(c) => Some(c.get_size()),
             Value::Label(_) => Some(4),
             Value::Indexed(_) => None,
             Value::Register(_) => None,
@@ -288,7 +288,7 @@ impl<'a, L: AssemblyLanguage<'a>> Value<'a, L> {
 
     pub fn get_align(&self) -> Option<u32> {
         match *self {
-            Value::Constant(c) => c.get_align(),
+            Value::Constant(c) => Some(c.get_align()),
             Value::Label(_) => Some(4),
             Value::Indexed(_) => None,
             Value::Register(_) => None,
@@ -368,39 +368,39 @@ impl<'a> Constant<'a> {
         )
     }
 
-    pub fn get_align(&self) -> Option<u32> {
+    pub fn get_align(&self) -> u32 {
         match self {
-            Constant::I8(_) => Some(1),
-            Constant::I16(_) => Some(2),
-            Constant::I32(_) => Some(4),
-            Constant::I64(_) => Some(8),
-            Constant::U8(_) => Some(1),
-            Constant::U16(_) => Some(2),
-            Constant::U32(_) => Some(4),
-            Constant::U64(_) => Some(8),
-            Constant::F32(_) => Some(4),
-            Constant::F64(_) => Some(8),
-            Constant::String(_) => Some(1),
-            Constant::Char(_) => Some(4),
-            Constant::Bool(_) => Some(1),
+            Constant::I8(_) => 1,
+            Constant::I16(_) => 2,
+            Constant::I32(_) => 4,
+            Constant::I64(_) => 8,
+            Constant::U8(_) => 1,
+            Constant::U16(_) => 2,
+            Constant::U32(_) => 4,
+            Constant::U64(_) => 8,
+            Constant::F32(_) => 4,
+            Constant::F64(_) => 8,
+            Constant::String(_) => 1,
+            Constant::Char(_) => 4,
+            Constant::Bool(_) => 1,
         }
     }
 
-    pub fn get_size(&self) -> Option<u32> {
+    pub fn get_size(&self) -> u32 {
         match self {
-            Constant::I8(_) => Some(1),
-            Constant::I16(_) => Some(2),
-            Constant::I32(_) => Some(4),
-            Constant::I64(_) => Some(8),
-            Constant::U8(_) => Some(1),
-            Constant::U16(_) => Some(2),
-            Constant::U32(_) => Some(4),
-            Constant::U64(_) => Some(8),
-            Constant::F32(_) => Some(4),
-            Constant::F64(_) => Some(8),
-            Constant::String(str) => Some(str.len() as u32),
-            Constant::Char(_) => Some(4),
-            Constant::Bool(_) => Some(1),
+            Constant::I8(_) => 1,
+            Constant::I16(_) => 2,
+            Constant::I32(_) => 4,
+            Constant::I64(_) => 8,
+            Constant::U8(_) => 1,
+            Constant::U16(_) => 2,
+            Constant::U32(_) => 4,
+            Constant::U64(_) => 8,
+            Constant::F32(_) => 4,
+            Constant::F64(_) => 8,
+            Constant::String(str) => str.len() as u32,
+            Constant::Char(_) => 4,
+            Constant::Bool(_) => 1,
         }
     }
 }

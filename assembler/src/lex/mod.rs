@@ -116,7 +116,7 @@ pub struct Lexer<'a> {
     include_comments: bool,
 }
 
-fn ident(ident: &str) -> Token {
+fn ident<'a>(ident: &'a str) -> Token<'a> {
     match ident {
         "true" => Token::TrueLiteral,
         "false" => Token::FalseLiteral,

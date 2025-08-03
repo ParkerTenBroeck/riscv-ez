@@ -21,7 +21,7 @@ use crate::args::{FloatReg, Immediate, RegReg};
 use crate::label::{Label, LabelExpr};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
-use assembler::expression::args::{CoercedArg, LabelOpt};
+use assembler::expression::args::{CoercedArg, LabelOpt, StrOpt, U32Opt, U32Pow2Opt};
 use assembler::expression::{
     AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue,
     ExpressionEvaluatorContext, ImplicitCastTo, Indexed, Value, ValueType,
@@ -134,6 +134,32 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                     Self::instruction(asm, UTypeOpCode::Lui as u32 | r.rd());
                 }
             },
+            ".global" => {
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
+                    asm.state
+                        .context
+                        .report_warning(node, "not implemented yet");
+                }
+            }
+            ".local" => {
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
+                    asm.state
+                        .context
+                        .report_warning(node, "not implemented yet");
+                }
+            }
+            ".weak" => {
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
+                    asm.state
+                        .context
+                        .report_warning(node, "not implemented yet");
+                }
+            }
+            ".align" => {
+                if let U32Pow2Opt::Val(Some(align)) = asm.coerced(n).0 {
+                    // asm.state.add_data(0, align);
+                }
+            }
             _ => asm.assemble_mnemonic_default(Node(mnemonic, n)),
         }
     }
@@ -426,27 +452,36 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 ))
             }
 
-            (BinOp::Sub, Node(Value::Label(lhs), _), Node(Value::Label(rhs), _)) =>
-            {
-                if lhs.pattern.is_some() || rhs.pattern.is_some(){
-                    ctx.context().report_error(node, "both lhs and rhs must not have a specified representation");
+            (BinOp::Sub, Node(Value::Label(lhs), _), Node(Value::Label(rhs), _)) => {
+                if lhs.pattern.is_some() || rhs.pattern.is_some() {
+                    ctx.context().report_error(
+                        node,
+                        "both lhs and rhs must not have a specified representation",
+                    );
                     return Value::Label(LabelExpr::default());
                 }
-                match (lhs.ty, rhs.ty){
-                    (label::LabelExprType::Unspecified(llhs),label::LabelExprType::Unspecified(lrhs)) => {
-                        return Value::Label(LabelExpr{
+                match (lhs.ty, rhs.ty) {
+                    (
+                        label::LabelExprType::Unspecified(llhs),
+                        label::LabelExprType::Unspecified(lrhs),
+                    ) => {
+                        return Value::Label(LabelExpr {
                             ty: label::LabelExprType::Sub(llhs, lrhs),
                             offset: lhs.offset.wrapping_add(rhs.offset),
                             pattern: None,
-                        })
+                        });
                     }
-                    (label::LabelExprType::Sub(_, _),_)
-                    |(_,label::LabelExprType::Sub(_, _))
-                    |(label::LabelExprType::Sub(_, _),label::LabelExprType::Sub(_, _)) => {
-                        ctx.context().report_error(node, "can only have the difference between two labels");
+                    (label::LabelExprType::Sub(_, _), _)
+                    | (_, label::LabelExprType::Sub(_, _))
+                    | (label::LabelExprType::Sub(_, _), label::LabelExprType::Sub(_, _)) => {
+                        ctx.context()
+                            .report_error(node, "can only have the difference between two labels");
                     }
                     _ => {
-                        ctx.context().report_error(node, "both lhs and rhs must not have a specified relocation kind");
+                        ctx.context().report_error(
+                            node,
+                            "both lhs and rhs must not have a specified relocation kind",
+                        );
                     }
                 };
                 Value::Label(LabelExpr::default())

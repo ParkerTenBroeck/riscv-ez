@@ -3,11 +3,11 @@ pub mod lang;
 pub mod translation;
 
 use crate::assembler::lang::AssemblyLanguage;
-use crate::expression::args::{StrOpt, U32Opt, U32Pow2Opt};
+use crate::expression::args::{StrOpt, U32Opt};
 use crate::expression::{ArgumentsTypeHint, Constant, ExpressionEvaluatorContext};
 use crate::util::IntoStrDelimable;
 use crate::{
-    assembler::{context::AssemblerState, translation::Section},
+    assembler::{context::AssemblerState},
     context::Node,
     lex::Token,
     preprocess::PreProcessor,
@@ -40,17 +40,6 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             self.state.context.set_top_level_src(src);
         }
 
-        self.state.tu.sections.insert(
-            "text",
-            Section {
-                name: "text",
-                start: None,
-                align: 4,
-                data: Vec::new(),
-                relocs: Vec::new(),
-            },
-        );
-
         while let Some(Node(Token::NewLine, _)) = self.peek() {
             self.next();
         }
@@ -80,7 +69,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                 }
             }
             Some(Node(Token::Label(label), source)) => {
-                self.state.add_label(label, source);
+                T::add_label(self, label, source);
             }
             Some(Node(t, n)) => self.state.context.report_error(
                 n,
@@ -101,51 +90,42 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     }
 
     pub fn add_constant_default(&mut self, endianess: Endianess, constant: Node<'a, Constant<'a>>) {
-        let align = constant.0.get_align().unwrap_or(1);
+        let align = constant.0.get_align();
+        macro_rules! dat {
+            ($expr:expr) => {
+                T::add_bytes_as_data(self, $expr, align as usize, constant.1)
+            };
+        }
         match endianess {
             Endianess::Little => match constant.0 {
-                Constant::I8(v) => *self.state.add_data_const::<1>(align) = v.to_le_bytes(),
-                Constant::I16(v) => *self.state.add_data_const::<2>(align) = v.to_le_bytes(),
-                Constant::I32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
-                Constant::I64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
-                Constant::U8(v) => *self.state.add_data_const::<1>(align) = v.to_le_bytes(),
-                Constant::U16(v) => *self.state.add_data_const::<2>(align) = v.to_le_bytes(),
-                Constant::U32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
-                Constant::U64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
-                Constant::F32(v) => *self.state.add_data_const::<4>(align) = v.to_le_bytes(),
-                Constant::F64(v) => *self.state.add_data_const::<8>(align) = v.to_le_bytes(),
-                Constant::String(v) => self
-                    .state
-                    .add_data(v.len() as u32, align)
-                    .copy_from_slice(v.as_bytes()),
-                Constant::Char(v) => {
-                    *self.state.add_data_const::<4>(align) = (v as u32).to_le_bytes()
-                }
-                Constant::Bool(v) => {
-                    *self.state.add_data_const::<1>(align) = (v as u8).to_le_bytes()
-                }
+                Constant::I8(v) => dat!(&v.to_le_bytes()),
+                Constant::I16(v) => dat!(&v.to_le_bytes()),
+                Constant::I32(v) => dat!(&v.to_le_bytes()),
+                Constant::I64(v) => dat!(&v.to_le_bytes()),
+                Constant::U8(v) => dat!(&v.to_le_bytes()),
+                Constant::U16(v) => dat!(&v.to_le_bytes()),
+                Constant::U32(v) => dat!(&v.to_le_bytes()),
+                Constant::U64(v) => dat!(&v.to_le_bytes()),
+                Constant::F32(v) => dat!(&v.to_le_bytes()),
+                Constant::F64(v) => dat!(&v.to_le_bytes()),
+                Constant::String(v) => dat!(v.as_bytes()),
+                Constant::Char(v) => dat!(&(v as u32).to_le_bytes()),
+                Constant::Bool(v) => dat!(&(v as u8).to_le_bytes()),
             },
             Endianess::Big => match constant.0 {
-                Constant::I8(v) => *self.state.add_data_const::<1>(align) = v.to_be_bytes(),
-                Constant::I16(v) => *self.state.add_data_const::<2>(align) = v.to_be_bytes(),
-                Constant::I32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
-                Constant::I64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
-                Constant::U8(v) => *self.state.add_data_const::<1>(align) = v.to_be_bytes(),
-                Constant::U16(v) => *self.state.add_data_const::<2>(align) = v.to_be_bytes(),
-                Constant::U32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
-                Constant::U64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
-                Constant::F32(v) => *self.state.add_data_const::<4>(align) = v.to_be_bytes(),
-                Constant::F64(v) => *self.state.add_data_const::<8>(align) = v.to_be_bytes(),
-                Constant::String(v) => self
-                    .state
-                    .add_data(v.len() as u32, align)
-                    .copy_from_slice(v.as_bytes()),
-                Constant::Char(v) => {
-                    *self.state.add_data_const::<4>(align) = (v as u32).to_be_bytes()
-                }
-                Constant::Bool(v) => {
-                    *self.state.add_data_const::<1>(align) = (v as u8).to_be_bytes()
-                }
+                Constant::I8(v) => dat!(&v.to_be_bytes()),
+                Constant::I16(v) => dat!(&v.to_be_bytes()),
+                Constant::I32(v) => dat!(&v.to_be_bytes()),
+                Constant::I64(v) => dat!(&v.to_be_bytes()),
+                Constant::U8(v) => dat!(&v.to_be_bytes()),
+                Constant::U16(v) => dat!(&v.to_be_bytes()),
+                Constant::U32(v) => dat!(&v.to_be_bytes()),
+                Constant::U64(v) => dat!(&v.to_be_bytes()),
+                Constant::F32(v) => dat!(&v.to_be_bytes()),
+                Constant::F64(v) => dat!(&v.to_be_bytes()),
+                Constant::String(v) => dat!(v.as_bytes()),
+                Constant::Char(v) => dat!(&(v as u32).to_be_bytes()),
+                Constant::Bool(v) => dat!(&(v as u8).to_be_bytes()),
             },
         }
     }
@@ -184,54 +164,17 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                     .context
                     .report_error(args_node, args.iter().map(|i| i.0).delim(" "))
             }
-
-            ".global" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
-                    self.state
-                        .context
-                        .report_warning(node, "not implemented yet");
-                }
-            }
-            ".local" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
-                    self.state
-                        .context
-                        .report_warning(node, "not implemented yet");
-                }
-            }
-            ".weak" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = self.coerced(n).0 {
-                    self.state
-                        .context
-                        .report_warning(node, "not implemented yet");
-                }
-            }
-
-            ".section" => {
-                if let StrOpt::Val(Some(sec)) = self.coerced(n).0 {
-                    self.state.set_current_section(sec);
-                }
-            }
-            ".org" => {
-                if let Node(U32Opt::Val(Some(org)), node) = self.coerced(n).0 {
-                    if self.state.get_current_section().start.is_some() {
-                        self.state
-                            .context
-                            .report_warning(node, "origin previously set");
-                    }
-                    self.state.get_current_section().start = Some(org);
-                }
-            }
             ".space" => {
                 if let U32Opt::Val(Some(size)) = self.coerced(n).0 {
-                    self.state.add_data(size, 1);
+                    T::add_empty_space_data(self, size as usize, 1, n);
                 }
             }
-            ".align" => {
-                if let U32Pow2Opt::Val(Some(align)) = self.coerced(n).0 {
-                    self.state.add_data(0, align);
+            ".section" => {
+                if let StrOpt::Val(Some(sec)) = self.coerced(n).0 {
+                    T::set_section(self, sec, n);
                 }
             }
+
             ".data" => {
                 for arg in self.args(n, ArgumentsTypeHint::None).0 {
                     T::add_value_as_data(self, arg);
