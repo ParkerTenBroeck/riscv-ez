@@ -247,7 +247,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L> {
     }
 }
 
-pub struct Label<'a, L: AssemblyLanguage<'a>>(L::Label);
+pub struct Label<'a, L: AssemblyLanguage<'a>>(pub L::Label);
 impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "label";
@@ -401,6 +401,7 @@ pub trait CoercedArg<'a>: Sized {
     type LANG: AssemblyLanguage<'a>;
     const TYPE_REPR: &'static str;
     const HINT: ValueType<'a, Self::LANG>;
+    const OPTIONAL: bool = false;
     fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
@@ -408,6 +409,25 @@ pub trait CoercedArg<'a>: Sized {
     ) -> Result<Self, Option<String>>;
 
     fn default(context: &mut Context<'a>, node: NodeId<'a>) -> Self;
+}
+
+impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Option<T>{
+    type LANG = T::LANG;
+    const TYPE_REPR: &'static str = T::TYPE_REPR;
+    const HINT: ValueType<'a, Self::LANG> = T::HINT;
+    const OPTIONAL: bool = true;
+
+        fn from_arg(
+        context: &mut Context<'a>,
+        node: NodeId<'a>,
+        value: Value<'a, Self::LANG>,
+    ) -> Result<Self, Option<String>>{
+        T::from_arg(context, node, value).map(Some)
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self{
+        None
+    }
 }
 
 pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
@@ -478,21 +498,28 @@ fn wrong_number_args<'a>(
 
 fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>>(
     context: &mut Context<'a>,
-    Node(arg, node): Node<'a, Value<'a, L>>,
+    a: Option<Node<'a, Value<'a, L>>>,
+    backup: NodeId<'a>  
 ) -> T {
+    if let Some(Node(arg, node)) = a{
     T::from_arg(context, node, arg)
         .inspect_err(|err| match err {
             None => context.report_error(
                 node,
                 format!(
-                    "Incorrect argument, expected [{}] got [{}]",
+                    "Incorrect argument, expected [{}{}] got [{}]",
                     T::TYPE_REPR,
+                    if T::OPTIONAL {"?"} else {""},
                     arg.get_type()
                 ),
             ),
             Some(msg) => context.report_error(node, msg),
         })
         .unwrap_or_else(|_| T::default(context, node))
+    }else {
+        T::default(context, backup)
+    }
+
 }
 
 macro_rules! nya {
@@ -518,11 +545,14 @@ macro_rules! nya {
                 ctx: &mut ExpressionEvaluator<'a, '_, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
             ) -> Node<'a, Self> {
-                if args.len() != nya!(count: $($t,)*) {
-                    wrong_number_args(ctx.context, node, args, &[$($t::TYPE_REPR,)*], false);
+                #[allow(unused_comparisons)]
+                if args.len() < nya!(count_min: $($t,)*) || args.len() > nya!(count: $($t,)*) {
+                    wrong_number_args(ctx.context, node, args, &[$(&format!("{}{}", $t::TYPE_REPR, if $t::OPTIONAL {"?"} else {""}),)*], false);
                     Node(($($t::default(ctx.context, node)),*), node)
                 }else{
-                    nya!(ctx, args, 0, $($t,)*);
+                    #[allow(unused)]
+                    let mut iter = args.into_iter();
+                    nya!(dargs: ctx, node, iter, $($t,)*);
                     Node(($($t),*), node)
                 }
             }
@@ -540,22 +570,24 @@ macro_rules! nya {
             ) -> Node<'a, Self> {
                 #[allow(unused_comparisons)]
                 if args.len() < nya!(count: $($t,)*) {
-                    wrong_number_args(ctx.context, node, args, &[$($t::TYPE_REPR,)* VV::TYPE_REPR], true);
+                    wrong_number_args(ctx.context, node, args, &[$(&format!("{}{}", $t::TYPE_REPR, if $t::OPTIONAL {"?"} else {""}),)* VV::TYPE_REPR], true);
                     Node(($($t::default(ctx.context, node),)* Vec::new()), node)
                 }else{
-                    nya!(ctx, args, 0, $($t,)*);
-                    let vv = args.into_iter().skip(nya!(count: $($t,)*)).map(|a|{coerce_argument(ctx.context, a)}).collect();
+                    #[allow(unused_mut)]
+                    let mut iter = args.into_iter();
+                    nya!(dargs: ctx, node, iter, $($t,)*);
+                    let vv = iter.map(|a|{coerce_argument(ctx.context, Some(a), node)}).collect();
                     Node(($($t,)* vv), node)
                 }
             }
         }
     };
-    ($ctx:expr, $args:expr, $count:expr, ) => {
+    (dargs: $ctx:expr, $node:expr, $iter:expr, ) => {
     };
-    ($ctx:expr, $args:expr, $count:expr, $v:ident, $($t:ident,)*) => {
+    (dargs: $ctx:expr, $node:expr, $iter:expr, $v:ident, $($t:ident,)*) => {
         #[allow(non_snake_case)]
-        let $v = coerce_argument($ctx.context, $args[$count]);
-        nya!($ctx, $args, $count+1, $($t,)*);
+        let $v = coerce_argument($ctx.context, $iter.next(), $node);
+        nya!(dargs: $ctx, $node, $iter, $($t,)*);
     };
     (args: $count:expr, $v:ident, $($t:ident),*) => {
 
@@ -568,6 +600,16 @@ macro_rules! nya {
     };
     (count: $v:ident, $($t:ident),*$(,)?) => {
         1+nya!(count: $($t,)*)
+    };
+
+    (count_min:) => {
+        0
+    };
+    (count_min: $v:ident,) => {
+        ($v::OPTIONAL as usize)
+    };
+    (count_min: $v:ident, $($t:ident),*$(,)?) => {
+        ($v::OPTIONAL as usize)+nya!(count_min: $($t,)*)
     };
 }
 nya!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);

@@ -1,6 +1,4 @@
-pub mod context;
 pub mod lang;
-pub mod translation;
 
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::Context;
@@ -220,17 +218,18 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                 self.context
                     .report_error(args_node, args.iter().map(|i| i.0).delim(" "))
             }
-            ".space" => {
-                if let U32Opt::Val(Some(size)) = self.eval().coerced(n).0 {
-                    T::add_empty_space_data(self, size as usize, 1, n);
-                }
-            }
+            
             ".section" => {
                 if let StrOpt::Val(Some(sec)) = self.eval().coerced(n).0 {
                     T::set_section(self, sec, n);
                 }
             }
 
+            ".space" => {
+                if let U32Opt::Val(Some(size)) = self.eval().coerced(n).0 {
+                    T::add_empty_space_data(self, size as usize, 1, n);
+                }
+            }
             ".data" => {
                 for arg in self.eval().args(n, ArgumentsTypeHint::None).0 {
                     T::add_value_as_data(self, arg);
