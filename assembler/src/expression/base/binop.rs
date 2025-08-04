@@ -1,10 +1,7 @@
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
-    expression::{
-        Constant, ExpressionEvaluator, ExpressionEvaluatorContext, ImplicitCastTo, NodeVal, Value,
-        ValueType,
-    },
+    expression::{Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value, ValueType},
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -57,9 +54,7 @@ impl BinOp {
     }
 }
 
-impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
-    ExpressionEvaluator<'a, 'b, L, T>
-{
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn binop_base(
         &mut self,
         node: NodeId<'a>,
@@ -121,12 +116,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
         match op {
             BinOp::Add => match (lhs.0, rhs.0) {
-                (Value::Constant(Constant::String(l)), r) => Value::Constant(Constant::String(
-                    self.context().alloc_str(format!("{l}{r}")),
-                )),
-                (l, Value::Constant(Constant::String(r))) => Value::Constant(Constant::String(
-                    self.context().alloc_str(format!("{l}{r}")),
-                )),
+                (Value::Constant(Constant::String(l)), r) => {
+                    Value::Constant(Constant::String(self.context.alloc_str(format!("{l}{r}"))))
+                }
+                (l, Value::Constant(Constant::String(r))) => {
+                    Value::Constant(Constant::String(self.context.alloc_str(format!("{l}{r}"))))
+                }
 
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/
@@ -151,7 +146,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         if r!=0{
                             l.wrapping_div(r)
                         }else{
-                            self.context().report_error(node, "divide by zero");
+                            self.context.report_error(node, "divide by zero");
                             0
                         }
                     },/*float*/{l/r},/*str*/,/*char*/,/*bool*/
@@ -164,7 +159,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                         if r!=0{
                             l.wrapping_rem(r)
                         }else{
-                            self.context().report_error(node, "remainder by zero");
+                            self.context.report_error(node, "remainder by zero");
                             0
                         }
                     },/*float*/{l%r},/*str*/,/*char*/,/*bool*/
@@ -192,9 +187,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             BinOp::Shl => 'label: {
                 match (lhs.0, rhs.0) {
                     (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                        let v = self.context().config().implicit_cast_shift_value;
-                        let ctx = self.context();
-                        let c = r.cast_with(node, ctx, v).unwrap_or(0);
+                        let v = self.context.config().implicit_cast_shift_value;
+                        let c = r.cast_with(node, self.context, v).unwrap_or(0);
                         match l {
                             Constant::I8(l) => Constant::I8(l.wrapping_shl(c)),
                             Constant::I16(l) => Constant::I16(l.wrapping_shl(c)),
@@ -214,9 +208,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             BinOp::Shr => 'label: {
                 match (lhs.0, rhs.0) {
                     (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                        let v = self.context().config().implicit_cast_shift_value;
-                        let ctx = self.context();
-                        let c = r.cast_with(node, ctx, v).unwrap_or(0);
+                        let v = self.context.config().implicit_cast_shift_value;
+                        let c = r.cast_with(node, self.context, v).unwrap_or(0);
                         match l {
                             Constant::I8(l) => Constant::I8(l.wrapping_shr(c)),
                             Constant::I16(l) => Constant::I16(l.wrapping_shr(c)),
@@ -279,7 +272,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
     ) -> Value<'a, L> {
         match op {
             BinOp::Lt | BinOp::Lte | BinOp::Gt | BinOp::Gte | BinOp::Eq | BinOp::Ne => {
-                self.context().report_error(
+                self.context.report_error(
                     node,
                     format!(
                         "cannot compare differing types {} and {}",
@@ -291,7 +284,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             }
 
             _ => {
-                self.context().report_error(
+                self.context.report_error(
                     node,
                     format!(
                         "Cannot '{:?}' types {} and {}",
@@ -311,7 +304,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         lhs: NodeVal<'a, L>,
         rhs: NodeVal<'a, L>,
     ) -> Value<'a, L> {
-        self.context().report_error(
+        self.context.report_error(
             node,
             format!(
                 "Cannot index {} with {}",

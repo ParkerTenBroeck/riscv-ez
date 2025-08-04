@@ -1,5 +1,5 @@
 use crate::{
-    assembler::{context::AssemblerState, lang::AssemblyLanguage},
+    assembler::{PreProcessorCtx, lang::AssemblyLanguage},
     context::{Node, NodeId, NodeInfo, SourceId},
     lex::{Lexer, Token},
     preprocess::{PreProcessor, PreProcessorIter},
@@ -15,14 +15,14 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for FileIter<'a> {
     fn next(
         &mut self,
         _: &mut PreProcessor<'a, T>,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>> {
         for token in self.lex.by_ref() {
             match token {
                 Ok(ok) => {
                     return Some(Node(
                         ok.val,
-                        state.context.node(NodeInfo {
+                        ctx.context.node(NodeInfo {
                             span: ok.span,
                             source: self.source,
                             included_by: self.include_location,
@@ -31,13 +31,13 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for FileIter<'a> {
                     ));
                 }
                 Err(err) => {
-                    let n = state.context.node(NodeInfo {
+                    let n = ctx.context.node(NodeInfo {
                         span: err.span,
                         source: self.source,
                         included_by: self.include_location,
                         invoked_by: None,
                     });
-                    state.context.report_error(n, err.val);
+                    ctx.context.report_error(n, err.val);
                 }
             }
         }

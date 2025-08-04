@@ -1,5 +1,5 @@
 use crate::{
-    assembler::{context::AssemblerState, lang::AssemblyLanguage},
+    assembler::{PreProcessorCtx, lang::AssemblyLanguage},
     context::{Node, NodeId},
     lex::Token,
     logs::LogEntry,
@@ -16,7 +16,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
     fn filter(
         &mut self,
         _: &mut PreProcessor<'a, T>,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
         token: Option<Node<'a, Token<'a>>>,
     ) -> FilterResult<'a> {
         match token {
@@ -25,7 +25,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
             }
             Some(Node(Token::PreProcessorTag("else"), node)) => {
                 if let Some(last) = self.else_loc {
-                    state.context.report(
+                    ctx.context.report(
                         LogEntry::new()
                             .error(node, "Encountered #else multiple times")
                             .info(last, "first found here"),
@@ -36,9 +36,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
                 FilterResult::Consume { remove: false }
             }
             None => {
-                state.context.report(
+                ctx.context.report(
                     LogEntry::new()
-                        .error(state.context.top_src_eof(), "Expected #endif found eof")
+                        .error(ctx.context.top_src_eof(), "Expected #endif found eof")
                         .info(self.source, "from here"),
                 );
                 FilterResult::Consume { remove: true }

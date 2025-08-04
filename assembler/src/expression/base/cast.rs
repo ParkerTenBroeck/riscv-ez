@@ -2,12 +2,10 @@ use crate::expression::ValueType;
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
-    expression::{Constant, ExpressionEvaluator, ExpressionEvaluatorContext, NodeVal, Value},
+    expression::{Constant, ExpressionEvaluator, NodeVal, Value},
 };
 
-impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
-    ExpressionEvaluator<'a, 'b, L, T>
-{
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn cast_base(
         &mut self,
         node: NodeId<'a>,
@@ -93,7 +91,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
         match ty {
             "str" => Value::Constant(Constant::String(
-                self.context().alloc_str(format!("{}", expr.0).as_str()),
+                self.context.alloc_str(format!("{}", expr.0).as_str()),
             )),
             "i8" => integer!(I8, i8),
             "i16" => integer!(I16, i16),
@@ -120,7 +118,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 _ => self.cast_error(expr, ValueType::Char),
             },
             _ => {
-                self.context()
+                self.context
                     .report_error(node, format!("Unknown type {ty}"));
                 expr.0
             }
@@ -128,7 +126,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
     }
 
     pub fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {
-        self.context().report_error(
+        self.context.report_error(
             expr.1,
             format!("Cannot cast {} to {}", expr.0.get_type(), expected),
         );

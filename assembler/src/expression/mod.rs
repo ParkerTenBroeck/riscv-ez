@@ -4,74 +4,21 @@ pub use value::*;
 pub mod base;
 pub use base::*;
 
-use crate::assembler::{Assembler, lang::AssemblyLanguage};
+use crate::assembler::PreProcessorCtx;
+use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token};
+use crate::preprocess::PreProcessor;
 use crate::util::IntoStrDelimable;
-use std::marker::PhantomData;
 
 pub type NodeVal<'a, T> = Node<'a, Value<'a, T>>;
 
+#[derive(Clone, Copy)]
 pub enum ExprKind {
     Assembler,
     PreProcessor,
-    Linker,
-}
-
-pub trait ExpressionEvaluatorContext<'a, L: AssemblyLanguage<'a>>: Sized {
-    const KIND: ExprKind;
-
-    fn next(&mut self) -> Option<Node<'a, Token<'a>>>;
-    fn peek(&mut self) -> Option<Node<'a, Token<'a>>>;
-    fn context(&mut self) -> &mut Context<'a> {
-        &mut self.asm().state.context
-    }
-    fn asm(&mut self) -> Assembler<'a, '_, L>;
-    fn eval(&mut self) -> ExpressionEvaluator<'a, '_, L, Self> {
-        ExpressionEvaluator(self, PhantomData)
-    }
-
-    fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {
-        ExpressionEvaluator(self, PhantomData).parse_expr(hint)
-    }
-
-    fn args(
-        &mut self,
-        init: NodeId<'a>,
-        hint: ArgumentsTypeHint<'a, '_, L>,
-    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
-        ExpressionEvaluator(self, PhantomData).parse_arguments(init, hint)
-    }
-
-    fn args_delim(
-        &mut self,
-        init: NodeId<'a>,
-        start: Token<'a>,
-        end: Token<'a>,
-        hint: ArgumentsTypeHint<'a, '_, L>,
-    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
-        ExpressionEvaluator(self, PhantomData).parse_arguments_delim(init, start, end, hint)
-    }
-
-    fn coerced<T: CoercedArgs<'a, L>>(&mut self, init: NodeId<'a>) -> Node<'a, T>
-    where
-        Self: Sized,
-    {
-        T::coerced_args(self, init)
-    }
-
-    fn coerced_delim<T: CoercedArgs<'a, L>>(
-        &mut self,
-        init: NodeId<'a>,
-        start: Token<'a>,
-        end: Token<'a>,
-    ) -> Node<'a, T>
-    where
-        Self: Sized,
-    {
-        T::coerced_args_delim(self, init, start, end)
-    }
+    Lang,
 }
 
 pub struct FuncParamParser<'a, 'b> {
@@ -84,24 +31,22 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
         self.func.0
     }
 
-    pub fn coerced_args<
-        A: CoercedArgs<'a, L>,
-        L: AssemblyLanguage<'a>,
-        T: ExpressionEvaluatorContext<'a, L> + Sized,
-    >(
+    pub fn coerced_args<A: CoercedArgs<'a, L>, L: AssemblyLanguage<'a>>(
         self,
-        ctx: &mut T,
+        lang: &mut L,
+        ctx: &mut ExprCtx<'a, '_, L>,
     ) -> Node<'a, A> {
-        let args = A::coerced_args_delim(ctx, self.func.1, Token::LPar, Token::RPar);
+        let args = A::coerced_args_delim(&mut ctx.eval(lang), self.func.1, Token::LPar, Token::RPar);
         *self.func_node = Some(args.1);
         args
     }
 
-    pub fn args<L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>(
+    pub fn args<L: AssemblyLanguage<'a>>(
         self,
-        ctx: &mut T,
+        lang: &mut L,
+        ctx: &mut ExprCtx<'a, '_, L>,
     ) -> Node<'a, Vec<Node<'a, Value<'a, L>>>> {
-        let args = ctx.args_delim(
+        let args = ctx.eval(lang).args_delim(
             self.func.1,
             Token::LPar,
             Token::RPar,
@@ -112,24 +57,111 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
     }
 }
 
-pub struct ExpressionEvaluator<
-    'a,
-    'b,
-    L: AssemblyLanguage<'a>,
-    T: ExpressionEvaluatorContext<'a, L>,
->(&'b mut T, PhantomData<(&'a (), L)>);
+pub struct ExprCtx<'a, 'b, T: AssemblyLanguage<'a>> {
+    pub context: &'b mut Context<'a>,
+    preprocessor: &'b mut PreProcessor<'a, T>,
+    kind: ExprKind,
+}
 
-impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
-    ExpressionEvaluator<'a, 'b, L, T>
-{
-    pub fn context(&mut self) -> &mut Context<'a> {
-        self.0.context()
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExprCtx<'a, 'b, L> {
+    pub fn eval<'c>(&'c mut self, lang: &'c mut L) -> ExpressionEvaluator<'a, 'c, L> {
+        ExpressionEvaluator {
+            context: self.context,
+            lang,
+            preprocessor: self.preprocessor,
+            kind: self.kind,
+        }
     }
-    pub fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.0.next()
+}
+
+macro_rules! ctx {
+    ($self:expr) => {
+        &mut ExprCtx {
+            context: $self.context,
+            preprocessor: $self.preprocessor,
+            kind: $self.kind,
+        }
+    };
+}
+
+pub struct ExpressionEvaluator<'a, 'b, T: AssemblyLanguage<'a>> {
+    pub context: &'b mut Context<'a>,
+    lang: &'b mut T,
+    preprocessor: &'b mut PreProcessor<'a, T>,
+    kind: ExprKind,
+}
+
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
+    pub fn new(
+        context: &'b mut Context<'a>,
+        lang: &'b mut L,
+        preprocessor: &'b mut PreProcessor<'a, L>,
+        kind: ExprKind,
+    ) -> Self {
+        Self {
+            context,
+            lang,
+            preprocessor,
+            kind,
+        }
     }
-    pub fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.0.peek()
+
+    pub fn split_ctx(&mut self) -> (&mut L, ExprCtx<'a, '_, L>){
+        (self.lang, ExprCtx {
+            context: self.context,
+            preprocessor: self.preprocessor,
+            kind: self.kind,
+        })
+    }
+
+    pub fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {
+        self.parse_expr(hint)
+    }
+
+    pub fn args(
+        &mut self,
+        init: NodeId<'a>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
+        self.parse_arguments(init, hint)
+    }
+
+    pub fn args_delim(
+        &mut self,
+        init: NodeId<'a>,
+        start: Token<'a>,
+        end: Token<'a>,
+        hint: ArgumentsTypeHint<'a, '_, L>,
+    ) -> Node<'a, Vec<NodeVal<'a, L>>> {
+        self.parse_arguments_delim(init, start, end, hint)
+    }
+
+    pub fn coerced<T: CoercedArgs<'a, L>>(&mut self, init: NodeId<'a>) -> Node<'a, T>
+    where
+        Self: Sized,
+    {
+        T::coerced_args(self, init)
+    }
+
+    pub fn coerced_delim<T: CoercedArgs<'a, L>>(
+        &mut self,
+        init: NodeId<'a>,
+        start: Token<'a>,
+        end: Token<'a>,
+    ) -> Node<'a, T>
+    where
+        Self: Sized,
+    {
+        T::coerced_args_delim(self, init, start, end)
+    }
+
+    fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
+        self.preprocessor
+            .next(PreProcessorCtx::new(self.context, self.lang))
+    }
+    fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
+        self.preprocessor
+            .peek(PreProcessorCtx::new(self.context, self.lang))
     }
 
     fn parse_expr_1(&mut self, hint: ValueType<'a, L>, negated: bool) -> NodeVal<'a, L> {
@@ -137,8 +169,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             Some(Node(Token::Ident(ident), node)) => match self.peek() {
                 Some(Node(Token::LPar, _)) => {
                     let mut loc = None;
-                    let res = L::eval_func(
-                        self.0,
+                    let res = self.lang.eval_func(
+                        ctx!(self),
                         FuncParamParser {
                             func: Node(ident, node),
                             func_node: &mut loc,
@@ -155,13 +187,16 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                             Token::RPar,
                             ArgumentsTypeHint::None,
                         );
-                        self.context().report_error(loc.1, "Function arguments never consumer... This is a error on the developers part");
+                        self.context.report_error(loc.1, "Function arguments never consumer... This is a error on the developers part");
                         loc.1
                     };
 
                     Node(res, loc)
                 }
-                _ => Node(L::parse_ident(self.0, Node(ident, node), hint), node),
+                _ => Node(
+                    self.lang.parse_ident(ctx!(self), Node(ident, node), hint),
+                    node,
+                ),
             },
             Some(Node(Token::TrueLiteral, node)) => {
                 Node(Value::Constant(Constant::Bool(true)), node)
@@ -178,24 +213,25 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 node,
             ),
             Some(Node(Token::NumericLiteral(num), node)) => Node(
-                L::parse_numeric_literal(self.0, Node(num, node), negated, hint),
+                self.lang
+                    .parse_numeric_literal(ctx!(self), Node(num, node), negated, hint),
                 node,
             ),
             Some(Node(Token::LPar, lhs)) => {
                 let mut arg = self.parse_expr(hint);
                 match self.peek() {
                     Some(Node(Token::RPar, rhs)) => {
-                        arg.1 = self.context().merge_nodes(lhs, rhs);
+                        arg.1 = self.context.merge_nodes(lhs, rhs);
                         self.next();
                     }
-                    t => _ = self.context().unexpected_token(t, Token::RPar, false),
+                    t => _ = self.context.unexpected_token(t, Token::RPar, false),
                 }
                 arg
             }
 
             t => Node(
                 hint.default_value(),
-                self.context().unexpected_token(
+                self.context.unexpected_token(
                     t,
                     [
                         Token::Ident(""),
@@ -222,11 +258,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     self.next();
                     closing
                 }
-                t => self.context().unexpected_token(t, Token::RBracket, false),
+                t => self.context.unexpected_token(t, Token::RBracket, false),
             };
-            let node = self.context().merge_nodes(expr.1, closing);
+            let node = self.context.merge_nodes(expr.1, closing);
             return Node(
-                L::eval_index(self.0, node, expr, opening, rhs, closing, hint),
+                self.lang
+                    .eval_index(ctx!(self), node, expr, opening, rhs, closing, hint),
                 node,
             );
         }
@@ -239,18 +276,20 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             Some(Node(Token::Minus, op_node)) => {
                 self.next();
                 let expr = self.parse_expr_2(hint, !negated);
-                let node = self.context().merge_nodes(op_node, expr.1);
+                let node = self.context.merge_nodes(op_node, expr.1);
                 Node(
-                    L::eval_unnop(self.0, node, Node(unop::UnOp::Neg, node), expr, hint),
+                    self.lang
+                        .eval_unnop(ctx!(self), node, Node(unop::UnOp::Neg, node), expr, hint),
                     node,
                 )
             }
             Some(Node(Token::LogicalNot, op_node)) => {
                 self.next();
                 let expr = self.parse_expr_2(hint, false);
-                let node = self.context().merge_nodes(op_node, expr.1);
+                let node = self.context.merge_nodes(op_node, expr.1);
                 Node(
-                    L::eval_unnop(self.0, node, Node(unop::UnOp::Not, node), expr, hint),
+                    self.lang
+                        .eval_unnop(ctx!(self), node, Node(unop::UnOp::Not, node), expr, hint),
                     node,
                 )
             }
@@ -271,12 +310,16 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     }
 
                     t => {
-                        self.context().unexpected_token(t, Token::Ident(""), false);
+                        self.context.unexpected_token(t, Token::Ident(""), false);
                         return expr;
                     }
                 };
-                let node = self.context().merge_nodes(expr.1, ty.1);
-                Node(L::eval_cast(self.0, node, expr, as_node, ty, hint), node)
+                let node = self.context.merge_nodes(expr.1, ty.1);
+                Node(
+                    self.lang
+                        .eval_cast(ctx!(self), node, expr, as_node, ty, hint),
+                    node,
+                )
             }
             _ => expr,
         }
@@ -317,8 +360,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 if shift { ValueType::U32 } else { hint },
                 op.0.precedence() + 1,
             );
-            let node = self.context().merge_nodes(lhs.1, rhs.1);
-            lhs = Node(L::eval_binop(self.0, node, lhs, op, rhs, hint), node);
+            let node = self.context.merge_nodes(lhs.1, rhs.1);
+            lhs = Node(
+                self.lang.eval_binop(ctx!(self), node, lhs, op, rhs, hint),
+                node,
+            );
         }
         lhs
     }
@@ -331,12 +377,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
         let mut chars = repr.chars();
         if let Some(ok) = chars.next() {
             if chars.next().is_some() {
-                self.context()
+                self.context
                     .report_error(n, "Char literal contains more than one char");
             }
             ok
         } else {
-            self.context().report_error(n, "Char literal empty");
+            self.context.report_error(n, "Char literal empty");
             '\0'
         }
     }
@@ -359,14 +405,14 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                 self.next();
             }
             t => {
-                self.context().unexpected_token(t, opening, true);
+                self.context.unexpected_token(t, opening, true);
             }
         };
         loop {
             match self.peek() {
                 Some(Node(t, end)) if t == closing => {
                     self.next();
-                    return Node(args, self.context().merge_nodes(init, end));
+                    return Node(args, self.context.merge_nodes(init, end));
                 }
                 Some(_) => {
                     args.push(self.parse_expr(hint[args.len()]));
@@ -375,12 +421,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                     }
                 }
                 None => {
-                    let end = self.context().unexpected_token(
+                    let end = self.context.unexpected_token(
                         None,
                         [Token::Comma, closing].iter().delim("|"),
                         true,
                     );
-                    return Node(args, self.context().merge_nodes(init, end));
+                    return Node(args, self.context.merge_nodes(init, end));
                 }
             }
         }
@@ -397,7 +443,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
             match self.peek() {
                 Some(Node(Token::NewLine, _)) | None => {
                     if let Some(Node(_, last)) = args.last().copied() {
-                        return Node(args, self.context().merge_nodes(init, last));
+                        return Node(args, self.context.merge_nodes(init, last));
                     } else {
                         return Node(args, init);
                     }

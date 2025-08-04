@@ -3,18 +3,74 @@ pub mod lang;
 pub mod translation;
 
 use crate::assembler::lang::AssemblyLanguage;
+use crate::context::Context;
 use crate::expression::args::{StrOpt, U32Opt};
-use crate::expression::{ArgumentsTypeHint, Constant, ExpressionEvaluatorContext};
+use crate::expression::{ArgumentsTypeHint, Constant, ExpressionEvaluator};
 use crate::util::IntoStrDelimable;
-use crate::{
-    assembler::{context::AssemblerState},
-    context::Node,
-    lex::Token,
-    preprocess::PreProcessor,
-};
+use crate::{context::Node, lex::Token, preprocess::PreProcessor};
+
+pub struct LangCtx<'a, 'b, T: AssemblyLanguage<'a>> {
+    pub context: &'b mut Context<'a>,
+    preprocessor: &'b mut PreProcessor<'a, T>,
+}
+impl<'a, 'b, T: AssemblyLanguage<'a>> LangCtx<'a, 'b, T> {
+    pub fn new(context: &'b mut Context<'a>, preprocessor: &'b mut PreProcessor<'a, T>) -> Self {
+        Self {
+            context,
+            preprocessor,
+        }
+    }
+
+    pub fn asm<'c>(&'c mut self, lang: &'c mut T) -> Assembler<'a, 'c, T> {
+        Assembler {
+            context: self.context,
+            lang,
+            preprocessor: self.preprocessor,
+        }
+    }
+
+    pub fn eval<'c>(&'c mut self, lang: &'c mut T) -> ExpressionEvaluator<'a, 'c, T> {
+        ExpressionEvaluator::new(
+            self.context,
+            lang,
+            self.preprocessor,
+            crate::expression::ExprKind::Lang,
+        )
+    }
+}
+pub struct PreProcessorCtx<'a, 'b, T: AssemblyLanguage<'a>> {
+    pub context: &'b mut Context<'a>,
+    lang: &'b mut T,
+}
+impl<'a, 'b, T: AssemblyLanguage<'a>> PreProcessorCtx<'a, 'b, T> {
+    pub fn new(context: &'b mut Context<'a>, lang: &'b mut T) -> Self {
+        Self { context, lang }
+    }
+
+    pub fn asm(&mut self, preprocessor: &'b mut PreProcessor<'a, T>) -> Assembler<'a, '_, T> {
+        Assembler {
+            context: self.context,
+            lang: self.lang,
+            preprocessor,
+        }
+    }
+
+    pub fn eval<'c>(
+        &'c mut self,
+        preprocessor: &'c mut PreProcessor<'a, T>,
+    ) -> ExpressionEvaluator<'a, 'c, T> {
+        ExpressionEvaluator::new(
+            self.context,
+            self.lang,
+            preprocessor,
+            crate::expression::ExprKind::PreProcessor,
+        )
+    }
+}
 
 pub struct Assembler<'a, 'b, T: AssemblyLanguage<'a>> {
-    pub state: &'b mut AssemblerState<'a, T>,
+    pub context: &'b mut Context<'a>,
+    pub lang: &'b mut T,
     pub preprocessor: &'b mut PreProcessor<'a, T>,
 }
 
@@ -26,18 +82,23 @@ pub enum Endianess {
 
 impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     pub fn new(
-        state: &'b mut AssemblerState<'a, T>,
+        context: &'b mut Context<'a>,
+        lang: &'b mut T,
         preprocessor: &'b mut PreProcessor<'a, T>,
     ) -> Self {
         Self {
-            state,
+            context,
+            lang,
             preprocessor,
         }
     }
 
-    pub fn assemble(&mut self, path: impl Into<String>) -> Vec<u8> {
-        if let Some(src) = self.preprocessor.begin(self.state, path) {
-            self.state.context.set_top_level_src(src);
+    pub fn assemble(&mut self, path: impl Into<String>) -> T::AssembledResult {
+        if let Some(src) = self
+            .preprocessor
+            .begin(PreProcessorCtx::new(self.context, self.lang), path)
+        {
+            self.context.set_top_level_src(src);
         }
 
         while let Some(Node(Token::NewLine, _)) = self.peek() {
@@ -50,18 +111,18 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             }
         }
 
-        Vec::new()
+        self.lang
+            .finish(LangCtx::new(self.context, self.preprocessor))
     }
 
     fn assemble_line(&mut self) {
         match self.next() {
             Some(Node(Token::Ident(ident), n)) => {
-                T::assemble_mnemonic(self, ident, n);
+                self.lang.assemble_mnemonic(&mut LangCtx::new(self.context, self.preprocessor), ident, n);
                 loop {
                     match self.peek() {
                         None | Some(Node(Token::NewLine, _)) => break,
                         Some(Node(t, n)) => self
-                            .state
                             .context
                             .report_error(n, format!("Unexpected token '{t:#}' at end of line")),
                     }
@@ -71,7 +132,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             Some(Node(Token::Label(label), source)) => {
                 T::add_label(self, label, source);
             }
-            Some(Node(t, n)) => self.state.context.report_error(
+            Some(Node(t, n)) => self.context.report_error(
                 n,
                 format!("Unexpected token {t:#} expected mnemonic or label"),
             ),
@@ -80,8 +141,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     }
 
     pub fn unknown_mnemonic(&mut self, Node(mnemonic, n): Node<'a, &'a str>) {
-        self.state
-            .context
+        self.context
             .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'"));
 
         while !matches!(self.peek(), None | Some(Node(Token::NewLine, _))) {
@@ -133,7 +193,8 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
     pub fn assemble_mnemonic_default(&mut self, Node(mnemonic, n): Node<'a, &'a str>) {
         macro_rules! constant {
             ($kind:ident) => {
-                for Node(crate::expression::args::$kind::Val(arg), n) in self.coerced::<Vec<_>>(n).0
+                for Node(crate::expression::args::$kind::Val(arg), n) in
+                    self.eval().coerced::<Vec<_>>(n).0
                 {
                     T::add_constant_as_data(self, Node(Constant::$kind(arg), n));
                 }
@@ -141,53 +202,52 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
         }
         match mnemonic {
             ".dbg" => {
-                let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
-                self.state
-                    .context
-                    .report_info(args_node, format!("{args:#?}"))
+                let Node(args, args_node) = self.eval().args(n, ArgumentsTypeHint::None);
+                self.context.report_info(args_node, format!("{args:#?}"))
             }
             ".info" => {
-                let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
-                self.state
-                    .context
+                let Node(args, args_node) = self.eval().args(n, ArgumentsTypeHint::None);
+                self.context
                     .report_info(args_node, args.iter().map(|i| i.0).delim(" "))
             }
             ".warning" => {
-                let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
-                self.state
-                    .context
+                let Node(args, args_node) = self.eval().args(n, ArgumentsTypeHint::None);
+                self.context
                     .report_warning(args_node, args.iter().map(|i| i.0).delim(" "))
             }
             ".error" => {
-                let Node(args, args_node) = self.args(n, ArgumentsTypeHint::None);
-                self.state
-                    .context
+                let Node(args, args_node) = self.eval().args(n, ArgumentsTypeHint::None);
+                self.context
                     .report_error(args_node, args.iter().map(|i| i.0).delim(" "))
             }
             ".space" => {
-                if let U32Opt::Val(Some(size)) = self.coerced(n).0 {
+                if let U32Opt::Val(Some(size)) = self.eval().coerced(n).0 {
                     T::add_empty_space_data(self, size as usize, 1, n);
                 }
             }
             ".section" => {
-                if let StrOpt::Val(Some(sec)) = self.coerced(n).0 {
+                if let StrOpt::Val(Some(sec)) = self.eval().coerced(n).0 {
                     T::set_section(self, sec, n);
                 }
             }
 
             ".data" => {
-                for arg in self.args(n, ArgumentsTypeHint::None).0 {
+                for arg in self.eval().args(n, ArgumentsTypeHint::None).0 {
                     T::add_value_as_data(self, arg);
                 }
             }
             ".stringz" => {
-                for Node(crate::expression::args::Str::Val(arg), n) in self.coerced::<Vec<_>>(n).0 {
+                for Node(crate::expression::args::Str::Val(arg), n) in
+                    self.eval().coerced::<Vec<_>>(n).0
+                {
                     T::add_constant_as_data(self, Node(Constant::String(arg), n));
                     T::add_constant_as_data(self, Node(Constant::U8(0), n));
                 }
             }
             ".string" => {
-                for Node(crate::expression::args::Str::Val(arg), n) in self.coerced::<Vec<_>>(n).0 {
+                for Node(crate::expression::args::Str::Val(arg), n) in
+                    self.eval().coerced::<Vec<_>>(n).0
+                {
                     T::add_constant_as_data(self, Node(Constant::String(arg), n));
                 }
             }
@@ -207,22 +267,23 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             _ => self.unknown_mnemonic(Node(mnemonic, n)),
         }
     }
-}
 
-impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluatorContext<'a, L> for Assembler<'a, 'b, L> {
-    const KIND: crate::expression::ExprKind = crate::expression::ExprKind::Assembler;
-
-    fn asm(&mut self) -> Assembler<'a, '_, L> {
-        Assembler {
-            state: self.state,
-            preprocessor: self.preprocessor,
-        }
+    fn eval(&mut self) -> ExpressionEvaluator<'a, '_, T> {
+        ExpressionEvaluator::new(
+            self.context,
+            self.lang,
+            self.preprocessor,
+            crate::expression::ExprKind::Assembler,
+        )
     }
+
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.preprocessor.next(self.state)
+        self.preprocessor
+            .next(PreProcessorCtx::new(self.context, self.lang))
     }
 
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
-        self.preprocessor.peek(self.state)
+        self.preprocessor
+            .peek(PreProcessorCtx::new(self.context, self.lang))
     }
 }

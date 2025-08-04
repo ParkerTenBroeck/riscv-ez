@@ -3,28 +3,24 @@ use std::fmt::Write;
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::Node,
-    expression::{
-        Constant, ExpressionEvaluator, ExpressionEvaluatorContext, FuncParamParser, Value,
-        ValueType, args::StrOpt,
-    },
+    expression::{Constant, ExpressionEvaluator, FuncParamParser, Value, ValueType, args::StrOpt},
 };
 
-impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
-    ExpressionEvaluator<'a, 'b, L, T>
-{
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn func_base(
         &mut self,
-        func: FuncParamParser<'a, '_>,
+        func: FuncParamParser<'a, 'b>,
         hint: ValueType<'a, L>,
     ) -> Value<'a, L> {
+        let (lang, mut ctx) = self.split_ctx();
         match func.func() {
             "format" => {
                 if let Node((StrOpt::Val(Some(format)), v), n) =
-                    func.coerced_args::<(_, Vec<Value<'a, L>>), _, _>(self.0)
+                    func.coerced_args::<(_, Vec<Value<'a, L>>), _>(lang, &mut ctx)
                 {
                     let expected = format.matches('%').count();
                     if expected != v.len() {
-                        self.context().report_error(
+                        self.context.report_error(
                             n,
                             format!(
                                 "wrong number of arguments provided expected {} found {}",
@@ -45,7 +41,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
                             .unwrap();
                     }
 
-                    Value::Constant(Constant::String(self.context().alloc_str(result)))
+                    Value::Constant(Constant::String(self.context.alloc_str(result)))
                 } else {
                     Value::Constant(Constant::String(""))
                 }
@@ -56,12 +52,13 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn invalid_func(
         &mut self,
-        func: FuncParamParser<'a, '_>,
+        func: FuncParamParser<'a, 'b>,
         hint: ValueType<'a, L>,
     ) -> Value<'a, L> {
         let func_name = func.func.0;
-        let node = func.args(self.0).1;
-        self.context()
+        let (lang, mut ctx) = self.split_ctx();
+        let node = func.args(lang, &mut ctx).1;
+        self.context
             .report_error(node, format!("Unknown function {func_name}"));
         hint.default_value()
     }

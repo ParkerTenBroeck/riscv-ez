@@ -7,7 +7,7 @@ use crate::{
 };
 use assembler::{
     context::NodeId,
-    expression::{Constant, ExpressionEvaluatorContext, Indexed, Value},
+    expression::{Constant, Indexed, Value},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

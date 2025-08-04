@@ -1,4 +1,3 @@
-use crate::assembler::context::AssemblerState;
 use crate::assembler::{Assembler, lang::AssemblyLanguage};
 
 use crate::config::AssemblerConfig;
@@ -75,10 +74,10 @@ pub fn assemble_and_link<'a>(
     sources: &'a HashMap<String, String>,
     files: Vec<impl Into<String>>,
     bump: &'a Bump,
-    lang: impl AssemblyLanguage<'a>,
+    mut lang: impl AssemblyLanguage<'a>,
 ) -> AssemblerResult<'a> {
     let now = Instant::now();
-    let context = Context::new(bump, AssemblerConfig::new(), move |path, _ctx| {
+    let mut context = Context::new(bump, AssemblerConfig::new(), move |path, _ctx| {
         if let Some(contents) = sources.get(path) {
             Ok(contents.as_str())
         } else {
@@ -86,9 +85,8 @@ pub fn assemble_and_link<'a>(
         }
     });
     let mut preprocessor = PreProcessor::new();
-    let mut state = AssemblerState::new(lang, context);
 
-    let mut assember = Assembler::new(&mut state, &mut preprocessor);
+    let mut assember = Assembler::new(&mut context, &mut lang, &mut preprocessor);
 
     for file in files {
         assember.assemble(file);
@@ -100,6 +98,6 @@ pub fn assemble_and_link<'a>(
         allocated: bump.allocated_bytes(),
         time: elapsed,
         output: Vec::new(),
-        log: state.context.take_logs(),
+        log: context.take_logs(),
     }
 }

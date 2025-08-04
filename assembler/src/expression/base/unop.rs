@@ -1,9 +1,7 @@
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
-    expression::{
-        Constant, ExpressionEvaluator, ExpressionEvaluatorContext, NodeVal, Value, ValueType,
-    },
+    expression::{Constant, ExpressionEvaluator, NodeVal, Value, ValueType},
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -12,9 +10,7 @@ pub enum UnOp {
     Not,
 }
 
-impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Sized>
-    ExpressionEvaluator<'a, 'b, L, T>
-{
+impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn unop_base(
         &mut self,
         node: NodeId<'a>,
@@ -56,11 +52,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>, T: ExpressionEvaluatorContext<'a, L> + Siz
 
     pub fn invalid_unop(&mut self, op: UnOp, node: NodeId<'a>, expr: NodeVal<'a, L>) {
         match op {
-            UnOp::Neg => self.context().report_error(
+            UnOp::Neg => self.context.report_error(
                 node,
                 format!("Cannot negate expression of type {}", expr.0.get_type()),
             ),
-            UnOp::Not => self.context().report_error(
+            UnOp::Not => self.context.report_error(
                 node,
                 format!("Cannot not expression of type {}", expr.0.get_type()),
             ),

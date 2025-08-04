@@ -4,8 +4,7 @@ use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::CoercedArg;
 use assembler::expression::{
-    AssemblyRegister, Constant, ExpressionEvaluatorContext, ImplicitCastFrom, ImplicitCastTo as _,
-    Indexed, Value, ValueType,
+    AssemblyRegister, Constant, ImplicitCastFrom, ImplicitCastTo as _, Indexed, Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 

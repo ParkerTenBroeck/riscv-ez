@@ -1,26 +1,14 @@
 use crate::assembler::lang::AssemblyLanguage;
-// use crate::assembler::translation::{Label, Section};
-// use crate::logs::{LogEntry, LogKind};
-use crate::{
-    // assembler::translation::TranslationUnit,
-    context::{Context},
-};
+use crate::context::Context;
 
 pub struct AssemblerState<'a, T: AssemblyLanguage<'a>> {
     pub context: Context<'a>,
-    pub current_section: Option<&'a str>,
-    pub last_full_label: Option<&'a str>,
     pub lang: T,
 }
 
 impl<'a, T: AssemblyLanguage<'a>> AssemblerState<'a, T> {
     pub fn new(lang: T, context: Context<'a>) -> Self {
-        AssemblerState {
-            context,
-            last_full_label: None,
-            current_section: None,
-            lang,
-        }
+        AssemblerState { context, lang }
     }
 
     // pub fn set_current_section(&mut self, section: &'a str) {

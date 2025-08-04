@@ -1,5 +1,5 @@
 use crate::{
-    assembler::{context::AssemblerState, lang::AssemblyLanguage},
+    assembler::{PreProcessorCtx, lang::AssemblyLanguage},
     context::{Node, NodeId, NodeInfo},
     lex::Token,
     preprocess::{PreProcessor, PreProcessorIter},
@@ -14,13 +14,13 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for TokenIter<'a> {
     fn next(
         &mut self,
         _: &mut PreProcessor<'a, T>,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>> {
         let tok = self.toks.next()?;
 
         Some(Node(
             tok.0,
-            state.context.node(NodeInfo {
+            ctx.context.node(NodeInfo {
                 span: tok.1.span,
                 source: tok.1.source,
                 included_by: tok.1.included_by,

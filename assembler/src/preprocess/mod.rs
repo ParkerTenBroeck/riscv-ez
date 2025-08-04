@@ -6,10 +6,8 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fmt::Write;
 
-use crate::assembler::Assembler;
-use crate::assembler::context::AssemblerState;
+use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
-use crate::expression::ExpressionEvaluatorContext;
 use crate::expression::Value;
 use crate::expression::ValueType;
 use crate::preprocess::defined_macro::TokenIter;
@@ -29,7 +27,7 @@ pub trait PreProcessorIter<'a, T: AssemblyLanguage<'a>> {
     fn next(
         &mut self,
         pp: &mut PreProcessor<'a, T>,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>>;
 }
 
@@ -52,7 +50,7 @@ pub trait PreProcessorFilter<'a, T: AssemblyLanguage<'a>> {
     fn filter(
         &mut self,
         pp: &mut PreProcessor<'a, T>,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
         token: Option<Node<'a, Token<'a>>>,
     ) -> FilterResult<'a>;
 }
@@ -82,20 +80,17 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
     }
 
-    fn add_producer(&mut self, state: &mut AssemblerState<'a, T>, stage: ProducerStage<'a, T>) {
-        if self.producers.len() > state.context.config().producer_stack_limit {
+    fn add_producer(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: ProducerStage<'a, T>) {
+        let limit = ctx.context.config().producer_stack_limit;
+        if self.producers.len() > limit {
             if let Some(source) = stage.source {
-                state.context.report_error(
+                ctx.context.report_error(
                     source,
-                    format!(
-                        "Preprocessor stack recursion limit hit ({}) for producers",
-                        state.context.config().producer_stack_limit
-                    ),
+                    format!("Preprocessor stack recursion limit hit ({limit}) for producers",),
                 );
             } else {
-                state.context.report_error_locless(format!(
-                    "Preprocessor stack recursion limit hit ({}) for producers",
-                    state.context.config().producer_stack_limit
+                ctx.context.report_error_locless(format!(
+                    "Preprocessor stack recursion limit hit ({limit}) for producers"
                 ));
             }
             self.producers.clear();
@@ -104,20 +99,17 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
     }
 
-    fn add_filter(&mut self, state: &mut AssemblerState<'a, T>, stage: FilterStage<'a, T>) {
-        if self.filters.len() > state.context.config().filter_stack_limit {
+    fn add_filter(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: FilterStage<'a, T>) {
+        let limit = ctx.context.config().filter_stack_limit;
+        if self.filters.len() > limit {
             if let Some(source) = stage.source {
-                state.context.report_error(
+                ctx.context.report_error(
                     source,
-                    format!(
-                        "Preprocessor stack recursion limit hit ({}) for filters",
-                        state.context.config().filter_stack_limit
-                    ),
+                    format!("Preprocessor stack recursion limit hit ({limit}) for filters"),
                 );
             } else {
-                state.context.report_error_locless(format!(
-                    "Preprocessor stack recursion limit hit ({}) for filters",
-                    state.context.config().filter_stack_limit
+                ctx.context.report_error_locless(format!(
+                    "Preprocessor stack recursion limit hit ({limit}) for filters"
                 ));
             }
         } else {
@@ -127,7 +119,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
     pub fn begin(
         &mut self,
-        state: &mut AssemblerState<'a, T>,
+        mut ctx: PreProcessorCtx<'a, '_, T>,
         path: impl Into<String>,
     ) -> Option<SourceId<'a>> {
         self.defines.clear();
@@ -135,11 +127,11 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         self.producers.clear();
         self.peek = None;
 
-        let result = state.context.get_source_from_path(path);
+        let result = ctx.context.get_source_from_path(path);
         match result {
             Ok(src) => {
                 self.add_producer(
-                    state,
+                    &mut ctx,
                     ProducerStage {
                         iter: Box::new(FileIter {
                             lex: Lexer::new(src.contents),
@@ -152,8 +144,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                 Some(src)
             }
             Err(error) => {
-                state
-                    .context
+                ctx.context
                     .report_error_locless(format!("Failed to load file '{error}'"));
 
                 None
@@ -163,15 +154,15 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
     pub fn include(
         &mut self,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
         path: impl Into<String>,
         source: NodeId<'a>,
     ) {
-        let result = state.context.get_source_from_path(path);
+        let result = ctx.context.get_source_from_path(path);
         match result {
             Ok(src) => {
                 self.add_producer(
-                    state,
+                    ctx,
                     ProducerStage {
                         iter: Box::new(FileIter {
                             lex: Lexer::new(src.contents),
@@ -183,19 +174,18 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                 );
             }
             Err(error) => {
-                state
-                    .context
+                ctx.context
                     .report_error(source, format!("Failed to include file '{error}'"));
             }
         }
     }
 
-    fn stack_next(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+    fn stack_next(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_some() {
             return self.peek.take();
         }
         while let Some(mut top) = self.producers.pop() {
-            if let Some(next) = top.iter.next(self, state) {
+            if let Some(next) = top.iter.next(self, ctx) {
                 self.producers.push(top);
                 return Some(next);
             }
@@ -205,23 +195,23 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
     fn handle_preprocessor_tag(
         &mut self,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
         tag: &'a str,
         n: NodeId<'a>,
     ) -> Option<Node<'a, Token<'a>>> {
         match tag {
-            "include" => match self.stack_next(state) {
-                Some(Node(Token::StringLiteral(str), node)) => self.include(state, str, node),
+            "include" => match self.stack_next(ctx) {
+                Some(Node(Token::StringLiteral(str), node)) => self.include(ctx, str, node),
                 t => {
-                    _ = state
+                    _ = ctx
                         .context
                         .unexpected_token(t, Token::StringLiteral(""), false)
                 }
             },
-            "ifdef" => match self.stack_next(state) {
+            "ifdef" => match self.stack_next(ctx) {
                 Some(Node(Token::Ident(str), node)) => {
                     self.add_filter(
-                        state,
+                        ctx,
                         FilterStage {
                             filter: Box::new(IfDef {
                                 source: node,
@@ -232,12 +222,12 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                         },
                     );
                 }
-                t => _ = state.context.unexpected_token(t, Token::Ident(""), false),
+                t => _ = ctx.context.unexpected_token(t, Token::Ident(""), false),
             },
-            "ifndef" => match self.stack_next(state) {
+            "ifndef" => match self.stack_next(ctx) {
                 Some(Node(Token::Ident(str), node)) => {
                     self.add_filter(
-                        state,
+                        ctx,
                         FilterStage {
                             filter: Box::new(IfDef {
                                 source: node,
@@ -248,12 +238,12 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                         },
                     );
                 }
-                t => _ = state.context.unexpected_token(t, Token::Ident(""), false),
+                t => _ = ctx.context.unexpected_token(t, Token::Ident(""), false),
             },
             "if" => {
-                let res = Assembler::new(state, self).expr(ValueType::Any);
+                let res = ctx.eval(self).expr(ValueType::Any);
                 self.add_filter(
-                    state,
+                    ctx,
                     FilterStage {
                         filter: Box::new(IfDef {
                             source: res.1,
@@ -266,25 +256,25 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             }
             "concat" => {
                 let Node(parts, node): Node<'_, Vec<Value<'a, T>>> =
-                    Assembler::new(state, self).coerced_delim(n, Token::LPar, Token::RPar);
+                    ctx.eval(self).coerced_delim(n, Token::LPar, Token::RPar);
                 let mut ident = String::new();
                 for part in parts.into_iter() {
                     ident.write_fmt(format_args!("{part}")).unwrap();
                 }
-                let ident = state.context.alloc_str(ident);
+                let ident = ctx.context.alloc_str(ident);
                 return Some(Node(Token::Ident(ident), node));
             }
             "define" => {
-                let ident = match self.stack_next(state) {
+                let ident = match self.stack_next(ctx) {
                     Some(Node(Token::Ident(str), _)) => str,
                     t => {
-                        state.context.unexpected_token(t, Token::Ident(""), false);
+                        ctx.context.unexpected_token(t, Token::Ident(""), false);
                         ""
                     }
                 };
                 let mut toks = Vec::new();
                 loop {
-                    match self.stack_next(state) {
+                    match self.stack_next(ctx) {
                         Some(Node(Token::NewLine, _)) | None => break,
                         Some(tok) => toks.push(tok),
                     }
@@ -295,8 +285,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             }
 
             unknown => {
-                state
-                    .context
+                ctx.context
                     .report_error(n, format!("Unknown preprocessor tag '{unknown}'"));
             }
         }
@@ -305,13 +294,13 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
     fn handle_identifier(
         &mut self,
-        state: &mut AssemblerState<'a, T>,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
         ident: &'a str,
         n: NodeId<'a>,
     ) -> bool {
         if let Some(value) = self.defines.get(ident) {
             self.add_producer(
-                state,
+                ctx,
                 ProducerStage {
                     iter: Box::new(TokenIter {
                         toks: value.clone().into_iter(),
@@ -325,12 +314,15 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         true
     }
 
-    fn next_filtered(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+    fn next_filtered(
+        &mut self,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
+    ) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_some() {
             return self.peek.take();
         }
         loop {
-            let mut next = self.stack_next(state);
+            let mut next = self.stack_next(ctx);
             let mut filters = VecDeque::new();
             std::mem::swap(&mut filters, &mut self.filters);
             let mut contin = false;
@@ -338,7 +330,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                 if contin {
                     return true;
                 }
-                match f.filter.filter(self, state, next) {
+                match f.filter.filter(self, ctx, next) {
                     FilterResult::Pass { remove, token } => {
                         next = token;
                         !remove
@@ -357,12 +349,12 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
             match next {
                 Some(Node(Token::PreProcessorTag(tag), n)) => {
-                    if let Some(tok) = self.handle_preprocessor_tag(state, tag, n) {
+                    if let Some(tok) = self.handle_preprocessor_tag(ctx, tag, n) {
                         return Some(tok);
                     }
                 }
                 t @ Some(Node(Token::Ident(ident), n)) => {
-                    if self.handle_identifier(state, ident, n) {
+                    if self.handle_identifier(ctx, ident, n) {
                         return t;
                     }
                 }
@@ -371,16 +363,16 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
     }
 
-    pub fn peek(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+    pub fn peek(&mut self, ctx: PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_none() {
-            self.peek = self.next(state);
+            self.peek = self.next(ctx);
         }
         self.peek
     }
 
-    pub fn next(&mut self, state: &mut AssemblerState<'a, T>) -> Option<Node<'a, Token<'a>>> {
+    pub fn next(&mut self, mut ctx: PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_none() {
-            self.peek = self.next_filtered(state);
+            self.peek = self.next_filtered(&mut ctx);
         }
         self.peek.take()
     }

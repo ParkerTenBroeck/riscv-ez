@@ -7,7 +7,7 @@ pub mod opcodes;
 pub mod reg;
 pub mod reloc;
 
-use assembler::assembler::Endianess;
+use assembler::assembler::{Endianess, LangCtx};
 use assembler::expression::binop::BinOp;
 use indexed::*;
 use opcodes::*;
@@ -23,8 +23,8 @@ use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{CoercedArg, LabelOpt, StrOpt, U32Opt, U32Pow2Opt};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue,
-    ExpressionEvaluatorContext, ImplicitCastTo, Indexed, Value, ValueType,
+    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExprCtx,
+    ImplicitCastTo, Indexed, Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
@@ -39,7 +39,8 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     type Label = LabelExpr<'a>;
 
     fn parse_ident(
-        _: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         Node(ident, node): Node<'a, &'a str>,
         _: ValueType<'a, RiscvAssembler>,
     ) -> Value<'a, Self> {
@@ -50,158 +51,153 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         }
     }
 
-    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>) {
+    fn assemble_mnemonic(&mut self, asm: &mut LangCtx<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>) {
         match mnemonic {
-            "lui" => match asm.coerced(n).0 {
+            "lui" => match asm.eval(self).coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {}
                 (RegReg(r), Immediate::Label(_)) => {}
             },
-            "auipc" => match asm.coerced(n).0 {
+            "auipc" => match asm.eval(self).coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {}
                 (RegReg(r), Immediate::Label(_)) => {}
             },
 
-            "jal" => Self::no_args(asm, n, 0),
-            "jalr" => Self::no_args(asm, n, 0),
+            "jal" => self.no_args(asm, n, 0),
+            "jalr" => self.no_args(asm, n, 0),
 
-            "beq" => Self::no_args(asm, n, 0),
-            "bne" => Self::no_args(asm, n, 0),
-            "blt" => Self::no_args(asm, n, 0),
-            "bge" => Self::no_args(asm, n, 0),
-            "bltu" => Self::no_args(asm, n, 0),
-            "bgeu" => Self::no_args(asm, n, 0),
+            "beq" => self.no_args(asm, n, 0),
+            "bne" => self.no_args(asm, n, 0),
+            "blt" => self.no_args(asm, n, 0),
+            "bge" => self.no_args(asm, n, 0),
+            "bltu" => self.no_args(asm, n, 0),
+            "bgeu" => self.no_args(asm, n, 0),
 
-            "lb" => Self::no_args(asm, n, 0),
-            "lh" => Self::no_args(asm, n, 0),
-            "lw" => Self::no_args(asm, n, 0),
-            "lbu" => Self::no_args(asm, n, 0),
-            "lhu" => Self::no_args(asm, n, 0),
+            "lb" => self.no_args(asm, n, 0),
+            "lh" => self.no_args(asm, n, 0),
+            "lw" => self.no_args(asm, n, 0),
+            "lbu" => self.no_args(asm, n, 0),
+            "lhu" => self.no_args(asm, n, 0),
 
-            "sb" => Self::no_args(asm, n, 0),
-            "sh" => Self::no_args(asm, n, 0),
-            "sw" => Self::no_args(asm, n, 0),
+            "sb" => self.no_args(asm, n, 0),
+            "sh" => self.no_args(asm, n, 0),
+            "sw" => self.no_args(asm, n, 0),
 
-            "add" => Self::three_int_reg(asm, n, RTypeOpCode::Add),
-            "sub" => Self::three_int_reg(asm, n, RTypeOpCode::Sub),
-            "xor" => Self::three_int_reg(asm, n, RTypeOpCode::Xor),
-            "or" => Self::three_int_reg(asm, n, RTypeOpCode::Or),
-            "and" => Self::three_int_reg(asm, n, RTypeOpCode::And),
-            "slt" => Self::three_int_reg(asm, n, RTypeOpCode::Slt),
-            "sltu" => Self::three_int_reg(asm, n, RTypeOpCode::Sltu),
+            "add" => self.three_int_reg(asm, n, RTypeOpCode::Add),
+            "sub" => self.three_int_reg(asm, n, RTypeOpCode::Sub),
+            "xor" => self.three_int_reg(asm, n, RTypeOpCode::Xor),
+            "or" => self.three_int_reg(asm, n, RTypeOpCode::Or),
+            "and" => self.three_int_reg(asm, n, RTypeOpCode::And),
+            "slt" => self.three_int_reg(asm, n, RTypeOpCode::Slt),
+            "sltu" => self.three_int_reg(asm, n, RTypeOpCode::Sltu),
 
-            "mul" => Self::three_int_reg(asm, n, RTypeOpCode::Mul),
-            "mulh" => Self::three_int_reg(asm, n, RTypeOpCode::Mulh),
-            "mulsu" => Self::three_int_reg(asm, n, RTypeOpCode::Mulsu),
-            "mulu" => Self::three_int_reg(asm, n, RTypeOpCode::Mulu),
-            "div" => Self::three_int_reg(asm, n, RTypeOpCode::Div),
-            "divu" => Self::three_int_reg(asm, n, RTypeOpCode::Divu),
-            "rem" => Self::three_int_reg(asm, n, RTypeOpCode::Rem),
-            "remu" => Self::three_int_reg(asm, n, RTypeOpCode::Remu),
+            "mul" => self.three_int_reg(asm, n, RTypeOpCode::Mul),
+            "mulh" => self.three_int_reg(asm, n, RTypeOpCode::Mulh),
+            "mulsu" => self.three_int_reg(asm, n, RTypeOpCode::Mulsu),
+            "mulu" => self.three_int_reg(asm, n, RTypeOpCode::Mulu),
+            "div" => self.three_int_reg(asm, n, RTypeOpCode::Div),
+            "divu" => self.three_int_reg(asm, n, RTypeOpCode::Divu),
+            "rem" => self.three_int_reg(asm, n, RTypeOpCode::Rem),
+            "remu" => self.three_int_reg(asm, n, RTypeOpCode::Remu),
 
-            "ecall" => Self::no_args(asm, n, ITypeOpCode::ECall as u32),
-            "ebreak" => Self::no_args(asm, n, ITypeOpCode::EBreak as u32),
+            "ecall" => self.no_args(asm, n, ITypeOpCode::ECall as u32),
+            "ebreak" => self.no_args(asm, n, ITypeOpCode::EBreak as u32),
 
-            "nop" => Self::no_args(asm, n, ITypeOpCode::Addi as u32),
+            "nop" => self.no_args(asm, n, ITypeOpCode::Addi as u32),
 
-            "li" | "la" => match asm.coerced(n).0 {
+            "li" | "la" => match asm.eval(self).coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) if into_12_bit_sign(c) => {
-                    Self::instruction(
+                    self.instruction(
                         asm,
                         ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c as u32),
                     );
                 }
                 (RegReg(r), Immediate::SignedConstant(c)) => {
-                    Self::instruction(
+                    self.instruction(
                         asm,
                         ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c as u32),
                     );
-                    Self::instruction(
+                    self.instruction(
                         asm,
                         UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c as u32),
                     );
                 }
                 (RegReg(r), Immediate::UnsignedConstant(c)) if into_12_bit_sign_usg(c) => {
-                    Self::instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
                 }
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {
-                    Self::instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
-                    Self::instruction(asm, UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c));
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
+                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c));
                 }
                 (RegReg(r), Immediate::Label(_)) => {
-                    Self::instruction(asm, ITypeOpCode::Addi as u32 | r.rd());
-                    Self::instruction(asm, UTypeOpCode::Lui as u32 | r.rd());
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd());
+                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd());
                 }
             },
             ".global" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
-                    asm.state
-                        .context
-                        .report_warning(node, "not implemented yet");
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
+                    asm.context.report_warning(node, "not implemented yet");
                 }
             }
             ".local" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
-                    asm.state
-                        .context
-                        .report_warning(node, "not implemented yet");
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
+                    asm.context.report_warning(node, "not implemented yet");
                 }
             }
             ".weak" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.coerced(n).0 {
-                    asm.state
-                        .context
-                        .report_warning(node, "not implemented yet");
+                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
+                    asm.context.report_warning(node, "not implemented yet");
                 }
             }
             ".align" => {
-                if let U32Pow2Opt::Val(Some(align)) = asm.coerced(n).0 {
+                if let U32Pow2Opt::Val(Some(align)) = asm.eval(self).coerced(n).0 {
                     // asm.state.add_data(0, align);
                 }
             }
-            _ => asm.assemble_mnemonic_default(Node(mnemonic, n)),
+            _ => asm.asm(self).assemble_mnemonic_default(Node(mnemonic, n)),
         }
     }
 
     fn eval_func(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         func: assembler::expression::FuncParamParser<'a, '_>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         match func.func() {
-            // "size" => match func.coerced_args(ctx) {
+            // "size" => match func.coerced_args(self, ctx) {
             //     Node(Value::Constant(c), _) => {
-            //         Value::Constant(Constant::U32(c.get_size().unwrap_or(1)))
+            //         Value::Constant(Constant::U32(c.get_size()))
             //     }
             //     Node(Value::Label(mut l), n) => {
             //         if l.meta.kind.is_some() {
-            //             ctx.context()
+            //             ctx.context
             //                 .report_error(n, "label relocation kind is already set");
             //         }
             //         l.meta.kind = Some(label::RelocKind::Size);
             //         Value::Label(l)
             //     }
             //     Node(v, n) => {
-            //         ctx.context()
+            //         ctx.context
             //             .report_error(n, format!("cannot get the size for type {}", v.get_type()));
             //         Value::Constant(Constant::U32(1))
             //     }
             // },
-            // "align" => match func.coerced_args(ctx) {
+            // "align" => match func.coerced_args(self, ctx) {
             //     Node(Value::Constant(c), _) => {
-            //         Value::Constant(Constant::U32(c.get_align().unwrap_or(1)))
+            //         Value::Constant(Constant::U32(c.get_align()))
             //     }
             //     Node(Value::Label(mut l), n) => {
             //         if l.meta.kind.is_some() {
-            //             ctx.context()
+            //             ctx.context
             //                 .report_error(n, "label relocation kind is already set");
             //         }
             //         l.meta.kind = Some(label::RelocKind::Align);
             //         Value::Label(l)
             //     }
             //     Node(v, n) => {
-            //         ctx.context().report_error(
+            //         ctx.context.report_error(
             //             n,
             //             format!("cannot get the alignment for type {}", v.get_type()),
             //         );
@@ -209,17 +205,17 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             //     }
             // },
             "pcrel" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     match l.ty {
                         label::LabelExprType::Empty => {}
                         label::LabelExprType::Unspecified(label) => {
                             l.ty = label::LabelExprType::PcRel(label)
                         }
                         label::LabelExprType::Sub(_, _) => ctx
-                            .context()
+                            .context
                             .report_error(n, "cannot set relocation on label subtraction"),
                         _ => ctx
-                            .context()
+                            .context
                             .report_error(n, "label relocation kind is already set"),
                     }
                     Value::Label(l)
@@ -228,17 +224,17 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "absolute" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     match l.ty {
                         label::LabelExprType::Empty => {}
                         label::LabelExprType::Unspecified(label) => {
                             l.ty = label::LabelExprType::Absolute(label)
                         }
                         label::LabelExprType::Sub(_, _) => ctx
-                            .context()
+                            .context
                             .report_error(n, "cannot set relocation on label subtraction"),
                         _ => ctx
-                            .context()
+                            .context
                             .report_error(n, "label relocation kind is already set"),
                     }
                     Value::Label(l)
@@ -247,9 +243,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "hi" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::High);
@@ -259,9 +255,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "lo" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::Low);
@@ -271,9 +267,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "u8" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::U8);
@@ -283,9 +279,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "u16" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::U16);
@@ -295,9 +291,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "u32" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::U32);
@@ -307,9 +303,9 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 }
             }
             "u64" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(ctx).0 {
+                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
-                        ctx.context()
+                        ctx.context
                             .report_error(n, "label pattern kind is already set");
                     }
                     l.pattern = Some(label::RelocPattern::U64);
@@ -318,12 +314,13 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                     Value::Label(LabelExpr::default())
                 }
             }
-            _ => ctx.eval().func_base(func, hint),
+            _ => ctx.eval(self).func_base(func, hint),
         }
     }
 
     fn eval_index(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         lhs: assembler::expression::NodeVal<'a, Self>,
         opening: NodeId<'a>,
@@ -363,20 +360,21 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                 Value::Indexed(MemoryIndex::LabelRegisterOffset(r, l.offset(i)))
             }
             _ => ctx
-                .eval()
+                .eval(self)
                 .index_base(node, lhs, opening, rhs, closing, hint),
         }
     }
 
     fn eval_binop(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         lhs: assembler::expression::NodeVal<'a, Self>,
         op: Node<'a, assembler::expression::binop::BinOp>,
         rhs: assembler::expression::NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        let lbl_config = ctx.context().config().implicit_cast_label_offset;
+        let lbl_config = ctx.context.config().implicit_cast_label_offset;
         match (op.0, lhs, rhs) {
             (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Indexed(idx), _))
             | (BinOp::Add, Node(Value::Indexed(idx), _), Node(Value::Constant(c), cn))
@@ -387,8 +385,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         Value::Indexed(MemoryIndex::LabelRegisterOffset(
                             register,
                             label.offset(
-                                c.cast_with(cn, ctx.context(), lbl_config)
-                                    .unwrap_or_default(),
+                                c.cast_with(cn, ctx.context, lbl_config).unwrap_or_default(),
                             ),
                         ))
                     }
@@ -396,8 +393,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         Value::Indexed(MemoryIndex::RegisterOffset(
                             register,
                             offset.wrapping_add(
-                                c.cast_with(cn, ctx.context(), lbl_config)
-                                    .unwrap_or_default(),
+                                c.cast_with(cn, ctx.context, lbl_config).unwrap_or_default(),
                             ),
                         ))
                     }
@@ -412,7 +408,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         Value::Indexed(MemoryIndex::LabelRegisterOffset(
                             register,
                             label.offset(
-                                c.cast_with(cn, ctx.context(), lbl_config)
+                                c.cast_with(cn, ctx.context, lbl_config)
                                     .unwrap_or(0i32)
                                     .wrapping_neg(),
                             ),
@@ -422,7 +418,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                         Value::Indexed(MemoryIndex::RegisterOffset(
                             register,
                             offset.wrapping_add(
-                                c.cast_with(cn, ctx.context(), lbl_config)
+                                c.cast_with(cn, ctx.context, lbl_config)
                                     .unwrap_or(0i32)
                                     .wrapping_neg(),
                             ),
@@ -437,7 +433,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             {
                 Value::Indexed(MemoryIndex::RegisterOffset(
                     reg,
-                    c.cast_with(cn, ctx.context(), lbl_config).unwrap_or(0i32),
+                    c.cast_with(cn, ctx.context, lbl_config).unwrap_or(0i32),
                 ))
             }
 
@@ -446,7 +442,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             {
                 Value::Indexed(MemoryIndex::RegisterOffset(
                     reg,
-                    c.cast_with(cn, ctx.context(), lbl_config)
+                    c.cast_with(cn, ctx.context, lbl_config)
                         .unwrap_or(0i32)
                         .wrapping_neg(),
                 ))
@@ -454,7 +450,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
 
             (BinOp::Sub, Node(Value::Label(lhs), _), Node(Value::Label(rhs), _)) => {
                 if lhs.pattern.is_some() || rhs.pattern.is_some() {
-                    ctx.context().report_error(
+                    ctx.context.report_error(
                         node,
                         "both lhs and rhs must not have a specified representation",
                     );
@@ -474,11 +470,11 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                     (label::LabelExprType::Sub(_, _), _)
                     | (_, label::LabelExprType::Sub(_, _))
                     | (label::LabelExprType::Sub(_, _), label::LabelExprType::Sub(_, _)) => {
-                        ctx.context()
+                        ctx.context
                             .report_error(node, "can only have the difference between two labels");
                     }
                     _ => {
-                        ctx.context().report_error(
+                        ctx.context.report_error(
                             node,
                             "both lhs and rhs must not have a specified relocation kind",
                         );
@@ -491,7 +487,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             | (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Label(l), _))
                 if c.is_integer() =>
             {
-                Value::Label(l.offset(c.cast_with(cn, ctx.context(), lbl_config).unwrap_or(0i32)))
+                Value::Label(l.offset(c.cast_with(cn, ctx.context, lbl_config).unwrap_or(0i32)))
             }
 
             (BinOp::Sub, Node(Value::Label(l), _), Node(Value::Constant(c), cn))
@@ -499,14 +495,14 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
             {
                 Value::Label(
                     l.offset(
-                        c.cast_with(cn, ctx.context(), lbl_config)
+                        c.cast_with(cn, ctx.context, lbl_config)
                             .unwrap_or(0i32)
                             .wrapping_neg(),
                     ),
                 )
             }
 
-            _ => ctx.eval().binop_base(node, lhs, op, rhs, hint),
+            _ => ctx.eval(self).binop_base(node, lhs, op, rhs, hint),
         }
     }
 
@@ -516,7 +512,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     ) {
         match value.0 {
             Value::Constant(constant) => Self::add_constant_as_data(asm, Node(constant, value.1)),
-            _ => asm.context().report_error(
+            _ => asm.context.report_error(
                 value.1,
                 format!("cannot use {} as data", value.0.get_type()),
             ),
@@ -526,38 +522,70 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, constant: Node<'a, Constant<'a>>) {
         asm.add_constant_default(Endianess::Little, constant);
     }
+    
+    type AssembledResult = ();
+    
+    fn add_label(asm: &mut Assembler<'a, '_, Self>, ident: &'a str, node: NodeId<'a>) {
+        // todo!()
+    }
+    
+    fn set_section(asm: &mut Assembler<'a, '_, Self>, section: &'a str, node: NodeId<'a>) {
+        // todo!()
+    }
+    
+    fn add_empty_space_data(
+        asm: &mut Assembler<'a, '_, Self>,
+        size: usize,
+        align: usize,
+        node: NodeId<'a>,
+    ) {
+        // todo!()
+    }
+    
+    fn add_bytes_as_data(
+        asm: &mut Assembler<'a, '_, Self>,
+        data: &[u8],
+        align: usize,
+        node: NodeId<'a>,
+    ) {
+        // todo!()
+    }
+    
+    fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult {
+        // todo!()
+    }
 }
 
 impl RiscvAssembler {
-    fn instruction<'a>(asm: &mut Assembler<'a, '_, Self>, ins: u32) {
-        *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
+    fn instruction<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, ins: u32) {
+        // *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
 
-    fn three_int_reg<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.coerced(n).0;
-        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+    fn three_int_reg<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.eval(self).coerced(n).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
-    fn two_int_reg<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (RegReg(rd), RegReg(rs1)) = asm.coerced(n).0;
-        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1());
+    fn two_int_reg<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (RegReg(rd), RegReg(rs1)) = asm.eval(self).coerced(n).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1());
     }
 
-    fn float_reg_only_3<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.coerced(n).0;
-        Self::instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+    fn float_reg_only_3<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.eval(self).coerced(n).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
-    fn float_reg_only_4<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = asm.coerced(n).0;
-        Self::instruction(
+    fn float_reg_only_4<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = asm.eval(self).coerced(n).0;
+        self.instruction(
             asm,
             ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2() | rs3.rs3(),
         );
     }
 
-    fn no_args<'a>(asm: &mut Assembler<'a, '_, Self>, n: NodeId<'a>, ins: u32) {
-        let _: () = asm.coerced(n).0;
-        Self::instruction(asm, ins);
+    fn no_args<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: u32) {
+        let _: () = asm.eval(self).coerced(n).0;
+        self.instruction(asm, ins);
     }
 }

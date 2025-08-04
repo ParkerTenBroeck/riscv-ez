@@ -4,8 +4,7 @@ use std::marker::PhantomData;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
-    ArgumentsTypeHint, Constant, ExpressionEvaluatorContext, ImplicitCastTo, NodeVal, Value,
-    ValueType,
+    ArgumentsTypeHint, Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value, ValueType,
 };
 use crate::lex::Token;
 use crate::util::IntoStrDelimable;
@@ -413,7 +412,7 @@ pub trait CoercedArg<'a>: Sized {
 
 pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
     fn from_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        ctx: &mut ExpressionEvaluator<'a, '_, L>,
         args: Node<'a, Vec<NodeVal<'a, L>>>,
     ) -> Node<'a, Self>
     where
@@ -422,14 +421,14 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
     fn with_hint<R>(func: impl FnOnce(ArgumentsTypeHint<'a, '_, L>) -> R) -> R;
 
     fn args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        ctx: &mut ExpressionEvaluator<'a, '_, L>,
         fb: NodeId<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         Self::with_hint(|args| ctx.args(fb, args))
     }
 
     fn args_delim(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        ctx: &mut ExpressionEvaluator<'a, '_, L>,
         init: NodeId<'a>,
         start: Token<'a>,
         end: Token<'a>,
@@ -437,10 +436,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
         Self::with_hint(|args| ctx.args_delim(init, start, end, args))
     }
 
-    fn coerced_args(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
-        init: NodeId<'a>,
-    ) -> Node<'a, Self>
+    fn coerced_args(ctx: &mut ExpressionEvaluator<'a, '_, L>, init: NodeId<'a>) -> Node<'a, Self>
     where
         Self: Sized,
     {
@@ -449,7 +445,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
     }
 
     fn coerced_args_delim(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, L>,
+        ctx: &mut ExpressionEvaluator<'a, '_, L>,
         init: NodeId<'a>,
         start: Token<'a>,
         end: Token<'a>,
@@ -519,12 +515,12 @@ macro_rules! nya {
             }
 
             fn from_args(
-                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
+                ctx: &mut ExpressionEvaluator<'a, '_, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
             ) -> Node<'a, Self> {
                 if args.len() != nya!(count: $($t,)*) {
-                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)*], false);
-                    Node(($($t::default(ctx.context(), node)),*), node)
+                    wrong_number_args(ctx.context, node, args, &[$($t::TYPE_REPR,)*], false);
+                    Node(($($t::default(ctx.context, node)),*), node)
                 }else{
                     nya!(ctx, args, 0, $($t,)*);
                     Node(($($t),*), node)
@@ -539,16 +535,16 @@ macro_rules! nya {
             }
 
             fn from_args(
-                ctx: &mut impl ExpressionEvaluatorContext<'a, AL>,
+                ctx: &mut ExpressionEvaluator<'a, '_, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
             ) -> Node<'a, Self> {
                 #[allow(unused_comparisons)]
                 if args.len() < nya!(count: $($t,)*) {
-                    wrong_number_args(ctx.context(), node, args, &[$($t::TYPE_REPR,)* VV::TYPE_REPR], true);
-                    Node(($($t::default(ctx.context(), node),)* Vec::new()), node)
+                    wrong_number_args(ctx.context, node, args, &[$($t::TYPE_REPR,)* VV::TYPE_REPR], true);
+                    Node(($($t::default(ctx.context, node),)* Vec::new()), node)
                 }else{
                     nya!(ctx, args, 0, $($t,)*);
-                    let vv = args.into_iter().skip(nya!(count: $($t,)*)).map(|a|{coerce_argument(ctx.context(), a)}).collect();
+                    let vv = args.into_iter().skip(nya!(count: $($t,)*)).map(|a|{coerce_argument(ctx.context, a)}).collect();
                     Node(($($t,)* vv), node)
                 }
             }
@@ -558,7 +554,7 @@ macro_rules! nya {
     };
     ($ctx:expr, $args:expr, $count:expr, $v:ident, $($t:ident,)*) => {
         #[allow(non_snake_case)]
-        let $v = coerce_argument($ctx.context(), $args[$count]);
+        let $v = coerce_argument($ctx.context, $args[$count]);
         nya!($ctx, $args, $count+1, $($t,)*);
     };
     (args: $count:expr, $v:ident, $($t:ident),*) => {

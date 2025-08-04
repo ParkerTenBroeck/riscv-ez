@@ -1,9 +1,9 @@
 use crate::{
-    assembler::Assembler,
+    assembler::{Assembler, LangCtx},
     context::{Node, NodeId},
     expression::{
-        AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExpressionEvaluatorContext,
-        FuncParamParser, Indexed, NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
+        AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx, FuncParamParser, Indexed,
+        NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
     },
     lex::Number,
 };
@@ -13,55 +13,64 @@ pub trait AssemblyLanguage<'a>: Sized + 'a {
     type Indexed: Indexed<'a, Lang = Self>;
     type CustomValue: CustomValue<'a, Lang = Self>;
     type Label: AssemblyLabel<'a, Lang = Self>;
+    type AssembledResult;
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 
     fn parse_ident(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         ident: Node<'a, &'a str>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self>;
 
     fn parse_numeric_literal(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         num: Node<'a, Number<'a>>,
         negated: bool,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval().parse_numeric_literal_base(num, negated, hint)
+        ctx.eval(self)
+            .parse_numeric_literal_base(num, negated, hint)
     }
 
     fn eval_func(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         func: FuncParamParser<'a, '_>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval().func_base(func, hint)
+        ctx.eval(self).func_base(func, hint)
     }
 
     fn eval_binop(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         lhs: NodeVal<'a, Self>,
         op: Node<'a, BinOp>,
         rhs: NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval().binop_base(node, lhs, op, rhs, hint)
+        ctx.eval(self).binop_base(node, lhs, op, rhs, hint)
     }
 
     fn eval_unnop(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         op: Node<'a, UnOp>,
         expr: NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval().unop_base(node, op, expr, hint)
+        ctx.eval(self).unop_base(node, op, expr, hint)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn eval_index(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         lhs: NodeVal<'a, Self>,
         opening: NodeId<'a>,
@@ -69,19 +78,20 @@ pub trait AssemblyLanguage<'a>: Sized + 'a {
         closing: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval()
+        ctx.eval(self)
             .index_base(node, lhs, opening, rhs, closing, hint)
     }
 
     fn eval_cast(
-        ctx: &mut impl ExpressionEvaluatorContext<'a, Self>,
+        &mut self,
+        ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
         expr: NodeVal<'a, Self>,
         as_node: NodeId<'a>,
         ty: Node<'a, &'a str>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        ctx.eval().cast_base(node, expr, as_node, ty, hint)
+        ctx.eval(self).cast_base(node, expr, as_node, ty, hint)
     }
 
     fn add_label(asm: &mut Assembler<'a, '_, Self>, ident: &'a str, node: NodeId<'a>);
@@ -102,5 +112,12 @@ pub trait AssemblyLanguage<'a>: Sized + 'a {
     fn add_value_as_data(asm: &mut Assembler<'a, '_, Self>, value: NodeVal<'a, Self>);
     fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, value: Node<'a, Constant<'a>>);
 
-    fn assemble_mnemonic(asm: &mut Assembler<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>);
+    fn assemble_mnemonic(
+        &mut self,
+        ctx: &mut LangCtx<'a, '_, Self>,
+        mnemonic: &'a str,
+        n: NodeId<'a>,
+    );
+
+    fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult;
 }
