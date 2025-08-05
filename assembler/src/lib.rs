@@ -9,12 +9,14 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 pub mod assembler;
-pub mod config;
-pub mod context;
 pub mod expression;
 pub mod lex;
-pub mod logs;
 pub mod preprocess;
+pub mod simple;
+
+pub mod config;
+pub mod context;
+pub mod logs;
 pub mod util;
 
 pub struct AssemblerResult<'a> {

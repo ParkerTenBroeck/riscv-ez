@@ -411,21 +411,21 @@ pub trait CoercedArg<'a>: Sized {
     fn default(context: &mut Context<'a>, node: NodeId<'a>) -> Self;
 }
 
-impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Option<T>{
+impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Option<T> {
     type LANG = T::LANG;
     const TYPE_REPR: &'static str = T::TYPE_REPR;
     const HINT: ValueType<'a, Self::LANG> = T::HINT;
     const OPTIONAL: bool = true;
 
-        fn from_arg(
+    fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
         value: Value<'a, Self::LANG>,
-    ) -> Result<Self, Option<String>>{
+    ) -> Result<Self, Option<String>> {
         T::from_arg(context, node, value).map(Some)
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self{
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
         None
     }
 }
@@ -499,33 +499,32 @@ fn wrong_number_args<'a>(
 fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>>(
     context: &mut Context<'a>,
     a: Option<Node<'a, Value<'a, L>>>,
-    backup: NodeId<'a>  
+    backup: NodeId<'a>,
 ) -> T {
-    if let Some(Node(arg, node)) = a{
-    T::from_arg(context, node, arg)
-        .inspect_err(|err| match err {
-            None => context.report_error(
-                node,
-                format!(
-                    "Incorrect argument, expected [{}{}] got [{}]",
-                    T::TYPE_REPR,
-                    if T::OPTIONAL {"?"} else {""},
-                    arg.get_type()
+    if let Some(Node(arg, node)) = a {
+        T::from_arg(context, node, arg)
+            .inspect_err(|err| match err {
+                None => context.report_error(
+                    node,
+                    format!(
+                        "Incorrect argument, expected [{}{}] got [{}]",
+                        T::TYPE_REPR,
+                        if T::OPTIONAL { "?" } else { "" },
+                        arg.get_type()
+                    ),
                 ),
-            ),
-            Some(msg) => context.report_error(node, msg),
-        })
-        .unwrap_or_else(|_| T::default(context, node))
-    }else {
+                Some(msg) => context.report_error(node, msg),
+            })
+            .unwrap_or_else(|_| T::default(context, node))
+    } else {
         T::default(context, backup)
     }
-
 }
 
 macro_rules! nya {
     (!expand,) => {
     };
-    (!expand, $v:ident, $($t:ident),*$(,)?) => {
+    (!expand, $v:ident, $($t:ident,)*) => {
         nya!(!expand, $($t,)*);
         nya!(!impl, $($t,)*);
     };
@@ -545,6 +544,7 @@ macro_rules! nya {
                 ctx: &mut ExpressionEvaluator<'a, '_, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
             ) -> Node<'a, Self> {
+                nya!(oargs: $($t,)*);
                 #[allow(unused_comparisons)]
                 if args.len() < nya!(count_min: $($t,)*) || args.len() > nya!(count: $($t,)*) {
                     wrong_number_args(ctx.context, node, args, &[$(&format!("{}{}", $t::TYPE_REPR, if $t::OPTIONAL {"?"} else {""}),)*], false);
@@ -568,6 +568,7 @@ macro_rules! nya {
                 ctx: &mut ExpressionEvaluator<'a, '_, AL>,
                 Node(args, node): Node<'a, Vec<NodeVal<'a, AL>>>,
             ) -> Node<'a, Self> {
+                nya!(oargs: $($t,)*);
                 #[allow(unused_comparisons)]
                 if args.len() < nya!(count: $($t,)*) {
                     wrong_number_args(ctx.context, node, args, &[$(&format!("{}{}", $t::TYPE_REPR, if $t::OPTIONAL {"?"} else {""}),)* VV::TYPE_REPR], true);
@@ -581,6 +582,18 @@ macro_rules! nya {
                 }
             }
         }
+    };
+    (oargs: $o:ident, $t:ident, $($r:ident,)*) => {
+        const{
+            if $o::OPTIONAL{
+                assert!($t::OPTIONAL, "Non optional parameter cannot follow an optional parameter")
+            }
+        }
+        nya!(oargs: $t, $($r,)*)
+    };
+    (oargs: $o:ident, ) => {
+    };
+    (oargs: ) => {
     };
     (dargs: $ctx:expr, $node:expr, $iter:expr, ) => {
     };

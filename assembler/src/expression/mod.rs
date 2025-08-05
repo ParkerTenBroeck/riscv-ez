@@ -36,7 +36,8 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
         lang: &mut L,
         ctx: &mut ExprCtx<'a, '_, L>,
     ) -> Node<'a, A> {
-        let args = A::coerced_args_delim(&mut ctx.eval(lang), self.func.1, Token::LPar, Token::RPar);
+        let args =
+            A::coerced_args_delim(&mut ctx.eval(lang), self.func.1, Token::LPar, Token::RPar);
         *self.func_node = Some(args.1);
         args
     }
@@ -59,7 +60,7 @@ impl<'a, 'b> FuncParamParser<'a, 'b> {
 
 pub struct ExprCtx<'a, 'b, T: AssemblyLanguage<'a>> {
     pub context: &'b mut Context<'a>,
-    preprocessor: &'b mut PreProcessor<'a, T>,
+    pub preprocessor: &'b mut PreProcessor<'a, T>,
     kind: ExprKind,
 }
 
@@ -86,8 +87,8 @@ macro_rules! ctx {
 
 pub struct ExpressionEvaluator<'a, 'b, T: AssemblyLanguage<'a>> {
     pub context: &'b mut Context<'a>,
-    lang: &'b mut T,
-    preprocessor: &'b mut PreProcessor<'a, T>,
+    pub lang: &'b mut T,
+    pub preprocessor: &'b mut PreProcessor<'a, T>,
     kind: ExprKind,
 }
 
@@ -106,12 +107,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         }
     }
 
-    pub fn split_ctx(&mut self) -> (&mut L, ExprCtx<'a, '_, L>){
-        (self.lang, ExprCtx {
-            context: self.context,
-            preprocessor: self.preprocessor,
-            kind: self.kind,
-        })
+    pub fn split_ctx(&mut self) -> (&mut L, ExprCtx<'a, '_, L>) {
+        (
+            self.lang,
+            ExprCtx {
+                context: self.context,
+                preprocessor: self.preprocessor,
+                kind: self.kind,
+            },
+        )
     }
 
     pub fn expr(&mut self, hint: ValueType<'a, L>) -> Node<'a, Value<'a, L>> {

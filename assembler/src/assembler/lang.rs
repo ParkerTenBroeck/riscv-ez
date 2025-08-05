@@ -1,14 +1,14 @@
 use crate::{
-    assembler::{Assembler, LangCtx},
+    assembler::LangCtx,
     context::{Node, NodeId},
     expression::{
-        AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx, FuncParamParser, Indexed,
-        NodeVal, Value, ValueType, binop::BinOp, unop::UnOp,
+        AssemblyLabel, AssemblyRegister, CustomValue, ExprCtx, FuncParamParser, Indexed, NodeVal,
+        Value, ValueType, binop::BinOp, unop::UnOp,
     },
     lex::Number,
 };
 
-pub trait AssemblyLanguage<'a>: Sized + 'a {
+pub trait AssemblyLanguage<'a>: Sized {
     type Reg: AssemblyRegister<'a, Lang = Self>;
     type Indexed: Indexed<'a, Lang = Self>;
     type CustomValue: CustomValue<'a, Lang = Self>;
@@ -94,30 +94,14 @@ pub trait AssemblyLanguage<'a>: Sized + 'a {
         ctx.eval(self).cast_base(node, expr, as_node, ty, hint)
     }
 
-    fn add_label(asm: &mut Assembler<'a, '_, Self>, ident: &'a str, node: NodeId<'a>);
-    fn set_section(asm: &mut Assembler<'a, '_, Self>, section: &'a str, node: NodeId<'a>);
-
-    fn add_empty_space_data(
-        asm: &mut Assembler<'a, '_, Self>,
-        size: usize,
-        align: usize,
-        node: NodeId<'a>,
-    );
-    fn add_bytes_as_data(
-        asm: &mut Assembler<'a, '_, Self>,
-        data: &[u8],
-        align: usize,
-        node: NodeId<'a>,
-    );
-    fn add_value_as_data(asm: &mut Assembler<'a, '_, Self>, value: NodeVal<'a, Self>);
-    fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, value: Node<'a, Constant<'a>>);
-
     fn assemble_mnemonic(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         mnemonic: &'a str,
         n: NodeId<'a>,
     );
+
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>);
 
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult;
 }

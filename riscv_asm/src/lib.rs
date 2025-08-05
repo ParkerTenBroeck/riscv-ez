@@ -37,6 +37,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     type Indexed = MemoryIndex<'a>;
     type CustomValue = EmptyCustomValue<Self>;
     type Label = LabelExpr<'a>;
+    type AssembledResult = ();
 
     fn parse_ident(
         &mut self,
@@ -51,7 +52,12 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         }
     }
 
-    fn assemble_mnemonic(&mut self, asm: &mut LangCtx<'a, '_, Self>, mnemonic: &'a str, n: NodeId<'a>) {
+    fn assemble_mnemonic(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        mnemonic: &'a str,
+        n: NodeId<'a>,
+    ) {
         match mnemonic {
             "lui" => match asm.eval(self).coerced(n).0 {
                 (RegReg(r), Immediate::SignedConstant(c)) => {}
@@ -522,17 +528,15 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, constant: Node<'a, Constant<'a>>) {
         asm.add_constant_default(Endianess::Little, constant);
     }
-    
-    type AssembledResult = ();
-    
+
     fn add_label(asm: &mut Assembler<'a, '_, Self>, ident: &'a str, node: NodeId<'a>) {
         // todo!()
     }
-    
+
     fn set_section(asm: &mut Assembler<'a, '_, Self>, section: &'a str, node: NodeId<'a>) {
         // todo!()
     }
-    
+
     fn add_empty_space_data(
         asm: &mut Assembler<'a, '_, Self>,
         size: usize,
@@ -541,7 +545,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     ) {
         // todo!()
     }
-    
+
     fn add_bytes_as_data(
         asm: &mut Assembler<'a, '_, Self>,
         data: &[u8],
@@ -550,7 +554,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
     ) {
         // todo!()
     }
-    
+
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult {
         // todo!()
     }
@@ -561,23 +565,44 @@ impl RiscvAssembler {
         // *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
 
-    fn three_int_reg<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+    fn three_int_reg<'a>(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        n: NodeId<'a>,
+        ins: RTypeOpCode,
+    ) {
         let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.eval(self).coerced(n).0;
         self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
-    fn two_int_reg<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+    fn two_int_reg<'a>(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        n: NodeId<'a>,
+        ins: RTypeOpCode,
+    ) {
         let (RegReg(rd), RegReg(rs1)) = asm.eval(self).coerced(n).0;
         self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1());
     }
 
-    fn float_reg_only_3<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
+    fn float_reg_only_3<'a>(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        n: NodeId<'a>,
+        ins: RTypeOpCode,
+    ) {
         let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.eval(self).coerced(n).0;
         self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
     }
 
-    fn float_reg_only_4<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: RTypeOpCode) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) = asm.eval(self).coerced(n).0;
+    fn float_reg_only_4<'a>(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        n: NodeId<'a>,
+        ins: RTypeOpCode,
+    ) {
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) =
+            asm.eval(self).coerced(n).0;
         self.instruction(
             asm,
             ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2() | rs3.rs3(),
