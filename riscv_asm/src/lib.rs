@@ -7,8 +7,9 @@ pub mod opcodes;
 pub mod reg;
 pub mod reloc;
 
-use assembler::assembler::{Endianess, LangCtx};
+use assembler::assembler::LangCtx;
 use assembler::expression::binop::BinOp;
+use assembler::simple::{SALState, SimpleAssemblyLanguage, SimpleAssemblyLanguageBase};
 use indexed::*;
 use opcodes::*;
 use reg::*;
@@ -28,11 +29,13 @@ use assembler::expression::{
 };
 use std::fmt::{Display, Formatter};
 
-pub type NodeVal<'a> = assembler::expression::NodeVal<'a, RiscvAssembler>;
+pub type NodeVal<'a> = assembler::expression::NodeVal<'a, RiscvAssembler<'a>>;
 
 #[derive(Default, Clone)]
-pub struct RiscvAssembler;
-impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
+pub struct RiscvAssembler<'a> {
+    base_state: SALState<'a>,
+}
+impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     type Reg = Register;
     type Indexed = MemoryIndex<'a>;
     type CustomValue = EmptyCustomValue<Self>;
@@ -43,7 +46,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
         Node(ident, node): Node<'a, &'a str>,
-        _: ValueType<'a, RiscvAssembler>,
+        _: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         if let Ok(reg) = Register::from_str(ident) {
             Value::Register(reg)
@@ -117,28 +120,31 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                     self.instruction(
                         asm,
                         ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c as u32),
+                        n,
                     );
                 }
                 (RegReg(r), Immediate::SignedConstant(c)) => {
                     self.instruction(
                         asm,
                         ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c as u32),
+                        n,
                     );
                     self.instruction(
                         asm,
                         UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c as u32),
+                        n,
                     );
                 }
                 (RegReg(r), Immediate::UnsignedConstant(c)) if into_12_bit_sign_usg(c) => {
-                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c), n);
                 }
                 (RegReg(r), Immediate::UnsignedConstant(c)) => {
-                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c));
-                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c));
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd() | imm_11_0_s(c), n);
+                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd() | imm_31_12_u(c), n);
                 }
                 (RegReg(r), Immediate::Label(_)) => {
-                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd());
-                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd());
+                    self.instruction(asm, ITypeOpCode::Addi as u32 | r.rd(), n);
+                    self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd(), n);
                 }
             },
             ".global" => {
@@ -161,7 +167,7 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
                     // asm.state.add_data(0, align);
                 }
             }
-            _ => asm.asm(self).assemble_mnemonic_default(Node(mnemonic, n)),
+            _ => asm.asm(self).unknown_mnemonic(mnemonic, n),
         }
     }
 
@@ -512,105 +518,85 @@ impl<'a> AssemblyLanguage<'a> for RiscvAssembler {
         }
     }
 
-    fn add_value_as_data(
-        asm: &mut Assembler<'a, '_, Self>,
-        value: assembler::expression::NodeVal<'a, Self>,
-    ) {
-        match value.0 {
-            Value::Constant(constant) => Self::add_constant_as_data(asm, Node(constant, value.1)),
-            _ => asm.context.report_error(
-                value.1,
-                format!("cannot use {} as data", value.0.get_type()),
-            ),
-        }
-    }
-
-    fn add_constant_as_data(asm: &mut Assembler<'a, '_, Self>, constant: Node<'a, Constant<'a>>) {
-        asm.add_constant_default(Endianess::Little, constant);
-    }
-
-    fn add_label(asm: &mut Assembler<'a, '_, Self>, ident: &'a str, node: NodeId<'a>) {
-        // todo!()
-    }
-
-    fn set_section(asm: &mut Assembler<'a, '_, Self>, section: &'a str, node: NodeId<'a>) {
-        // todo!()
-    }
-
-    fn add_empty_space_data(
-        asm: &mut Assembler<'a, '_, Self>,
-        size: usize,
-        align: usize,
-        node: NodeId<'a>,
-    ) {
-        // todo!()
-    }
-
-    fn add_bytes_as_data(
-        asm: &mut Assembler<'a, '_, Self>,
-        data: &[u8],
-        align: usize,
-        node: NodeId<'a>,
-    ) {
-        // todo!()
-    }
-
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult {
         // todo!()
     }
+
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>) {
+        // todo!()
+    }
+
+    fn add_value_data(
+        &mut self,
+        ctx: &mut LangCtx<'a, '_, Self>,
+        value: Value<'a, Self>,
+        n: NodeId<'a>,
+    ) {
+        match value {
+            Value::Constant(constant) => self.add_constant_data(ctx, constant, n),
+            _ => ctx
+                .context
+                .report_error(n, format!("cannot use {} as data", value.get_type())),
+        }
+    }
+
+    fn state_mut(&mut self) -> &mut assembler::simple::SALState<'a> {
+        &mut self.base_state
+    }
+
+    fn state(&self) -> &assembler::simple::SALState<'a> {
+        &self.base_state
+    }
 }
 
-impl RiscvAssembler {
-    fn instruction<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, ins: u32) {
+impl<'a> RiscvAssembler<'a> {
+    fn instruction(&mut self, ctx: &mut LangCtx<'a, '_, Self>, ins: u32, node: NodeId<'a>) {
+        self.add_data(ctx, &ins.to_le_bytes(), 4, node);
         // *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
 
-    fn three_int_reg<'a>(
+    fn three_int_reg(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        n: NodeId<'a>,
+        node: NodeId<'a>,
         ins: RTypeOpCode,
     ) {
-        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.eval(self).coerced(n).0;
-        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
+        let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.eval(self).coerced(node).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2(), node);
     }
 
-    fn two_int_reg<'a>(
+    fn two_int_reg(&mut self, asm: &mut LangCtx<'a, '_, Self>, node: NodeId<'a>, ins: RTypeOpCode) {
+        let (RegReg(rd), RegReg(rs1)) = asm.eval(self).coerced(node).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1(), node);
+    }
+
+    fn float_reg_only_3(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        n: NodeId<'a>,
+        node: NodeId<'a>,
         ins: RTypeOpCode,
     ) {
-        let (RegReg(rd), RegReg(rs1)) = asm.eval(self).coerced(n).0;
-        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1());
+        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.eval(self).coerced(node).0;
+        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2(), node);
     }
 
-    fn float_reg_only_3<'a>(
+    fn float_reg_only_4(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        n: NodeId<'a>,
-        ins: RTypeOpCode,
-    ) {
-        let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.eval(self).coerced(n).0;
-        self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2());
-    }
-
-    fn float_reg_only_4<'a>(
-        &mut self,
-        asm: &mut LangCtx<'a, '_, Self>,
-        n: NodeId<'a>,
+        node: NodeId<'a>,
         ins: RTypeOpCode,
     ) {
         let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) =
-            asm.eval(self).coerced(n).0;
+            asm.eval(self).coerced(node).0;
         self.instruction(
             asm,
             ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2() | rs3.rs3(),
+            node,
         );
     }
 
-    fn no_args<'a>(&mut self, asm: &mut LangCtx<'a, '_, Self>, n: NodeId<'a>, ins: u32) {
-        let _: () = asm.eval(self).coerced(n).0;
-        self.instruction(asm, ins);
+    fn no_args(&mut self, asm: &mut LangCtx<'a, '_, Self>, node: NodeId<'a>, ins: u32) {
+        let _: () = asm.eval(self).coerced(node).0;
+        self.instruction(asm, ins, node);
     }
 }

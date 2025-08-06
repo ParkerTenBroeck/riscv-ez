@@ -17,7 +17,7 @@ pub enum MemoryIndex<'a> {
 }
 
 impl<'a> Indexed<'a> for MemoryIndex<'a> {
-    type Lang = RiscvAssembler;
+    type Lang = RiscvAssembler<'a>;
 }
 
 impl<'a> Display for MemoryIndex<'a> {

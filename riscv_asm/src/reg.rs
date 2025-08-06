@@ -128,5 +128,5 @@ impl Display for Register {
 }
 
 impl<'a> AssemblyRegister<'a> for Register {
-    type Lang = RiscvAssembler;
+    type Lang = RiscvAssembler<'a>;
 }

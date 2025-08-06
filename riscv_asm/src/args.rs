@@ -18,14 +18,14 @@ impl<'a> Default for RegOffset<'a> {
     }
 }
 impl<'a> CoercedArg<'a> for RegOffset<'a> {
-    type LANG = RiscvAssembler;
+    type LANG = RiscvAssembler<'a>;
     const TYPE_REPR: &'static str = "indexed|register|label|<integer>";
-    const HINT: ValueType<'a, RiscvAssembler> = ValueType::<'a, RiscvAssembler>::Indexed;
+    const HINT: ValueType<'a, RiscvAssembler<'a>> = ValueType::<'a, RiscvAssembler>::Indexed;
 
     fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
-        value: Value<'a, RiscvAssembler>,
+        value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Constant(c) => Ok(RegOffset::Constant(
@@ -47,14 +47,14 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
 #[derive(Default)]
 pub struct RegReg(pub Register);
 impl<'a> CoercedArg<'a> for RegReg {
-    type LANG = RiscvAssembler;
+    type LANG = RiscvAssembler<'a>;
     const TYPE_REPR: &'static str = "register";
-    const HINT: ValueType<'a, RiscvAssembler> = ValueType::Register;
+    const HINT: ValueType<'a, RiscvAssembler<'a>> = ValueType::Register;
 
     fn from_arg(
         _: &mut Context<'a>,
         _: NodeId<'a>,
-        value: Value<'a, RiscvAssembler>,
+        value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Register(r) if !r.is_regular() => Err(Some(
@@ -73,14 +73,14 @@ impl<'a> CoercedArg<'a> for RegReg {
 #[derive(Default)]
 pub struct FloatReg(pub Register);
 impl<'a> CoercedArg<'a> for FloatReg {
-    type LANG = RiscvAssembler;
+    type LANG = RiscvAssembler<'a>;
     const TYPE_REPR: &'static str = "register";
-    const HINT: ValueType<'a, RiscvAssembler> = ValueType::Register;
+    const HINT: ValueType<'a, RiscvAssembler<'a>> = ValueType::Register;
 
     fn from_arg(
         _: &mut Context<'a>,
         _: NodeId<'a>,
-        value: Value<'a, RiscvAssembler>,
+        value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Register(r) if !r.is_floating() => Err(Some(
