@@ -48,12 +48,38 @@ impl<'a> std::fmt::Debug for Source<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Parent<'a> {
+    None,
+    Included {
+        parent: NodeId<'a>,
+    },
+    Pasted {
+        parent: NodeId<'a>,
+        definition: Option<NodeId<'a>>,
+    },
+    Generated {
+        parent: NodeId<'a>,
+        definition: Option<NodeId<'a>>,
+    },
+}
+
+impl<'a> Parent<'a> {
+    pub fn parent(&self) -> Option<NodeId<'a>> {
+        match self {
+            Self::None => None,
+            Self::Included { parent } => Some(parent),
+            Self::Pasted { parent, .. } => Some(parent),
+            Self::Generated { parent, .. } => Some(parent),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NodeInfo<'a> {
     pub span: Span,
     pub source: SourceId<'a>,
-    pub included_by: Option<NodeId<'a>>,
-    pub invoked_by: Option<NodeId<'a>>,
+    pub parent: Parent<'a>,
 }
 
 impl<'a> PartialEq for Source<'a> {
@@ -62,18 +88,6 @@ impl<'a> PartialEq for Source<'a> {
             return true;
         };
         self.path == other.path
-    }
-}
-
-impl<'a> PartialEq for NodeInfo<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        if std::ptr::eq(self, other) {
-            return true;
-        };
-        self.span == other.span
-            && self.source == other.source
-            && self.invoked_by == other.invoked_by
-            && self.included_by == other.included_by
     }
 }
 
@@ -114,8 +128,7 @@ impl<'a> Context<'a> {
                         path: "<INVALID>",
                         contents: "<INVALID>",
                     },
-                    included_by: None,
-                    invoked_by: None,
+                    parent: Parent::None,
                 }
             },
             config,
@@ -142,34 +155,43 @@ impl<'a> Context<'a> {
     }
 
     pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a> {
-        // TODO optimizing this might be something to do
-        fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
-            let mut nya = Some(start);
-            while let Some(thing) = nya {
-                thingies.push(thing);
-                nya = thing.invoked_by;
-            }
-        }
-        let mut lhs = Vec::new();
-        let mut rhs = Vec::new();
-        meow(&mut lhs, left);
-        meow(&mut rhs, right);
+        return self.node(NodeInfo {
+            span: left.span.combine(right.span),
+            source: left.source,
+            parent: left.parent,
+            // included_by: None,
+            // invoked_by: lhs.invoked_by,
+        });
+        // // TODO optimizing this might be something to do
+        // fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
+        //     let mut nya = Some(start);
+        //     while let Some(thing) = nya {
+        //         thingies.push(thing);
+        //         nya = thing.invoked_by;
+        //     }
+        // }
+        // let mut lhs = Vec::new();
+        // let mut rhs = Vec::new();
+        // meow(&mut lhs, left);
+        // meow(&mut rhs, right);
 
-        for (lhs, rhs) in lhs.iter().rev().zip(rhs.iter().rev()) {
-            if lhs != rhs {
-                if lhs.source != rhs.source {
-                    panic!("uhhhhhhh, {left:?}, {right:?}")
-                } else {
-                    return self.node(NodeInfo {
-                        span: lhs.span.combine(rhs.span),
-                        source: lhs.source,
-                        included_by: None,
-                        invoked_by: lhs.invoked_by,
-                    });
-                }
-            }
-        }
-        left
+        // for (lhs, rhs) in lhs.iter().rev().zip(rhs.iter().rev()) {
+        //     if lhs != rhs {
+        //         if lhs.source != rhs.source {
+        //             panic!("uhhhhhhh, {left:?}, {right:?}")
+        //         } else {
+        //             return self.node(NodeInfo {
+        //                 span: lhs.span.combine(rhs.span),
+        //                 source: lhs.source,
+        //                 child: lhs.child,
+        //                 // included_by: None,
+        //                 // invoked_by: lhs.invoked_by,
+        //             });
+        //         }
+        //     }
+        // }
+        // left
+        // todo!()
     }
 
     pub fn alloc_str(&self, data: impl AsRef<str>) -> &'a str {
@@ -280,8 +302,7 @@ impl<'a> Context<'a> {
         self.top_src_eof = self.node(NodeInfo {
             span: src.eof(),
             source: src,
-            included_by: None,
-            invoked_by: None,
+            parent: Parent::None,
         });
     }
 

@@ -13,31 +13,25 @@ pub(super) struct Position {
     col: usize,
 }
 
-type LexerResult<'a> = Result<Spanned<Token<'a>>, Box<Spanned<LexError<'a>>>>;
+type LexerResult<'a> = Result<Spanned<Token<'a>>, Spanned<LexError>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LexError<'a> {
+pub enum LexError {
     InvalidChar(char),
     UnclosedCharLiteral,
     UnclosedMultiLineComment,
-    InvalidEscape(&'a str),
-    UnfinishedEscapeSequence(&'a str),
     UnclosedStringLiteral,
     EmptyExponent,
     NoNumberAfterBasePrefix,
     NumberParseError(NumberError),
 }
 
-impl<'a> std::fmt::Display for LexError<'a> {
+impl std::fmt::Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LexError::InvalidChar(char) => write!(f, "invalid character {char:?}"),
             LexError::UnclosedCharLiteral => write!(f, "unclosed char literal"),
             LexError::UnclosedMultiLineComment => write!(f, "unclosed multi line comment"),
-            LexError::InvalidEscape(escape) => write!(f, "invalid escape, {escape:?}"),
-            LexError::UnfinishedEscapeSequence(escape) => {
-                write!(f, "unfinished escape sequence {escape:?}")
-            }
             LexError::UnclosedStringLiteral => write!(f, "unclosed string literal"),
             LexError::EmptyExponent => write!(f, "empty exponent"),
             LexError::NoNumberAfterBasePrefix => write!(f, "no number after base prefix"),
@@ -323,7 +317,7 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 State::CharLiteral => match c {
                     Some('\'') => {
-                        ret = Some(Ok(Token::CharLiteral(
+                        ret = Some(Ok(Token::UnparsedCharLiteral(
                             self.str[self.start.offset + 1..self.current.offset].into(),
                         )))
                     }
@@ -338,7 +332,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                 State::String => match c {
                     Some('"') => {
-                        ret = Some(Ok(Token::StringLiteral(
+                        ret = Some(Ok(Token::UnparsedStringLiteral(
                             self.str[self.start.offset + 1..self.current.offset].into(),
                         )))
                     }
@@ -603,7 +597,7 @@ impl<'a> Iterator for Lexer<'a> {
 
                         self.start = self.current;
                         self.state = State::Default;
-                        return Some(Err(Box::new(Spanned::new(err, meta))));
+                        return Some(Err(Spanned::new(err, meta)));
                     }
                 }
             }

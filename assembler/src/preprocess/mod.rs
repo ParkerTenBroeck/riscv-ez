@@ -8,19 +8,34 @@ use std::fmt::Write;
 
 use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
+use crate::context::NodeInfo;
+use crate::context::Parent;
 use crate::expression::Value;
 use crate::expression::ValueType;
+use crate::lex::Spanned;
 use crate::preprocess::defined_macro::TokenIter;
-use crate::preprocess::file::FileIter;
 use crate::preprocess::if_else::IfDef;
 use crate::{
     context::{Node, NodeId, SourceId},
     lex::{Lexer, Token},
 };
 
-struct ProducerStage<'a, T: AssemblyLanguage<'a>> {
-    iter: Box<dyn PreProcessorIter<'a, T> + 'a>,
-    source: Option<NodeId<'a>>,
+struct SrcSlice<'a>{
+    contents: &'a [Spanned<Token<'a>>],
+    src: SourceId<'a>,
+}
+
+impl<'a> SrcSlice<'a>{
+    pub fn next(&mut self) -> Option<&'a Spanned<Token>>{
+        let(first, rem) = self.contents.split_first()?;
+        self.contents = rem;
+        Some(first)
+    }
+}
+
+struct ProducerStage<'a> {
+    src: SrcSlice<'a>,
+    parent: Parent<'a>,
 }
 
 pub trait PreProcessorIter<'a, T: AssemblyLanguage<'a>> {
@@ -56,9 +71,9 @@ pub trait PreProcessorFilter<'a, T: AssemblyLanguage<'a>> {
 }
 
 pub struct PreProcessor<'a, T: AssemblyLanguage<'a>> {
-    producers: Vec<ProducerStage<'a, T>>,
+    producers: Vec<ProducerStage<'a>>,
     filters: VecDeque<FilterStage<'a, T>>,
-    defines: HashMap<&'a str, Vec<Node<'a, Token<'a>>>>,
+    defines: HashMap<&'a str, &'a [Spanned<Token<'a>>]>,
 
     peek: Option<Node<'a, Token<'a>>>,
 }
@@ -80,10 +95,10 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
     }
 
-    fn add_producer(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: ProducerStage<'a, T>) {
+    fn add_producer(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: ProducerStage<'a>) {
         let limit = ctx.context.config().producer_stack_limit;
         if self.producers.len() > limit {
-            if let Some(source) = stage.source {
+            if let Some(source) = stage.parent.parent() {
                 ctx.context.report_error(
                     source,
                     format!("preprocessor stack recursion limit hit ({limit}) for producers",),
@@ -127,27 +142,46 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         self.producers.clear();
         self.peek = None;
 
-        let result = ctx.context.get_source_from_path(path);
+        self.include(&mut ctx, path, Parent::None)
+    }
+
+    fn parse_file(
+        &mut self,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
+        path: impl Into<String>,
+        parent: Parent<'a>,
+    ) -> SrcSlice<'a> {
+        let path = path.into();
+        let result = ctx.context.get_source_from_path(&path);
         match result {
             Ok(src) => {
-                self.add_producer(
-                    &mut ctx,
-                    ProducerStage {
-                        iter: Box::new(FileIter {
-                            lex: Lexer::new(src.contents),
-                            include_location: None,
-                            source: src,
-                        }),
-                        source: None,
-                    },
-                );
-                Some(src)
+                let mut tokens = Vec::new();
+                for token in Lexer::new(src.contents).include_comments() {
+                    match token {
+                        Ok(token) => tokens.push(token),
+                        Err(err) => {
+                            ctx.context.report_error(
+                                ctx.context.node(NodeInfo {
+                                    span: err.span,
+                                    source: src,
+                                    parent,
+                                }),
+                                format!("lexer error: {:?}", err.val),
+                            );
+                        }
+                    }
+                }
+                (ctx.context.alloc_slice(tokens.as_slice()), Some(src))
             }
             Err(error) => {
-                ctx.context
-                    .report_error_locless(format!("failed to load file: {error}"));
-
-                None
+                if let Some(source) = parent.parent() {
+                    ctx.context
+                        .report_error(source, format!("failed to load '{path}': {error}"));
+                } else {
+                    ctx.context
+                        .report_error_locless(format!("failed to load '{path}': {error}"));
+                }
+                (&[], None)
             }
         }
     }
@@ -156,28 +190,19 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
         path: impl Into<String>,
-        source: NodeId<'a>,
-    ) {
-        let result = ctx.context.get_source_from_path(path);
-        match result {
-            Ok(src) => {
-                self.add_producer(
-                    ctx,
-                    ProducerStage {
-                        iter: Box::new(FileIter {
-                            lex: Lexer::new(src.contents),
-                            include_location: Some(source),
-                            source: src,
-                        }),
-                        source: Some(source),
-                    },
-                );
-            }
-            Err(error) => {
-                ctx.context
-                    .report_error(source, format!("failed to include file: {error}"));
-            }
-        }
+        parent: Parent<'a>,
+    ) -> Option<SourceId<'a>> {
+        let (iter, src) = self.parse_file(ctx, path, parent);
+        let src = src?;
+        self.add_producer(
+            ctx,
+            ProducerStage {
+                iter: iter.iter(),
+                src,
+                parent,
+            },
+        );
+        Some(src)
     }
 
     fn stack_next(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
@@ -185,9 +210,10 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             return self.peek.take();
         }
         while let Some(mut top) = self.producers.pop() {
-            if let Some(next) = top.iter.next(self, ctx) {
+            if let Some(next) = top.iter.next() {
                 self.producers.push(top);
-                return Some(next);
+                let node = ctx.context.node(NodeInfo { span: next.span, source: top.src, parent: top.parent });
+                return Some(Node(next.val, node));
             }
         }
         None
@@ -201,7 +227,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     ) -> Option<Node<'a, Token<'a>>> {
         match tag {
             "include" => match self.stack_next(ctx) {
-                Some(Node(Token::StringLiteral(str), node)) => self.include(ctx, str, node),
+                Some(Node(Token::StringLiteral(str), node)) => {
+                    self.include(ctx, str, Parent::Included { parent: node });
+                },
                 t => {
                     _ = ctx
                         .context
@@ -306,7 +334,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                         toks: value.clone().into_iter(),
                         source: n,
                     }),
-                    source: Some(n),
+                    parent: Some(n),
                 },
             );
             return false;

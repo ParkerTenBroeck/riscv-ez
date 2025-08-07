@@ -371,7 +371,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
                     self.add_space_data(ctx, size as usize, 1, n);
                 }
             }
-            ".data" => {
+            ".values" => {
                 for arg in ctx.eval(self).args(n, ArgumentsTypeHint::None).0 {
                     self.add_value_data(ctx, arg.0, arg.1);
                 }

@@ -211,14 +211,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             Some(Node(Token::FalseLiteral, node)) => {
                 Node(Value::Constant(Constant::Bool(false)), node)
             }
-            Some(Node(Token::StringLiteral(str), node)) => Node(
-                Value::Constant(Constant::String(self.parse_string_literal(str, node))),
-                node,
-            ),
-            Some(Node(Token::CharLiteral(str), node)) => Node(
-                Value::Constant(Constant::Char(self.parse_char_literal(str, node))),
-                node,
-            ),
+            Some(Node(Token::StringLiteral(str), node)) => {
+                Node(Value::Constant(Constant::String(str)), node)
+            }
+            Some(Node(Token::CharLiteral(char), node)) => {
+                Node(Value::Constant(Constant::Char(char)), node)
+            }
             Some(Node(Token::NumericLiteral(num), node)) => Node(
                 self.lang
                     .parse_numeric_literal(ctx!(self), Node(num, node), negated, hint),
@@ -243,7 +241,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     [
                         Token::Ident(""),
                         Token::LPar,
-                        Token::CharLiteral(""),
+                        Token::CharLiteral('\0'),
                         Token::StringLiteral(""),
                         Token::FalseLiteral,
                         Token::TrueLiteral,

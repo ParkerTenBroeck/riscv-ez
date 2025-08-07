@@ -23,8 +23,10 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for TokenIter<'a> {
             ctx.context.node(NodeInfo {
                 span: tok.1.span,
                 source: tok.1.source,
-                included_by: tok.1.included_by,
-                invoked_by: Some(self.source),
+                parent: crate::context::Parent::Pasted {
+                    parent: self.source,
+                    definition: None,
+                },
             }),
         ))
     }

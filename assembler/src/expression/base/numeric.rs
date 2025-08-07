@@ -120,9 +120,9 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                                 if num.get_suffix().is_none() && hint == ValueType::Any {
                                     error = error.hint_locless(format!("consider adding an explicit type suffix to the literal like '{}{}i64{}'", num.get_num(), crate::logs::GREEN, crate::logs::RESET))
                                 }
-                                
+
                                 self.context.report(error);
-                                    
+
                             }
                             _ => self.context.report_error(n, format!("invalid numeric literal"))
                         }

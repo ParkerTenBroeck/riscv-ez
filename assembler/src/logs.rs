@@ -65,12 +65,13 @@ impl<'a> LogEntry<'a> {
                     msg: msg.take(),
                 },
             );
-            if position != 0{
+            if position != 0 {
                 break;
             }
             kind = LogKind::From;
 
-            node_id = node.invoked_by;
+            break;
+            // node_id = node.invoked_by;
         }
 
         self

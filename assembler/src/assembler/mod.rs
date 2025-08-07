@@ -116,9 +116,10 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                 loop {
                     match self.peek() {
                         None | Some(Node(Token::NewLine, _)) => break,
-                        Some(Node(t, n)) => self
-                            .context
-                            .report_error(n, format!("unexpected token '{t:#}' at end of statement")),
+                        Some(Node(t, n)) => self.context.report_error(
+                            n,
+                            format!("unexpected token '{t:#}' at end of statement"),
+                        ),
                     }
                     self.next();
                 }

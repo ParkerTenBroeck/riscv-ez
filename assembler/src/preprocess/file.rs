@@ -17,6 +17,11 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for FileIter<'a> {
         _: &mut PreProcessor<'a, T>,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>> {
+        let parent = if let Some(parent) = self.include_location {
+            crate::context::Parent::Included { parent }
+        } else {
+            crate::context::Parent::None
+        };
         for token in self.lex.by_ref() {
             match token {
                 Ok(ok) => {
@@ -25,8 +30,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for FileIter<'a> {
                         ctx.context.node(NodeInfo {
                             span: ok.span,
                             source: self.source,
-                            included_by: self.include_location,
-                            invoked_by: None,
+                            parent,
                         }),
                     ));
                 }
@@ -34,8 +38,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorIter<'a, T> for FileIter<'a> {
                     let n = ctx.context.node(NodeInfo {
                         span: err.span,
                         source: self.source,
-                        included_by: self.include_location,
-                        invoked_by: None,
+                        parent,
                     });
                     ctx.context.report_error(n, err.val);
                 }
