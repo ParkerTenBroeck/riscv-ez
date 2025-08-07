@@ -21,7 +21,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 if c != '_' {
                     if index + c.len_utf8() > buf.len() {
                         self.context
-                            .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
+                            .report_error(n, format!("unknown numeric suffix '{suffix}'"));
                         return hint.default_value();
                     }
                     c.encode_utf8(&mut buf[index..]);
@@ -108,9 +108,23 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     .inspect_err(|e| {
                         use crate::LogEntry;
                         match e.kind(){
-                            IntErrorKind::NegOverflow => self.context.report(LogEntry::new().error(n, format!("numeric literal too small to fit in type {suffix} valid range is {}..={}", <$num>::MIN, <$num>::MAX)).hint_locless("consider adding an explicit type suffix to the literal like '<integer|float>i32' or '<integer|float>u16'")),
-                            IntErrorKind::PosOverflow => self.context.report(LogEntry::new().error(n, format!("numeric literal too large to fit in type {suffix} valid range is {}..={}", <$num>::MIN, <$num>::MAX)).hint_locless("consider adding an explicit type suffix to the literal like '<integer|float>i32' or '<integer|float>u16'")),
-                            _ => self.context.report_error(n, format!("Invalid numeric literal"))
+                            IntErrorKind::NegOverflow | IntErrorKind::PosOverflow => {
+                                let smaller_larger = match e.kind() {
+                                    IntErrorKind::NegOverflow => "small",
+                                    IntErrorKind::PosOverflow => "large",
+                                    _ => "???????",
+                                };
+                                let mut error = LogEntry::new()
+                                        .error(n, format!("numeric literal too {smaller_larger} to fit in '{suffix}' valid range is {}..={}", <$num>::MIN, <$num>::MAX));
+
+                                if num.get_suffix().is_none() && hint == ValueType::Any {
+                                    error = error.hint_locless(format!("consider adding an explicit type suffix to the literal like '{}{}i64{}'", num.get_num(), crate::logs::GREEN, crate::logs::RESET))
+                                }
+                                
+                                self.context.report(error);
+                                    
+                            }
+                            _ => self.context.report_error(n, format!("invalid numeric literal"))
                         }
                     })
                     .unwrap_or(0);
@@ -128,7 +142,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     .parse()
                     .inspect_err(|e| {
                         self.context
-                            .report_error(n, format!("Invalid numeric literal {e}"));
+                            .report_error(n, format!("invalid numeric literal '{e}'"));
                     })
                     .unwrap_or(0.0)
             };
@@ -149,7 +163,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
             suffix => {
                 self.context
-                    .report_error(n, format!("Unknown numeric suffix '{suffix}'"));
+                    .report_error(n, format!("unknown numeric suffix '{suffix}'"));
                 return hint.default_value();
             }
         })

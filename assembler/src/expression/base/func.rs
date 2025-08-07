@@ -59,7 +59,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         let (lang, mut ctx) = self.split_ctx();
         let node = func.args(lang, &mut ctx).1;
         self.context
-            .report_error(node, format!("Unknown function {func_name}"));
+            .report_error(node, format!("unknown function {func_name}"));
         hint.default_value()
     }
 }

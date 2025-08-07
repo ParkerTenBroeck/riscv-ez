@@ -9,6 +9,7 @@ use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token};
+use crate::logs::LogEntry;
 use crate::preprocess::PreProcessor;
 use crate::util::IntoStrDelimable;
 
@@ -191,7 +192,9 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             Token::RPar,
                             ArgumentsTypeHint::None,
                         );
-                        self.context.report_error(loc.1, "Function arguments never consumer... This is a error on the developers part");
+                        self.context.report(LogEntry::new()
+                    .error(loc.1, "function arguments never consumer"
+                ).info_locless("this is an internal assembler error, if possible please make an issue"));
                         loc.1
                     };
 
@@ -382,11 +385,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         if let Some(ok) = chars.next() {
             if chars.next().is_some() {
                 self.context
-                    .report_error(n, "Char literal contains more than one char");
+                    .report_error(n, "char literal contains more than one char");
             }
             ok
         } else {
-            self.context.report_error(n, "Char literal empty");
+            self.context.report_error(n, "char literal empty");
             '\0'
         }
     }

@@ -54,11 +54,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         match op {
             UnOp::Neg => self.context.report_error(
                 node,
-                format!("Cannot negate expression of type {}", expr.0.get_type()),
+                format!("cannot negate expression of type '{}'", expr.0.get_type()),
             ),
             UnOp::Not => self.context.report_error(
                 node,
-                format!("Cannot not expression of type {}", expr.0.get_type()),
+                format!("cannot not expression of type '{}'", expr.0.get_type()),
             ),
         }
     }

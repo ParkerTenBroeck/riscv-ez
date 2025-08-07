@@ -85,7 +85,7 @@ macro_rules! integer {
                             Ok(Self::Val(if value.is_power_of_two() {
                                     Some(value)
                                 } else {
-                                    context.report_error(node, "Value is not a power of two");
+                                    context.report_error(node, "value is not a power of two");
                                     None
                                 }
                             ))
@@ -489,7 +489,7 @@ fn wrong_number_args<'a>(
     context.report_error(
         node,
         format!(
-            "Wrong number of arguments, expected [{}{vargs}] got [{}]",
+            "wrong number of arguments, expected [{}{vargs}] got [{}]",
             expected.iter().delim(", "),
             args.iter().map(|i| i.0.get_type()).delim(", "),
         ),
@@ -507,7 +507,7 @@ fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>>(
                 None => context.report_error(
                     node,
                     format!(
-                        "Incorrect argument, expected [{}{}] got [{}]",
+                        "incorrect argument, expected [{}{}] got [{}]",
                         T::TYPE_REPR,
                         if T::OPTIONAL { "?" } else { "" },
                         arg.get_type()

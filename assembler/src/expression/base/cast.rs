@@ -119,7 +119,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             },
             _ => {
                 self.context
-                    .report_error(node, format!("Unknown type {ty}"));
+                    .report_error(node, format!("unknown type '{ty}'"));
                 expr.0
             }
         }
@@ -128,7 +128,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn cast_error(&mut self, expr: NodeVal<'a, L>, expected: ValueType<'a, L>) -> Value<'a, L> {
         self.context.report_error(
             expr.1,
-            format!("Cannot cast {} to {}", expr.0.get_type(), expected),
+            format!("cannot cast '{}' to '{}'", expr.0.get_type(), expected),
         );
         expected.default_value()
     }

@@ -27,7 +27,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
                 if let Some(last) = self.else_loc {
                     ctx.context.report(
                         LogEntry::new()
-                            .error(node, "Encountered #else multiple times")
+                            .error(node, "encountered #else multiple times")
                             .info(last, "first found here"),
                     );
                 } else {
@@ -38,7 +38,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
             None => {
                 ctx.context.report(
                     LogEntry::new()
-                        .error(ctx.context.top_src_eof(), "Expected #endif found eof")
+                        .error(ctx.context.top_src_eof(), "expected #endif found eof")
                         .info(self.source, "from here"),
                 );
                 FilterResult::Consume { remove: true }

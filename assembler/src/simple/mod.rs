@@ -107,7 +107,8 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
         mnemonic: &'a str,
         n: NodeId<'a>,
     );
-    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>);
+    #[allow(unused)]
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>) {}
     fn add_value_data(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
@@ -418,8 +419,8 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
                 label = ctx.context.alloc_str(format!("{prev}{label}"))
             } else {
                 ctx.context.report(LogEntry::new()
-                .error(n, "encountered local label before non local label")
-                .hint_locless("local labels start with '.' consider adding a non local label before the definition of this one")
+                    .error(n, "encountered local label before non local label")
+                    .hint_locless("local labels start with '.' consider adding a non local label before the definition of this one")
             );
             }
         } else {

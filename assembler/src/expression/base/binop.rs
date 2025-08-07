@@ -275,7 +275,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 self.context.report_error(
                     node,
                     format!(
-                        "cannot compare differing types {} and {}",
+                        "cannot compare types '{}' and '{}'",
                         lhs.0.get_type(),
                         rhs.0.get_type()
                     ),
@@ -287,7 +287,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 self.context.report_error(
                     node,
                     format!(
-                        "Cannot '{:?}' types {} and {}",
+                        "cannot '{:?}' types '{}' and '{}'",
                         op,
                         lhs.0.get_type(),
                         rhs.0.get_type()
@@ -307,7 +307,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         self.context.report_error(
             node,
             format!(
-                "Cannot index {} with {}",
+                "cannot index '{}' with '{}'",
                 lhs.0.get_type(),
                 rhs.0.get_type()
             ),

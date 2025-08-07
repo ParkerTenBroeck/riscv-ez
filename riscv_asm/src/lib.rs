@@ -483,7 +483,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                     | (_, label::LabelExprType::Sub(_, _))
                     | (label::LabelExprType::Sub(_, _), label::LabelExprType::Sub(_, _)) => {
                         ctx.context
-                            .report_error(node, "can only have the difference between two labels");
+                            .report_error(node, "can only calculate different between two labels");
                     }
                     _ => {
                         ctx.context.report_error(
@@ -536,7 +536,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             Value::Constant(constant) => self.add_constant_data(ctx, constant, n),
             _ => ctx
                 .context
-                .report_error(n, format!("cannot use {} as data", value.get_type())),
+                .report_error(n, format!("cannot use '{}' as data", value.get_type())),
         }
     }
 

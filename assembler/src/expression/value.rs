@@ -532,19 +532,19 @@ macro_rules! implicit_cast_impl {
     (!error_hard, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
         let from = stringify!($from).to_lowercase();
         let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().error($node, format!("cannot cast {from} to {to}")));
+        $ctx.report(LogEntry::new().error($node, format!("cannot cast '{from}' to '{to}'")));
         None
     }};
     (!error, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
         let from = stringify!($from).to_lowercase();
         let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().error($node, format!("cannot implicitly cast {from} to {to}")).hint_locless(format!("consider casting expression with 'as {to}'")));
+        $ctx.report(LogEntry::new().error($node, format!("cannot implicitly cast '{from}' to '{to}'")).hint_locless(format!("consider casting expression with 'as {to}'")));
         None
     }};
     (!warning, $node:ident, $ctx:ident, $block:block, $from:ident, $to:ty) => {{
         let from = stringify!($from).to_lowercase();
         let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().warning($node, format!("implicit cast {from} to {to}")).hint_locless(format!("consider casting expression with 'as {to}'")));
+        $ctx.report(LogEntry::new().warning($node, format!("implicit cast '{from}' to '{to}'")).hint_locless(format!("consider casting expression with 'as {to}'")));
         $block
     }};
     (!warning, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
@@ -579,7 +579,7 @@ macro_rules! implicit_cast_impl {
                     Err(_) => {
                         let from = stringify!($from).to_lowercase();
                         let to = stringify!($to).to_lowercase();
-                        $ctx.report(LogEntry::new().error($node, format!("implicit cast {from} to {to} is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
+                        $ctx.report(LogEntry::new().error($node, format!("implicit cast '{from}' to '{to}' is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
                         None
                     }
                 }
@@ -590,7 +590,7 @@ macro_rules! implicit_cast_impl {
                     Err(_) => {
                         let from = stringify!($from).to_lowercase();
                         let to = stringify!($to).to_lowercase();
-                        $ctx.report(LogEntry::new().error($node, format!("implicit cast {from} to {to} is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
+                        $ctx.report(LogEntry::new().error($node, format!("implicit cast '{from}' to '{to}' is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
                         Some($expr as $to)
                     }
                 }

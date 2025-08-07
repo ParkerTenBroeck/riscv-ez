@@ -86,11 +86,11 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             if let Some(source) = stage.source {
                 ctx.context.report_error(
                     source,
-                    format!("Preprocessor stack recursion limit hit ({limit}) for producers",),
+                    format!("preprocessor stack recursion limit hit ({limit}) for producers",),
                 );
             } else {
                 ctx.context.report_error_locless(format!(
-                    "Preprocessor stack recursion limit hit ({limit}) for producers"
+                    "preprocessor stack recursion limit hit ({limit}) for producers"
                 ));
             }
             self.producers.clear();
@@ -105,11 +105,11 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             if let Some(source) = stage.source {
                 ctx.context.report_error(
                     source,
-                    format!("Preprocessor stack recursion limit hit ({limit}) for filters"),
+                    format!("preprocessor stack recursion limit hit ({limit}) for filters"),
                 );
             } else {
                 ctx.context.report_error_locless(format!(
-                    "Preprocessor stack recursion limit hit ({limit}) for filters"
+                    "preprocessor stack recursion limit hit ({limit}) for filters"
                 ));
             }
         } else {
@@ -145,7 +145,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             }
             Err(error) => {
                 ctx.context
-                    .report_error_locless(format!("Failed to load file '{error}'"));
+                    .report_error_locless(format!("failed to load file: {error}"));
 
                 None
             }
@@ -175,7 +175,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             }
             Err(error) => {
                 ctx.context
-                    .report_error(source, format!("Failed to include file '{error}'"));
+                    .report_error(source, format!("failed to include file: {error}"));
             }
         }
     }
@@ -286,7 +286,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
 
             unknown => {
                 ctx.context
-                    .report_error(n, format!("Unknown preprocessor tag '{unknown}'"));
+                    .report_error(n, format!("unknown preprocessor tag '{unknown}'"));
             }
         }
         None

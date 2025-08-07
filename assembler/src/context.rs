@@ -252,19 +252,19 @@ impl<'a> Context<'a> {
             match got {
                 Some(Node(got, n)) => self.report_error(
                     n,
-                    format!("Unexpected token, got {got:#} expected {expected:#}"),
+                    format!("unexpected token, got {got:#} expected {expected:#}"),
                 ),
                 None => self
-                    .report_error_eof(format!("Unexpected token, got eof expected {expected:#}")),
+                    .report_error_eof(format!("unexpected token, got eof expected {expected:#}")),
             }
         } else {
             match got {
                 Some(Node(got, n)) => self.report_error(
                     n,
-                    format!("Unexpected token, got {got:#} expected {expected}"),
+                    format!("unexpected token, got {got:#} expected {expected}"),
                 ),
                 None => {
-                    self.report_error_eof(format!("Unexpected token, got eof expected {expected}"))
+                    self.report_error_eof(format!("unexpected token, got eof expected {expected}"))
                 }
             }
         }

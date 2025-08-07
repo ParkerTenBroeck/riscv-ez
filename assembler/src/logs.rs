@@ -65,6 +65,9 @@ impl<'a> LogEntry<'a> {
                     msg: msg.take(),
                 },
             );
+            if position != 0{
+                break;
+            }
             kind = LogKind::From;
 
             node_id = node.invoked_by;

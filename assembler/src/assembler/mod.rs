@@ -118,7 +118,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
                         None | Some(Node(Token::NewLine, _)) => break,
                         Some(Node(t, n)) => self
                             .context
-                            .report_error(n, format!("Unexpected token '{t:#}' at end of line")),
+                            .report_error(n, format!("unexpected token '{t:#}' at end of statement")),
                     }
                     self.next();
                 }
@@ -132,7 +132,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             }
             Some(Node(t, n)) => self.context.report_error(
                 n,
-                format!("Unexpected token {t:#} expected mnemonic or label"),
+                format!("unexpected token {t:#} expected identifier or label"),
             ),
             None => {}
         }
@@ -140,7 +140,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
 
     pub fn unknown_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
         self.context
-            .report_error(n, format!("Unrecognized mnemonic '{mnemonic}'"));
+            .report_error(n, format!("unrecognized mnemonic '{mnemonic}'"));
 
         while !matches!(self.peek(), None | Some(Node(Token::NewLine, _))) {
             self.next();
