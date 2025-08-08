@@ -38,7 +38,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessorFilter<'a, T> for IfDef<'a> {
             None => {
                 ctx.context.report(
                     LogEntry::new()
-                        .error(ctx.context.top_src_eof(), "expected #endif found eof")
+                        .error(ctx.context.eof(), "expected #endif found eof")
                         .info(self.source, "from here"),
                 );
                 FilterResult::Consume { remove: true }

@@ -138,6 +138,8 @@ fn highlight(_: &Ui, str: &str) -> LayoutJob {
                     Token::TrueLiteral => KEYWORD,
                     Token::SingleLineComment(_) => COMMENT,
                     Token::MultiLineComment(_) => COMMENT,
+                    Token::UnparsedStringLiteral(_) => STR,
+                    Token::UnparsedCharLiteral(_) => STR,
                 };
                 (
                     ok.span.offset as usize..(ok.span.offset as usize + ok.span.len as usize),

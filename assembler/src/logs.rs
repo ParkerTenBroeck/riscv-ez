@@ -70,8 +70,7 @@ impl<'a> LogEntry<'a> {
             }
             kind = LogKind::From;
 
-            break;
-            // node_id = node.invoked_by;
+            node_id = node.parent.parent();
         }
 
         self

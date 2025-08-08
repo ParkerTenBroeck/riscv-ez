@@ -206,7 +206,7 @@ impl<'a> Context<'a> {
         self.bump.alloc_slice_copy(data)
     }
 
-    pub fn top_src_eof(&self) -> NodeId<'a> {
+    pub fn eof(&self) -> NodeId<'a> {
         self.top_src_eof
     }
 
@@ -293,7 +293,7 @@ impl<'a> Context<'a> {
 
         match got {
             Some(Node(_, n)) => n,
-            None => self.top_src_eof(),
+            None => self.eof(),
         }
     }
 
