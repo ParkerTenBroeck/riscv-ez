@@ -162,11 +162,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor
-            .next(PreProcessorCtx::new(self.context, self.lang))
+            .next(&mut PreProcessorCtx::new(self.context, self.lang))
     }
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor
-            .peek(PreProcessorCtx::new(self.context, self.lang))
+            .peek(&mut PreProcessorCtx::new(self.context, self.lang))
     }
 
     fn parse_expr_1(&mut self, hint: ValueType<'a, L>, negated: bool) -> NodeVal<'a, L> {

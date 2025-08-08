@@ -150,11 +150,11 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
 
     fn next(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor
-            .next(PreProcessorCtx::new(self.context, self.lang))
+            .next(&mut PreProcessorCtx::new(self.context, self.lang))
     }
 
     fn peek(&mut self) -> Option<Node<'a, Token<'a>>> {
         self.preprocessor
-            .peek(PreProcessorCtx::new(self.context, self.lang))
+            .peek(&mut PreProcessorCtx::new(self.context, self.lang))
     }
 }

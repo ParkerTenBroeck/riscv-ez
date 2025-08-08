@@ -204,8 +204,11 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         self.include(&mut ctx, path, Parent::None)
     }
 
-    pub fn top_parent(&mut self) -> Parent<'a>{
-        self.producers.last().map(|p|p.parent).unwrap_or(Parent::None)
+    pub fn top_parent(&mut self) -> Parent<'a> {
+        self.producers
+            .last()
+            .map(|p| p.parent)
+            .unwrap_or(Parent::None)
     }
 
     pub fn parse_block(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> SrcSlice<'a> {
@@ -213,7 +216,13 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             return SrcSlice::new(&[], ctx.context.eof().source);
         };
 
-        let first = top.next_make(ctx);
+        let first = if let Some(peek) = self.peek
+            && peek.1.parent == top.parent
+        {
+            self.peek.take()
+        } else {
+            top.next_make(ctx)
+        };
         match first {
             Some(Node(Token::LBrace, _)) => {}
             got => {
@@ -330,43 +339,55 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     fn parse_if(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, n: NodeId<'a>) {
         let res = ctx.eval(self).expr(ValueType::Bool);
 
+        let parent = self.top_parent();
+        let mut result = None;
         {
-let parent = self.top_parent();
-        let contents = self.parse_block(ctx);
-        if res.0.is_true(){
-            self.producers.push(ProducerStage { contents, parent })
+            let contents = self.parse_block(ctx);
+            if res.0.is_true() {
+                result = Some(contents);
+            }
         }
-        }
-        
-        let mut produced = res.0.is_true();
+
         let mut else_encountered = None;
-        loop{
-            match self.peek{
+        loop {
+            match self.stack_next(ctx) {
                 Some(Node(Token::PreProcessorTag("else"), n)) => {
-                    let parent = self.top_parent();
                     let contents = self.parse_block(ctx);
-                    if let Some(other) = else_encountered{
-                        ctx.context.report(LogEntry::new().error(n, "else can only appear as the last block in if chain").info(other, "first encounter here"));
-                    }else{
-                        if !produced{
-                            self.producers.push(ProducerStage { contents, parent });
+                    if let Some(other) = else_encountered {
+                        ctx.context.report(
+                            LogEntry::new()
+                                .error(n, "else can only appear as the last block in if chain")
+                                .info(other, "first encounter here"),
+                        );
+                    } else {
+                        if result.is_none() {
+                            result = Some(contents);
                         }
                         else_encountered = Some(n);
                     }
                 }
-                Some(Node(Token::PreProcessorTag("elseif"), _)) => {
+                Some(Node(Token::PreProcessorTag("elseif"), n)) => {
                     let res = ctx.eval(self).expr(ValueType::Bool);
-                    let parent = self.top_parent();
                     let contents = self.parse_block(ctx);
-                    if let Some(other) = else_encountered{
-                        ctx.context.report(LogEntry::new().error(n, "else can only appear as the last block in if chain").info(other, "first encounter here"));
-                    }else if res.0.is_true(){
-                        produced = true;
-                        self.producers.push(ProducerStage { contents, parent });
+                    if let Some(other) = else_encountered {
+                        ctx.context.report(
+                            LogEntry::new()
+                                .error(n, "else can only appear as the last block in if chain")
+                                .info(other, "first encounter here"),
+                        );
+                    } else if res.0.is_true() && result.is_none() {
+                        result = Some(contents);
                     }
                 }
-                _ => break,
+                v => {
+                    self.peek = v;
+                    break;
+                }
             }
+        }
+
+        if let Some(contents) = result {
+            self.producers.push(ProducerStage { contents, parent });
         }
     }
 
@@ -514,16 +535,16 @@ let parent = self.top_parent();
         }
     }
 
-    pub fn peek(&mut self, ctx: PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
+    pub fn peek(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_none() {
             self.peek = self.next(ctx);
         }
         self.peek
     }
 
-    pub fn next(&mut self, mut ctx: PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
+    pub fn next(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> Option<Node<'a, Token<'a>>> {
         if self.peek.is_none() {
-            self.peek = self.next_filtered(&mut ctx);
+            self.peek = self.next_filtered(ctx);
         }
         self.peek.take()
     }
