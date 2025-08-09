@@ -43,7 +43,10 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> PreProcessorCtx<'a, 'b, T> {
         Self { context, lang }
     }
 
-    pub fn asm(&mut self, preprocessor: &'b mut PreProcessor<'a, T>) -> Assembler<'a, '_, T> {
+    pub fn asm<'c>(
+        &'c mut self,
+        preprocessor: &'c mut PreProcessor<'a, T>,
+    ) -> Assembler<'a, 'c, T> {
         Assembler {
             context: self.context,
             lang: self.lang,
@@ -81,6 +84,17 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
             lang,
             preprocessor,
         }
+    }
+
+    pub fn split_preprocessor(self) -> (&'b mut PreProcessor<'a, T>, PreProcessorCtx<'a, 'b, T>) {
+        (
+            self.preprocessor,
+            PreProcessorCtx::new(self.context, self.lang),
+        )
+    }
+
+    pub fn split_lang(self) -> (&'b mut T, LangCtx<'a, 'b, T>) {
+        (self.lang, LangCtx::new(self.context, self.preprocessor))
     }
 
     pub fn assemble(&mut self, path: impl Into<String>) -> T::AssembledResult {

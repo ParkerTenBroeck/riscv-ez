@@ -221,7 +221,15 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
         ident: Node<'a, &'a str>,
         hint: crate::expression::ValueType<'a, Self>,
     ) -> crate::expression::Value<'a, Self> {
-        self.parse_ident(ctx, ident, hint)
+
+        match ident.0{
+            "__line__" => Value::Constant(Constant::U32(ident.1.top().span.line.wrapping_add(1))),
+            "__col__" => Value::Constant(Constant::U32(ident.1.top().span.col)),
+            "__len__" => Value::Constant(Constant::U32(ident.1.top().span.len)),
+            "__offset__" => Value::Constant(Constant::U32(ident.1.top().span.offset)),
+            "__file__" => Value::Constant(Constant::String(ident.1.top().source.path)),
+            _ => self.parse_ident(ctx, ident, hint)
+        }
     }
 
     fn parse_numeric_literal(
@@ -333,7 +341,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
                     self.set_section(ctx, sec, n);
                 }
             }
-            ".align" => if let U32Pow2Opt::Val(Some(sec)) = ctx.eval(self).coerced(n).0 {},
+            ".align" => if let U32Pow2Opt::Val(Some(align)) = ctx.eval(self).coerced(n).0 {},
 
             ".label" => {
                 if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {
@@ -346,24 +354,20 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
             ".type" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
             ".size" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
             ".text" => {
-                if let Node((), node) = ctx.eval(self).coerced(n) {
-                    self.set_section(ctx, ".text", node);
-                }
+                let Node((), node) = ctx.eval(self).coerced(n);
+                self.set_section(ctx, ".test", node);
             }
             ".bss" => {
-                if let Node((), node) = ctx.eval(self).coerced(n) {
-                    self.set_section(ctx, ".bss", node);
-                }
+                let Node((), node) = ctx.eval(self).coerced(n);
+                self.set_section(ctx, ".bss", node);
             }
             ".data" => {
-                if let Node((), node) = ctx.eval(self).coerced(n) {
-                    self.set_section(ctx, ".data", node);
-                }
+                let Node((), node) = ctx.eval(self).coerced(n);
+                self.set_section(ctx, ".data", node);
             }
             ".rodata" => {
-                if let Node((), node) = ctx.eval(self).coerced(n) {
-                    self.set_section(ctx, ".rodata", node);
-                }
+                let Node((), node) = ctx.eval(self).coerced(n);
+                self.set_section(ctx, ".rodata", node);
             }
 
             ".space" => {
@@ -431,6 +435,14 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
 
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult {
         self.finish(ctx)
+    }
+
+    fn encounter_comment(
+        &mut self,
+        ctx: &mut LangCtx<'a, '_, Self>,
+        comment: &'a str,
+        n: NodeId<'a>,
+    ) {
     }
 }
 

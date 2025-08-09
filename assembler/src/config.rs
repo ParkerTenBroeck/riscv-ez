@@ -44,8 +44,7 @@ impl ImplicitCastConfig {
 
 #[derive(Debug)]
 pub struct AssemblerConfig {
-    pub producer_stack_limit: usize,
-    pub filter_stack_limit: usize,
+    pub preprocessor_stack_limit: usize,
     pub pic: bool,
 
     pub implicit_cast_defaults: ImplicitCastConfig,
@@ -56,8 +55,7 @@ pub struct AssemblerConfig {
 impl AssemblerConfig {
     pub fn new() -> Self {
         Self {
-            producer_stack_limit: 100,
-            filter_stack_limit: 100,
+            preprocessor_stack_limit: 100,
             pic: true,
             implicit_cast_defaults: ImplicitCastConfig {
                 narrowing: LogOn::Error,

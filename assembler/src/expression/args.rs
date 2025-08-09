@@ -570,7 +570,7 @@ macro_rules! nya {
             ) -> Node<'a, Self> {
                 nya!(oargs: $($t,)*);
                 #[allow(unused_comparisons)]
-                if args.len() < nya!(count: $($t,)*) {
+                if args.len() < nya!(count_min: $($t,)*) {
                     wrong_number_args(ctx.context, node, args, &[$(&format!("{}{}", $t::TYPE_REPR, if $t::OPTIONAL {"?"} else {""}),)* VV::TYPE_REPR], true);
                     Node(($($t::default(ctx.context, node),)* Vec::new()), node)
                 }else{

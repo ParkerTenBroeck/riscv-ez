@@ -378,24 +378,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         self.parse_expr_4(hint, 0)
     }
 
-    fn parse_char_literal(&mut self, repr: &'a str, n: NodeId<'a>) -> char {
-        let mut chars = repr.chars();
-        if let Some(ok) = chars.next() {
-            if chars.next().is_some() {
-                self.context
-                    .report_error(n, "char literal contains more than one char");
-            }
-            ok
-        } else {
-            self.context.report_error(n, "char literal empty");
-            '\0'
-        }
-    }
-
-    fn parse_string_literal(&mut self, repr: &'a str, _: NodeId<'a>) -> &'a str {
-        repr
-    }
-
     pub fn parse_arguments_delim(
         &mut self,
         init: NodeId<'a>,

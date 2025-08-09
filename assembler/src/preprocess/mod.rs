@@ -1,7 +1,4 @@
-pub mod if_else;
-
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::fmt::Write;
 
 use crate::assembler::PreProcessorCtx;
@@ -12,7 +9,6 @@ use crate::expression::Value;
 use crate::expression::ValueType;
 use crate::lex::Spanned;
 use crate::logs::LogEntry;
-use crate::preprocess::if_else::IfDef;
 use crate::{
     context::{Node, NodeId, SourceId},
     lex::{Lexer, Token},
@@ -24,13 +20,17 @@ pub struct SrcSlice<'a> {
     pub src: SourceId<'a>,
 }
 
-impl<'a> SrcSlice<'a> {
-    pub fn next(&mut self) -> Option<&'a Spanned<Token<'a>>> {
+impl<'a> Iterator for SrcSlice<'a>{
+    type Item = &'a Spanned<Token<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         let (first, rem) = self.contents.split_first()?;
         self.contents = rem;
         Some(first)
     }
+}
 
+impl<'a> SrcSlice<'a> {
     pub fn peek(&mut self) -> Option<&'a Spanned<Token<'a>>> {
         Some(self.contents.split_first()?.0)
     }
@@ -72,53 +72,48 @@ impl<'a> SrcSlice<'a> {
     }
 }
 
-pub struct ProducerStage<'a> {
+pub struct Stage<'a, T: AssemblyLanguage<'a>> {
     pub contents: SrcSlice<'a>,
     pub parent: Parent<'a>,
+    pub filter: Option<Box<dyn PreProcessorFilter<'a, T> + 'a>>,
 }
-impl<'a> ProducerStage<'a> {
-    pub fn next(&mut self) -> Option<&'a Spanned<Token<'a>>> {
+
+impl<'a, T: AssemblyLanguage<'a>> Iterator for Stage<'a, T>{
+    type Item = &'a Spanned<Token<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         self.contents.next()
     }
+}
+
+impl<'a, T: AssemblyLanguage<'a>> Stage<'a, T> {
 
     pub fn peek(&mut self) -> Option<&'a Spanned<Token<'a>>> {
         self.contents.peek()
     }
 
-    pub fn next_make<T: AssemblyLanguage<'a>>(
+    pub fn next_make(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>> {
         self.contents.make(ctx, self.parent)
     }
 
-    pub fn peek_make<T: AssemblyLanguage<'a>>(
+    pub fn peek_make(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
     ) -> Option<Node<'a, Token<'a>>> {
         self.contents.peek_make(ctx, self.parent)
     }
 }
-
-struct FilterStage<'a, T: AssemblyLanguage<'a>> {
-    filter: Box<dyn PreProcessorFilter<'a, T> + 'a>,
-    source: Option<NodeId<'a>>,
-}
-
 pub enum FilterResult<'a> {
-    Pass {
-        remove: bool,
-        token: Option<Node<'a, Token<'a>>>,
-    },
-    Consume {
-        remove: bool,
-    },
+    Pass(Option<Node<'a, Token<'a>>>),
+    Fail,
 }
 
 pub trait PreProcessorFilter<'a, T: AssemblyLanguage<'a>> {
     fn filter(
         &mut self,
-        pp: &mut PreProcessor<'a, T>,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
         token: Option<Node<'a, Token<'a>>>,
     ) -> FilterResult<'a>;
@@ -130,8 +125,7 @@ pub struct MacroDef<'a> {
 }
 
 pub struct PreProcessor<'a, T: AssemblyLanguage<'a>> {
-    producers: Vec<ProducerStage<'a>>,
-    filters: VecDeque<FilterStage<'a, T>>,
+    stack: Vec<Stage<'a, T>>,
     macros: HashMap<&'a str, MacroDef<'a>>,
 
     peek: Option<Node<'a, Token<'a>>>,
@@ -146,48 +140,29 @@ impl<'a, T: AssemblyLanguage<'a>> Default for PreProcessor<'a, T> {
 impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     pub fn new() -> Self {
         Self {
-            producers: Vec::new(),
-            filters: VecDeque::new(),
+            stack: Vec::new(),
             macros: HashMap::new(),
 
             peek: None,
         }
     }
 
-    fn add_producer(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: ProducerStage<'a>) {
-        let limit = ctx.context.config().producer_stack_limit;
-        if self.producers.len() > limit {
+    fn add_stage(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: Stage<'a, T>) {
+        let limit = ctx.context.config().preprocessor_stack_limit;
+        if self.stack.len() > limit {
             if let Some(source) = stage.parent.parent() {
                 ctx.context.report_error(
                     source,
-                    format!("preprocessor stack recursion limit hit ({limit}) for producers",),
+                    format!("preprocessor stack recursion limit hit ({limit})",),
                 );
             } else {
                 ctx.context.report_error_locless(format!(
-                    "preprocessor stack recursion limit hit ({limit}) for producers"
+                    "preprocessor stack recursion limit hit ({limit})"
                 ));
             }
-            self.producers.clear();
+            self.stack.clear();
         } else {
-            self.producers.push(stage);
-        }
-    }
-
-    fn add_filter(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, stage: FilterStage<'a, T>) {
-        let limit = ctx.context.config().filter_stack_limit;
-        if self.filters.len() > limit {
-            if let Some(source) = stage.source {
-                ctx.context.report_error(
-                    source,
-                    format!("preprocessor stack recursion limit hit ({limit}) for filters"),
-                );
-            } else {
-                ctx.context.report_error_locless(format!(
-                    "preprocessor stack recursion limit hit ({limit}) for filters"
-                ));
-            }
-        } else {
-            self.filters.push_back(stage);
+            self.stack.push(stage);
         }
     }
 
@@ -197,22 +172,21 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         path: impl Into<String>,
     ) -> Option<SourceId<'a>> {
         self.macros.clear();
-        self.filters.clear();
-        self.producers.clear();
+        self.stack.clear();
         self.peek = None;
 
         self.include(&mut ctx, path, Parent::None)
     }
 
     pub fn top_parent(&mut self) -> Parent<'a> {
-        self.producers
+        self.stack
             .last()
             .map(|p| p.parent)
             .unwrap_or(Parent::None)
     }
 
     pub fn parse_block(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> SrcSlice<'a> {
-        let Some(top) = self.producers.last_mut() else {
+        let Some(top) = self.stack.last_mut() else {
             return SrcSlice::new(&[], ctx.context.eof().source);
         };
 
@@ -261,6 +235,46 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         SrcSlice::new(&slice[..size], top.contents.src)
     }
 
+    fn parse_char_literal(
+        &mut self,
+        ctx: &mut PreProcessorCtx<'a, '_, T>,
+        repr: Spanned<&'a str>,
+        source: SourceId<'a>,
+        parent: Parent<'a>,
+    ) -> char {
+        let mut chars = repr.val.chars();
+        if let Some(ok) = chars.next() {
+            if chars.next().is_some() {
+                let node = ctx.context.node(NodeInfo {
+                    span: repr.span,
+                    source,
+                    parent,
+                });
+                ctx.context
+                    .report_error(node, "char literal contains more than one char");
+            }
+            ok
+        } else {
+            let node = ctx.context.node(NodeInfo {
+                span: repr.span,
+                source,
+                parent,
+            });
+            ctx.context.report_error(node, "char literal empty");
+            '\0'
+        }
+    }
+
+    fn parse_string_literal(
+        &mut self,
+        _ctx: &mut PreProcessorCtx<'a, '_, T>,
+        repr: Spanned<&'a str>,
+        _source: SourceId<'a>,
+        _parent: Parent<'a>,
+    ) -> &'a str {
+        repr.val
+    }
+
     fn parse_file(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
@@ -274,7 +288,33 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                 let mut tokens = Vec::new();
                 for token in Lexer::new(src.contents).include_comments() {
                     match token {
-                        Ok(token) => tokens.push(token),
+                        Ok(token) => match token {
+                            Spanned {
+                                span,
+                                val: Token::UnparsedCharLiteral(str),
+                            } => tokens.push(Spanned::new(
+                                Token::CharLiteral(self.parse_char_literal(
+                                    ctx,
+                                    Spanned::new(str, span),
+                                    src,
+                                    parent,
+                                )),
+                                span,
+                            )),
+                            Spanned {
+                                span,
+                                val: Token::UnparsedStringLiteral(str),
+                            } => tokens.push(Spanned::new(
+                                Token::StringLiteral(self.parse_string_literal(
+                                    ctx,
+                                    Spanned::new(str, span),
+                                    src,
+                                    parent,
+                                )),
+                                span,
+                            )),
+                            token => tokens.push(token),
+                        },
                         Err(err) => {
                             ctx.context.report_error(
                                 ctx.context.node(NodeInfo {
@@ -312,11 +352,12 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         parent: Parent<'a>,
     ) -> Option<SourceId<'a>> {
         let src = self.parse_file(ctx, path, parent)?;
-        self.add_producer(
+        self.add_stage(
             ctx,
-            ProducerStage {
+            Stage {
                 contents: src,
                 parent,
+                filter: None,
             },
         );
         Some(src.src)
@@ -326,17 +367,26 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         if self.peek.is_some() {
             return self.peek.take();
         }
-        while let Some(top) = self.producers.last_mut() {
+        while let Some(top) = self.stack.last_mut() {
             if let Some(next) = top.next_make(ctx) {
+                match next {
+                    Node(Token::MultiLineComment(str), n)
+                    | Node(Token::SingleLineComment(str), n) => {
+                        let (lang, mut ctx) = ctx.asm(self).split_lang();
+                        lang.encounter_comment(&mut ctx, str, n);
+                        continue;
+                    }
+                    _ => {}
+                }
                 return Some(next);
             } else {
-                self.producers.pop();
+                self.stack.pop();
             }
         }
         None
     }
 
-    fn parse_if(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, n: NodeId<'a>) {
+    fn parse_if(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, _: NodeId<'a>) {
         let res = ctx.eval(self).expr(ValueType::Bool);
 
         let parent = self.top_parent();
@@ -387,7 +437,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
 
         if let Some(contents) = result {
-            self.producers.push(ProducerStage { contents, parent });
+            self.stack.push(Stage { contents, parent, filter: None });
         }
     }
 
@@ -410,17 +460,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             },
             "def" => match self.stack_next(ctx) {
                 Some(Node(Token::Ident(str), node)) => {
-                    self.add_filter(
-                        ctx,
-                        FilterStage {
-                            filter: Box::new(IfDef {
-                                source: node,
-                                condition: !self.macros.contains_key(str),
-                                else_loc: None,
-                            }),
-                            source: Some(node),
-                        },
-                    );
+                    return Some(Node(if self.macros.contains_key(str) {Token::TrueLiteral} else {Token::FalseLiteral}, ctx.context.merge_nodes(n, node)))
                 }
                 t => _ = ctx.context.unexpected_token(t, Token::Ident(""), false),
             },
@@ -471,14 +511,15 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         n: NodeId<'a>,
     ) -> bool {
         if let Some(value) = self.macros.get(ident) {
-            self.add_producer(
+            self.add_stage(
                 ctx,
-                ProducerStage {
+                Stage {
                     contents: value.contents,
                     parent: Parent::Pasted {
                         parent: n,
                         definition: Some(value.definition),
                     },
+                    filter: None,
                 },
             );
             return false;
@@ -493,30 +534,15 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         if self.peek.is_some() {
             return self.peek.take();
         }
-        loop {
+        'outer: loop {
             let mut next = self.stack_next(ctx);
-            let mut filters = VecDeque::new();
-            std::mem::swap(&mut filters, &mut self.filters);
-            let mut contin = false;
-            filters.retain_mut(|f| {
-                if contin {
-                    return true;
-                }
-                match f.filter.filter(self, ctx, next) {
-                    FilterResult::Pass { remove, token } => {
-                        next = token;
-                        !remove
-                    }
-                    FilterResult::Consume { remove } => {
-                        contin = true;
-                        !remove
+            for stage in self.stack.iter_mut().rev(){
+                if let Some(filter) = &mut stage.filter{
+                    match filter.filter(ctx, next){
+                        FilterResult::Pass(node) => next = node,
+                        FilterResult::Fail => continue 'outer,
                     }
                 }
-            });
-            filters.append(&mut self.filters);
-            self.filters = filters;
-            if contin {
-                continue;
             }
 
             match next {

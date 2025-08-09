@@ -81,6 +81,15 @@ pub struct NodeInfo<'a> {
     pub source: SourceId<'a>,
     pub parent: Parent<'a>,
 }
+impl<'a> NodeInfo<'a> {
+    pub fn top(mut self: &'a Self) -> NodeId<'a> {
+        
+        while let Some(next) = self.parent.parent(){
+            self = next;
+        }
+        self
+    }
+}
 
 impl<'a> PartialEq for Source<'a> {
     fn eq(&self, other: &Self) -> bool {
@@ -155,43 +164,35 @@ impl<'a> Context<'a> {
     }
 
     pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a> {
-        return self.node(NodeInfo {
-            span: left.span.combine(right.span),
-            source: left.source,
-            parent: left.parent,
-            // included_by: None,
-            // invoked_by: lhs.invoked_by,
-        });
-        // // TODO optimizing this might be something to do
-        // fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
-        //     let mut nya = Some(start);
-        //     while let Some(thing) = nya {
-        //         thingies.push(thing);
-        //         nya = thing.invoked_by;
-        //     }
-        // }
-        // let mut lhs = Vec::new();
-        // let mut rhs = Vec::new();
-        // meow(&mut lhs, left);
-        // meow(&mut rhs, right);
+        // TODO optimizing this might be something to do
+        fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
+            let mut nya = Some(start);
+            while let Some(thing) = nya {
+                thingies.push(thing);
+                nya = thing.parent.parent();
+            }
+        }
+        let mut lhs = Vec::new();
+        let mut rhs = Vec::new();
+        meow(&mut lhs, left);
+        meow(&mut rhs, right);
 
-        // for (lhs, rhs) in lhs.iter().rev().zip(rhs.iter().rev()) {
-        //     if lhs != rhs {
-        //         if lhs.source != rhs.source {
-        //             panic!("uhhhhhhh, {left:?}, {right:?}")
-        //         } else {
-        //             return self.node(NodeInfo {
-        //                 span: lhs.span.combine(rhs.span),
-        //                 source: lhs.source,
-        //                 child: lhs.child,
-        //                 // included_by: None,
-        //                 // invoked_by: lhs.invoked_by,
-        //             });
-        //         }
-        //     }
-        // }
-        // left
-        // todo!()
+        for (lhs, rhs) in lhs.iter().rev().zip(rhs.iter().rev()) {
+            if lhs != rhs {
+                if lhs.source != rhs.source {
+                    panic!("uhhhhhhh, {left:?}, {right:?}")
+                } else {
+                    return self.node(NodeInfo {
+                        span: lhs.span.combine(rhs.span),
+                        source: lhs.source,
+                        parent: lhs.parent,
+                        // included_by: None,
+                        // invoked_by: lhs.invoked_by,
+                    });
+                }
+            }
+        }
+        left
     }
 
     pub fn alloc_str(&self, data: impl AsRef<str>) -> &'a str {

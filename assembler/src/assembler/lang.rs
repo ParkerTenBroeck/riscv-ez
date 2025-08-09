@@ -102,6 +102,12 @@ pub trait AssemblyLanguage<'a>: Sized {
     );
 
     fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>);
+    fn encounter_comment(
+        &mut self,
+        ctx: &mut LangCtx<'a, '_, Self>,
+        comment: &'a str,
+        n: NodeId<'a>,
+    );
 
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult;
 }
