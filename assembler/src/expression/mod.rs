@@ -1,8 +1,11 @@
 pub mod args;
-pub mod value;
-pub use value::*;
 pub mod base;
+pub mod str;
+pub mod value;
+
 pub use base::*;
+pub use str::*;
+pub use value::*;
 
 use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
@@ -212,10 +215,42 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 Node(Value::Constant(Constant::Bool(false)), node)
             }
             Some(Node(Token::StringLiteral(str), node)) => {
-                Node(Value::Constant(Constant::String(str)), node)
+                use crate::lex::str::StringKind;
+                use crate::lex::str::TokenString;
+                Node(
+                    Value::Constant(match str {
+                        TokenString::Unparsed(str, char_kind) => {
+                            self.context.report_error(node, "encountered unparsed string literal during expression evaluation. this is a error in the assembler please report an issue");
+                            match char_kind {
+                                StringKind::Regular => Constant::Str(AsmStr::Str(str)),
+                                StringKind::Byte => Constant::Str(AsmStr::ByteStr(str.as_bytes())),
+                                StringKind::CStr => Constant::Str(AsmStr::CStr(str.as_bytes())),
+                            }
+                        }
+                        TokenString::ParsedReg(s) => Constant::Str(AsmStr::Str(s)),
+                        TokenString::ParsedByte(b) => Constant::Str(AsmStr::ByteStr(b)),
+                        TokenString::ParsedC(c) => Constant::Str(AsmStr::CStr(c)),
+                    }),
+                    node,
+                )
             }
             Some(Node(Token::CharLiteral(char), node)) => {
-                Node(Value::Constant(Constant::Char(char)), node)
+                use crate::lex::str::CharKind;
+                use crate::lex::str::TokenChar;
+                Node(
+                    Value::Constant(match char {
+                        TokenChar::Unparsed(_, char_kind) => {
+                            self.context.report_error(node, "encountered unparsed char literal during expression evaluation. this is a error in the assembler please report an issue");
+                            match char_kind {
+                                CharKind::Regular => Constant::Char('\0'),
+                                CharKind::Byte => Constant::U8(0),
+                            }
+                        }
+                        TokenChar::ParsedReg(c) => Constant::Char(c),
+                        TokenChar::ParsedByte(b) => Constant::U8(b),
+                    }),
+                    node,
+                )
             }
             Some(Node(Token::NumericLiteral(num), node)) => Node(
                 self.lang
@@ -241,11 +276,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     [
                         Token::Ident(""),
                         Token::LPar,
-                        Token::CharLiteral('\0'),
-                        Token::StringLiteral(""),
+                        Token::CharLiteral(Default::default()),
+                        Token::StringLiteral(Default::default()),
                         Token::FalseLiteral,
                         Token::TrueLiteral,
-                        Token::NumericLiteral(Number::empty()),
+                        Token::NumericLiteral(Number::EMPTY),
                     ]
                     .iter()
                     .delim("|"),

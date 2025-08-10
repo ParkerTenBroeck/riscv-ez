@@ -1,10 +1,13 @@
 pub mod number;
-pub mod sstr;
+pub mod small_str;
+pub mod str;
 pub mod token;
 
 pub use number::*;
 use std::{iter::Peekable, str::Chars};
 pub use token::*;
+
+use crate::lex::str::{CharKind, StringKind};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Position {
@@ -13,29 +16,45 @@ pub(super) struct Position {
     col: usize,
 }
 
-type LexerResult<'a> = Result<Spanned<Token<'a>>, Spanned<LexError>>;
+type LexerResult<'a> = Result<Spanned<Token<'a>>, Spanned<LexError<'a>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LexError {
-    InvalidChar(char),
+pub enum LexError<'a> {
+    UnknownChar(char),
     UnclosedCharLiteral,
     UnclosedMultiLineComment,
     UnclosedStringLiteral,
     EmptyExponent,
     NoNumberAfterBasePrefix,
+    ByteCharLiteralOutOfRange,
+    CharLiteralOverflow,
+    EmpyCharLiteral,
     NumberParseError(NumberError),
+    UnknownCharLiteralPrefix(&'a str),
+    UnknownStringLiteralPrefix(&'a str),
 }
 
-impl std::fmt::Display for LexError {
+impl<'a> std::fmt::Display for LexError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LexError::InvalidChar(char) => write!(f, "invalid character {char:?}"),
+            LexError::UnknownChar(char) => write!(f, "unknown character {char:?}"),
             LexError::UnclosedCharLiteral => write!(f, "unclosed char literal"),
             LexError::UnclosedMultiLineComment => write!(f, "unclosed multi line comment"),
             LexError::UnclosedStringLiteral => write!(f, "unclosed string literal"),
             LexError::EmptyExponent => write!(f, "empty exponent"),
             LexError::NoNumberAfterBasePrefix => write!(f, "no number after base prefix"),
             LexError::NumberParseError(err) => write!(f, "{err}"),
+            LexError::ByteCharLiteralOutOfRange => write!(f, "non-ASCII character in byte literal"),
+            LexError::EmpyCharLiteral => write!(f, "empty char literal"),
+            LexError::CharLiteralOverflow => {
+                write!(f, "char literal may only contain one codepoint")
+            }
+            LexError::UnknownCharLiteralPrefix(prefix) => {
+                write!(f, "unknown char literal prefix {prefix:?}")
+            }
+            LexError::UnknownStringLiteralPrefix(prefix) => {
+                write!(f, "unknown string literal prefix {prefix:?}")
+            }
         }
     }
 }
@@ -72,9 +91,9 @@ enum State {
     MultiLineOpen1(u16),
     MultiLineClose1(u16),
 
-    CharLiteral,
+    CharLiteral { has_escape: bool },
 
-    String,
+    String { has_escape: bool },
 
     EscapeStart(EscapeReturn),
 
@@ -103,7 +122,7 @@ pub struct Lexer<'a> {
     current: Position,
     escape_start: Position,
 
-    numeric_start: usize,
+    numeric_or_string_start: usize,
     type_hint: TypeHint,
     suffix_start: usize,
 
@@ -128,7 +147,7 @@ impl<'a> Lexer<'a> {
             current: Position::default(),
             escape_start: Position::default(),
             include_comments: false,
-            numeric_start: 0,
+            numeric_or_string_start: 0,
             suffix_start: 0,
             type_hint: TypeHint::Int,
         }
@@ -203,8 +222,14 @@ impl<'a> Iterator for Lexer<'a> {
                     Some('>') => self.state = State::Gt,
                     Some('!') => self.state = State::Not,
                     Some('&') => self.state = State::And,
-                    Some('"') => self.state = State::String,
-                    Some('\'') => self.state = State::CharLiteral,
+                    Some('"') => {
+                        self.numeric_or_string_start = self.current.offset;
+                        self.state = State::String { has_escape: false }
+                    }
+                    Some('\'') => {
+                        self.numeric_or_string_start = self.current.offset;
+                        self.state = State::CharLiteral { has_escape: false }
+                    }
 
                     Some('(') => ret = Some(Ok(Token::LPar)),
                     Some(')') => ret = Some(Ok(Token::RPar)),
@@ -216,18 +241,18 @@ impl<'a> Iterator for Lexer<'a> {
                     Some(',') => ret = Some(Ok(Token::Comma)),
 
                     Some('0') => {
-                        self.numeric_start = self.current.offset;
+                        self.numeric_or_string_start = self.current.offset;
                         self.state = State::NumericStartZero;
                     }
                     Some('1'..='9') => {
-                        self.numeric_start = self.current.offset;
+                        self.numeric_or_string_start = self.current.offset;
                         self.state = State::NumericStart;
                     }
 
                     Some(c) if c.is_whitespace() => self.start = processing,
                     Some(c) if ident_start(c) => self.state = State::Ident,
 
-                    Some(c) => ret = Some(Err(LexError::InvalidChar(c))),
+                    Some(c) => ret = Some(Err(LexError::UnknownChar(c))),
 
                     None => {
                         self.state = State::Eof;
@@ -300,6 +325,14 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 State::Ident => match c {
                     Some(c) if ident_continue(c) => {}
+                    Some('"') => {
+                        self.numeric_or_string_start = self.current.offset;
+                        self.state = State::String { has_escape: false }
+                    }
+                    Some('\'') => {
+                        self.numeric_or_string_start = self.current.offset;
+                        self.state = State::CharLiteral { has_escape: false }
+                    }
                     Some(':') => {
                         ret = Some(Ok(Token::Label(
                             &self.str[self.start.offset..self.current.offset],
@@ -315,11 +348,49 @@ impl<'a> Iterator for Lexer<'a> {
                         &self.str[self.start.offset + "#".len()..self.current.offset]
                     ))),
                 },
-                State::CharLiteral => match c {
-                    Some('\'') => {
-                        ret = Some(Ok(Token::UnparsedCharLiteral(
-                            self.str[self.start.offset + 1..self.current.offset].into(),
-                        )))
+                State::CharLiteral { has_escape } => match c {
+                    Some('\'') => 'char: {
+                        let prefix = &self.str[self.start.offset..self.numeric_or_string_start];
+                        let kind = match prefix {
+                            "" => CharKind::Regular,
+                            "b" => CharKind::Byte,
+                            _ => {
+                                ret = Some(Err(LexError::UnknownCharLiteralPrefix(prefix)));
+                                break 'char;
+                            }
+                        };
+                        let str = &self.str[self.numeric_or_string_start + 1..self.current.offset];
+
+                        if str.is_empty() {
+                            ret = Some(Err(LexError::EmpyCharLiteral))
+                        } else if has_escape {
+                            ret = Some(Ok(Token::CharLiteral(str::TokenChar::Unparsed(
+                                str.into(),
+                                kind,
+                            ))))
+                        } else {
+                            let mut iter = str.chars();
+                            let char = iter.next().unwrap();
+                            if iter.next().is_some() {
+                                ret = Some(Err(LexError::CharLiteralOverflow))
+                            } else {
+                                match kind {
+                                    CharKind::Regular => {
+                                        ret = Some(Ok(Token::CharLiteral(
+                                            str::TokenChar::ParsedReg(char),
+                                        )))
+                                    }
+                                    CharKind::Byte if char.is_ascii() => {
+                                        ret = Some(Ok(Token::CharLiteral(
+                                            str::TokenChar::ParsedByte(char as u8),
+                                        )))
+                                    }
+                                    CharKind::Byte => {
+                                        ret = Some(Err(LexError::ByteCharLiteralOutOfRange))
+                                    }
+                                };
+                            }
+                        }
                     }
                     Some('\n') => ret = Some(Err(LexError::UnclosedCharLiteral)),
                     Some('\\') => {
@@ -330,11 +401,30 @@ impl<'a> Iterator for Lexer<'a> {
                     None => ret = Some(Err(LexError::UnclosedCharLiteral)),
                 },
 
-                State::String => match c {
-                    Some('"') => {
-                        ret = Some(Ok(Token::UnparsedStringLiteral(
-                            self.str[self.start.offset + 1..self.current.offset].into(),
-                        )))
+                State::String { has_escape } => match c {
+                    Some('"') => 'str: {
+                        let prefix = &self.str[self.start.offset..self.numeric_or_string_start];
+                        let kind = match prefix {
+                            "" => StringKind::Regular,
+                            "b" => StringKind::Byte,
+                            "c" => StringKind::CStr,
+                            _ => {
+                                ret = Some(Err(LexError::UnknownStringLiteralPrefix(prefix)));
+                                break 'str;
+                            }
+                        };
+                        let str = &self.str[self.numeric_or_string_start + 1..self.current.offset];
+                        if has_escape {
+                            ret = Some(Ok(Token::StringLiteral(str::TokenString::Unparsed(
+                                str, kind,
+                            ))))
+                        } else {
+                            ret = Some(Ok(Token::StringLiteral(match kind {
+                                StringKind::Regular => str::TokenString::ParsedReg(str),
+                                StringKind::Byte => str::TokenString::ParsedByte(str.as_bytes()),
+                                StringKind::CStr => str::TokenString::ParsedC(str.as_bytes()),
+                            })));
+                        }
                     }
                     Some('\\') => {
                         self.escape_start = self.current;
@@ -345,8 +435,8 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 State::EscapeStart(ret_state) => {
                     self.state = match ret_state {
-                        EscapeReturn::String => State::String,
-                        EscapeReturn::Char => State::CharLiteral,
+                        EscapeReturn::String => State::String { has_escape: true },
+                        EscapeReturn::Char => State::CharLiteral { has_escape: true },
                     };
                 }
                 State::SingleLine(start) => match c {
@@ -411,7 +501,7 @@ impl<'a> Iterator for Lexer<'a> {
                         consume = false;
                         ret = Some(
                             Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 TypeHint::Int,
                             )
                             .map(Token::NumericLiteral)
@@ -421,17 +511,17 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 State::NumericStartZero => match c {
                     Some('b') => {
-                        self.numeric_start = processing.offset;
+                        self.numeric_or_string_start = processing.offset;
                         self.state = State::NumericBaseStart;
                         self.type_hint = TypeHint::Bin;
                     }
                     Some('o') => {
-                        self.numeric_start = processing.offset;
+                        self.numeric_or_string_start = processing.offset;
                         self.state = State::NumericBaseStart;
                         self.type_hint = TypeHint::Oct;
                     }
                     Some('x') => {
-                        self.numeric_start = processing.offset;
+                        self.numeric_or_string_start = processing.offset;
                         self.state = State::NumericBaseStart;
                         self.type_hint = TypeHint::Hex;
                     }
@@ -449,7 +539,7 @@ impl<'a> Iterator for Lexer<'a> {
                         consume = false;
                         ret = Some(
                             Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 TypeHint::Int,
                             )
                             .map(Token::NumericLiteral)
@@ -472,7 +562,7 @@ impl<'a> Iterator for Lexer<'a> {
                         consume = false;
                         ret = Some(
                             Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 TypeHint::Float,
                             )
                             .map(Token::NumericLiteral)
@@ -514,7 +604,7 @@ impl<'a> Iterator for Lexer<'a> {
                         consume = false;
                         ret = Some(
                             Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 TypeHint::Float,
                             )
                             .map(Token::NumericLiteral)
@@ -544,7 +634,7 @@ impl<'a> Iterator for Lexer<'a> {
                         consume = false;
                         ret = Some(
                             Number::new(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 self.type_hint,
                             )
                             .map(Token::NumericLiteral)
@@ -556,10 +646,10 @@ impl<'a> Iterator for Lexer<'a> {
                     Some('0'..='9' | 'a'..='z' | 'A'..='Z' | '_') => {}
                     _ => {
                         consume = false;
-                        let len = self.suffix_start - self.numeric_start;
+                        let len = self.suffix_start - self.numeric_or_string_start;
                         ret = Some(
                             Number::new_with_suffix(
-                                &self.str[self.numeric_start..self.current.offset],
+                                &self.str[self.numeric_or_string_start..self.current.offset],
                                 len,
                                 self.type_hint,
                             )

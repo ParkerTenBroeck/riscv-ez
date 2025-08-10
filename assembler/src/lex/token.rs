@@ -1,3 +1,5 @@
+use crate::lex::str::{TokenChar, TokenString};
+
 use super::Number;
 use std::fmt::{Display, Formatter};
 
@@ -54,11 +56,9 @@ pub enum Token<'a> {
     Label(&'a str),
     Ident(&'a str),
 
-    UnparsedStringLiteral(&'a str),
-    StringLiteral(&'a str),
+    StringLiteral(TokenString<'a>),
+    CharLiteral(TokenChar<'a>),
     NumericLiteral(Number<'a>),
-    UnparsedCharLiteral(&'a str),
-    CharLiteral(char),
     FalseLiteral,
     TrueLiteral,
 
@@ -116,14 +116,10 @@ impl<'a> Display for Token<'a> {
             Token::Label(_) => write!(f, "label"),
             Token::Ident(ident) if f.alternate() => write!(f, "'{ident}'"),
             Token::Ident(_) => write!(f, "identifier"),
-            Token::UnparsedStringLiteral(str) if f.alternate() => write!(f, "{str:?}"),
-            Token::UnparsedStringLiteral(_) => write!(f, "string literal"),
             Token::StringLiteral(str) if f.alternate() => write!(f, "{str:?}"),
             Token::StringLiteral(_) => write!(f, "string literal"),
             Token::NumericLiteral(number) if f.alternate() => write!(f, "{}", number.get_full()),
             Token::NumericLiteral(_) => write!(f, "numeric literal"),
-            Token::UnparsedCharLiteral(char) if f.alternate() => write!(f, "{char:?}"),
-            Token::UnparsedCharLiteral(_) => write!(f, "char literal"),
             Token::CharLiteral(char) if f.alternate() => write!(f, "{char:?}"),
             Token::CharLiteral(_) => write!(f, "char literal"),
             Token::FalseLiteral => write!(f, "false"),

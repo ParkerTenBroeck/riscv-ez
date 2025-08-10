@@ -6,6 +6,7 @@ use std::ops::Index;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::config::ImplicitCastConfig;
 use crate::context::{Context, NodeId};
+use crate::expression::AsmStr;
 
 pub trait AssemblyLabel<'a>:
     Sized + Default + std::fmt::Display + std::fmt::Debug + Copy + Clone + Eq + PartialEq
@@ -42,7 +43,7 @@ pub trait CustomValueType<'a>: Debug + Clone + Copy + PartialEq + Eq + Display +
 pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
     Any,
 
-    String,
+    Str,
 
     Indexed,
     Register,
@@ -71,7 +72,7 @@ impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for ValueType<'a, L> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (ValueType::Any, ValueType::Any) => true,
-            (ValueType::String, ValueType::String) => true,
+            (ValueType::Str, ValueType::Str) => true,
             (ValueType::Indexed, ValueType::Indexed) => true,
             (ValueType::Register, ValueType::Register) => true,
             (ValueType::Label, ValueType::Label) => true,
@@ -105,7 +106,7 @@ impl<'a, L: AssemblyLanguage<'a>> Display for ValueType<'a, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ValueType::Any => write!(f, "any"),
-            ValueType::String => write!(f, "string"),
+            ValueType::Str => write!(f, "str"),
             ValueType::Indexed => write!(f, "indexed"),
             ValueType::Register => write!(f, "register"),
             ValueType::Label => write!(f, "label"),
@@ -130,7 +131,7 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
     pub fn default_value(&self) -> Value<'a, L> {
         match self {
             ValueType::Any => Value::Constant(Constant::I32(0)),
-            ValueType::String => Value::Constant(Constant::String("")),
+            ValueType::Str => Value::Constant(Constant::Str(Default::default())),
             ValueType::Indexed => Value::Indexed(L::Indexed::default()),
             ValueType::Register => Value::Register(L::Reg::default()),
             ValueType::Label => Value::Label(Default::default()),
@@ -318,7 +319,7 @@ pub enum Constant<'a> {
     F32(f32),
     F64(f64),
 
-    String(&'a str),
+    Str(AsmStr<'a>),
     Char(char),
     Bool(bool),
 }
@@ -340,7 +341,7 @@ impl<'a> Constant<'a> {
             Constant::U64(_) => ValueType::U64,
             Constant::F32(_) => ValueType::F32,
             Constant::F64(_) => ValueType::F64,
-            Constant::String(_) => ValueType::String,
+            Constant::Str(_) => ValueType::Str,
             Constant::Char(_) => ValueType::Char,
             Constant::Bool(_) => ValueType::Bool,
         }
@@ -380,7 +381,7 @@ impl<'a> Constant<'a> {
             Constant::U64(_) => 8,
             Constant::F32(_) => 4,
             Constant::F64(_) => 8,
-            Constant::String(_) => 1,
+            Constant::Str(_) => 1,
             Constant::Char(_) => 4,
             Constant::Bool(_) => 1,
         }
@@ -398,7 +399,7 @@ impl<'a> Constant<'a> {
             Constant::U64(_) => 8,
             Constant::F32(_) => 4,
             Constant::F64(_) => 8,
-            Constant::String(str) => str.len() as u32,
+            Constant::Str(str) => str.len() as u32,
             Constant::Char(_) => 4,
             Constant::Bool(_) => 1,
         }
@@ -418,7 +419,7 @@ impl<'a> Display for Constant<'a> {
             Constant::U64(c) => write!(f, "{c}"),
             Constant::F32(c) => write!(f, "{c}"),
             Constant::F64(c) => write!(f, "{c}"),
-            Constant::String(c) => write!(f, "{c}"),
+            Constant::Str(c) => write!(f, "{c}"),
             Constant::Char(c) => write!(f, "{c}"),
             Constant::Bool(c) => write!(f, "{c}"),
         }
@@ -524,7 +525,7 @@ macro_rules! implicit_cast_impl {
                     )*
                     Constant::Char(_) => implicit_cast_impl!(!error, node, ctx, Char, $into),
                     Constant::Bool(_) => implicit_cast_impl!(!error, node, ctx, Bool, $into),
-                    Constant::String(_) => implicit_cast_impl!(!error_hard, node, ctx, Str, $into),
+                    Constant::Str(_) => implicit_cast_impl!(!error_hard, node, ctx, Str, $into),
                 }
             }
         }
@@ -701,7 +702,7 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::Any => false,
             ValueType::Register => false,
             ValueType::Indexed => false,
-            ValueType::String => false,
+            ValueType::Str => false,
             ValueType::Label => false,
             ValueType::I8 => true,
             ValueType::I16 => true,
@@ -723,7 +724,7 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::Any => None,
             ValueType::Register => None,
             ValueType::Indexed => None,
-            ValueType::String => None,
+            ValueType::Str => None,
             ValueType::Label => None,
             ValueType::I8 => Some("i8"),
             ValueType::I16 => Some("i16"),

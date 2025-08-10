@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fmt::Write;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 
 use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
@@ -7,7 +10,11 @@ use crate::context::NodeInfo;
 use crate::context::Parent;
 use crate::expression::Value;
 use crate::expression::ValueType;
+use crate::expression::args::AsmStrArg;
+use crate::lex::Number;
 use crate::lex::Spanned;
+use crate::lex::str::TokenChar;
+use crate::lex::str::TokenString;
 use crate::logs::LogEntry;
 use crate::{
     context::{Node, NodeId, SourceId},
@@ -20,7 +27,7 @@ pub struct SrcSlice<'a> {
     pub src: SourceId<'a>,
 }
 
-impl<'a> Iterator for SrcSlice<'a>{
+impl<'a> Iterator for SrcSlice<'a> {
     type Item = &'a Spanned<Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -78,7 +85,7 @@ pub struct Stage<'a, T: AssemblyLanguage<'a>> {
     pub filter: Option<Box<dyn PreProcessorFilter<'a, T> + 'a>>,
 }
 
-impl<'a, T: AssemblyLanguage<'a>> Iterator for Stage<'a, T>{
+impl<'a, T: AssemblyLanguage<'a>> Iterator for Stage<'a, T> {
     type Item = &'a Spanned<Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -87,7 +94,6 @@ impl<'a, T: AssemblyLanguage<'a>> Iterator for Stage<'a, T>{
 }
 
 impl<'a, T: AssemblyLanguage<'a>> Stage<'a, T> {
-
     pub fn peek(&mut self) -> Option<&'a Spanned<Token<'a>>> {
         self.contents.peek()
     }
@@ -169,7 +175,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     pub fn begin(
         &mut self,
         mut ctx: PreProcessorCtx<'a, '_, T>,
-        path: impl Into<String>,
+        path: &'a Path,
     ) -> Option<SourceId<'a>> {
         self.macros.clear();
         self.stack.clear();
@@ -179,15 +185,12 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     }
 
     pub fn top_parent(&mut self) -> Parent<'a> {
-        self.stack
-            .last()
-            .map(|p| p.parent)
-            .unwrap_or(Parent::None)
+        self.stack.last().map(|p| p.parent).unwrap_or(Parent::None)
     }
 
     pub fn parse_block(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) -> SrcSlice<'a> {
         let Some(top) = self.stack.last_mut() else {
-            return SrcSlice::new(&[], ctx.context.eof().source);
+            return SrcSlice::new(&[], ctx.context.src());
         };
 
         let first = if let Some(peek) = self.peek
@@ -238,117 +241,139 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
     fn parse_char_literal(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
-        repr: Spanned<&'a str>,
+        repr: Spanned<TokenChar<'a>>,
         source: SourceId<'a>,
         parent: Parent<'a>,
-    ) -> char {
-        let mut chars = repr.val.chars();
-        if let Some(ok) = chars.next() {
-            if chars.next().is_some() {
-                let node = ctx.context.node(NodeInfo {
-                    span: repr.span,
-                    source,
-                    parent,
-                });
-                ctx.context
-                    .report_error(node, "char literal contains more than one char");
-            }
-            ok
-        } else {
-            let node = ctx.context.node(NodeInfo {
-                span: repr.span,
-                source,
-                parent,
-            });
-            ctx.context.report_error(node, "char literal empty");
-            '\0'
-        }
+    ) -> TokenChar<'a> {
+        // let mut chars = repr.val.chars();
+        // if let Some(ok) = chars.next() {
+        //     if chars.next().is_some() {
+        //         let node = ctx.context.node(NodeInfo {
+        //             span: repr.span,
+        //             source,
+        //             parent,
+        //         });
+        //         ctx.context
+        //             .report_error(node, "char literal contains more than one char");
+        //     }
+        //     ok
+        // } else {
+        //     let node = ctx.context.node(NodeInfo {
+        //         span: repr.span,
+        //         source,
+        //         parent,
+        //     });
+        //     ctx.context.report_error(node, "char literal empty");
+        //     '\0'
+        // }
+        todo!()
     }
 
     fn parse_string_literal(
         &mut self,
         _ctx: &mut PreProcessorCtx<'a, '_, T>,
-        repr: Spanned<&'a str>,
+        repr: Spanned<TokenString<'a>>,
         _source: SourceId<'a>,
         _parent: Parent<'a>,
-    ) -> &'a str {
+    ) -> TokenString<'a> {
         repr.val
     }
 
     fn parse_file(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
-        path: impl Into<String>,
+        path: &'a Path,
         parent: Parent<'a>,
     ) -> Option<SrcSlice<'a>> {
-        let path = path.into();
-        let result = ctx.context.get_source_from_path(&path);
-        match result {
-            Ok(src) => {
-                let mut tokens = Vec::new();
-                for token in Lexer::new(src.contents).include_comments() {
-                    match token {
-                        Ok(token) => match token {
-                            Spanned {
-                                span,
-                                val: Token::UnparsedCharLiteral(str),
-                            } => tokens.push(Spanned::new(
-                                Token::CharLiteral(self.parse_char_literal(
-                                    ctx,
-                                    Spanned::new(str, span),
-                                    src,
-                                    parent,
-                                )),
-                                span,
-                            )),
-                            Spanned {
-                                span,
-                                val: Token::UnparsedStringLiteral(str),
-                            } => tokens.push(Spanned::new(
-                                Token::StringLiteral(self.parse_string_literal(
-                                    ctx,
-                                    Spanned::new(str, span),
-                                    src,
-                                    parent,
-                                )),
-                                span,
-                            )),
-                            token => tokens.push(token),
-                        },
-                        Err(err) => {
-                            ctx.context.report_error(
-                                ctx.context.node(NodeInfo {
-                                    span: err.span,
-                                    source: src,
-                                    parent,
-                                }),
-                                format!("lexer error: {:?}", err.val),
-                            );
-                        }
-                    }
-                }
-                Some(SrcSlice::new(
-                    ctx.context.alloc_slice(tokens.as_slice()),
-                    src,
-                ))
-            }
+        let result = ctx.context.get_source_from_path(path);
+        let src = match result {
+            Ok(stc) => stc,
             Err(error) => {
                 if let Some(source) = parent.parent() {
-                    ctx.context
-                        .report_error(source, format!("failed to load '{path}': {error}"));
+                    ctx.context.report_error(
+                        source,
+                        format!("failed to load '{}': {error}", path.display()),
+                    );
                 } else {
-                    ctx.context
-                        .report_error_locless(format!("failed to load '{path}': {error}"));
+                    ctx.context.report_error_locless(format!(
+                        "failed to load '{}': {error}",
+                        path.display()
+                    ));
                 }
-                None
+                return None;
+            }
+        };
+        let mut tokens = Vec::new();
+        for token in Lexer::new(src.contents).include_comments() {
+            match token {
+                Ok(token) => match token {
+                    Spanned {
+                        span,
+                        val: Token::CharLiteral(str),
+                    } => tokens.push(Spanned::new(
+                        Token::CharLiteral(self.parse_char_literal(
+                            ctx,
+                            Spanned::new(str, span),
+                            src,
+                            parent,
+                        )),
+                        span,
+                    )),
+                    Spanned {
+                        span,
+                        val: Token::StringLiteral(str),
+                    } => tokens.push(Spanned::new(
+                        Token::StringLiteral(self.parse_string_literal(
+                            ctx,
+                            Spanned::new(str, span),
+                            src,
+                            parent,
+                        )),
+                        span,
+                    )),
+                    token => tokens.push(token),
+                },
+                Err(err) => {
+                    ctx.context.report_error(
+                        ctx.context.node(NodeInfo {
+                            span: err.span,
+                            source: src,
+                            parent,
+                        }),
+                        format!("{}", err.val),
+                    );
+                    use crate::lex::LexError as LE;
+                    use crate::lex::Token as Tk;
+                    use crate::lex::str::TokenChar as Tc;
+                    use crate::lex::str::TokenString as Ts;
+                    let replacement = match err.val {
+                        LE::UnknownChar(_) => continue,
+                        LE::UnclosedCharLiteral => Tk::CharLiteral(Tc::ParsedReg('\0')),
+                        LE::UnclosedMultiLineComment => continue,
+                        LE::UnclosedStringLiteral => Tk::StringLiteral(Ts::ParsedReg("")),
+                        LE::EmptyExponent => Tk::NumericLiteral(Number::ZERO),
+                        LE::NoNumberAfterBasePrefix => Tk::NumericLiteral(Number::ZERO),
+                        LE::ByteCharLiteralOutOfRange => Tk::CharLiteral(Tc::ParsedByte(0)),
+                        LE::CharLiteralOverflow => Tk::CharLiteral(Tc::ParsedReg('\0')),
+                        LE::EmpyCharLiteral => Tk::CharLiteral(Tc::ParsedReg('\0')),
+                        LE::NumberParseError(_) => Tk::NumericLiteral(Number::ZERO),
+                        LE::UnknownCharLiteralPrefix(_) => Tk::CharLiteral(Tc::ParsedReg('\0')),
+                        LE::UnknownStringLiteralPrefix(_) => Tk::StringLiteral(Ts::ParsedReg("")),
+                    };
+                    tokens.push(Spanned::new(replacement, err.span));
+                }
             }
         }
+        Some(SrcSlice::new(
+            ctx.context.alloc_slice(tokens.as_slice()),
+            src,
+        ))
     }
 
     pub fn include(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
-        path: impl Into<String>,
+        path: &'a Path,
         parent: Parent<'a>,
     ) -> Option<SourceId<'a>> {
         let src = self.parse_file(ctx, path, parent)?;
@@ -437,9 +462,19 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
 
         if let Some(contents) = result {
-            self.stack.push(Stage { contents, parent, filter: None });
+            self.stack.push(Stage {
+                contents,
+                parent,
+                filter: None,
+            });
         }
     }
+
+    #[allow(unused)]
+    fn parse_macro_args(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) {}
+
+    #[allow(unused)]
+    fn parse_macro_parameters(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>) {}
 
     fn handle_preprocessor_tag(
         &mut self,
@@ -448,19 +483,25 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         n: NodeId<'a>,
     ) -> Option<Node<'a, Token<'a>>> {
         match tag {
-            "include" => match self.stack_next(ctx) {
-                Some(Node(Token::StringLiteral(str), node)) => {
-                    self.include(ctx, str, Parent::Included { parent: node });
+            "include" => {
+                if let Node(AsmStrArg::Val(Some(str)), n) = ctx.eval(self).coerced(n) {
+                    self.include(
+                        ctx,
+                        OsStr::from_bytes(str.as_bytes()).as_ref(),
+                        Parent::Included { parent: n },
+                    );
                 }
-                t => {
-                    _ = ctx
-                        .context
-                        .unexpected_token(t, Token::StringLiteral(""), false)
-                }
-            },
+            }
             "def" => match self.stack_next(ctx) {
                 Some(Node(Token::Ident(str), node)) => {
-                    return Some(Node(if self.macros.contains_key(str) {Token::TrueLiteral} else {Token::FalseLiteral}, ctx.context.merge_nodes(n, node)))
+                    return Some(Node(
+                        if self.macros.contains_key(str) {
+                            Token::TrueLiteral
+                        } else {
+                            Token::FalseLiteral
+                        },
+                        ctx.context.merge_nodes(n, node),
+                    ));
                 }
                 t => _ = ctx.context.unexpected_token(t, Token::Ident(""), false),
             },
@@ -478,11 +519,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
             "macro" => {
                 let (ident, definition) = match self.stack_next(ctx) {
                     Some(Node(Token::Ident(str), node)) => (str, node),
-                    t => {
-                        ctx.context.unexpected_token(t, Token::Ident(""), false);
-                        ("", ctx.context.eof())
-                    }
+                    t => ("", ctx.context.unexpected_token(t, Token::Ident(""), false)),
                 };
+                // let args = self.parse_macro_parameters(ctx);
 
                 let block = self.parse_block(ctx);
                 if !ident.is_empty() {
@@ -536,9 +575,9 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         }
         'outer: loop {
             let mut next = self.stack_next(ctx);
-            for stage in self.stack.iter_mut().rev(){
-                if let Some(filter) = &mut stage.filter{
-                    match filter.filter(ctx, next){
+            for stage in self.stack.iter_mut().rev() {
+                if let Some(filter) = &mut stage.filter {
+                    match filter.filter(ctx, next) {
                         FilterResult::Pass(node) => next = node,
                         FilterResult::Fail => continue 'outer,
                     }

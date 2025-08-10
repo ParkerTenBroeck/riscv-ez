@@ -1,6 +1,5 @@
-use crate::{context::Source, lex::Span};
-
 use super::context::NodeId;
+use std::fmt::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogKind {
@@ -16,8 +15,6 @@ pub enum LogKind {
 
 pub struct LogPart<'a> {
     pub node: Option<NodeId<'a>>,
-    pub source: Option<Source<'a>>,
-    pub span: Option<Span>,
     pub kind: LogKind,
     pub msg: Option<String>,
 }
@@ -57,13 +54,10 @@ impl<'a> LogEntry<'a> {
         while let Some(node) = node_id {
             let node = *node;
 
-            let src = *node.source;
             self.parts.insert(
                 position,
                 LogPart {
                     node: node_id,
-                    span: Some(node.span),
-                    source: Some(src),
                     kind,
                     msg: msg.take(),
                 },
@@ -104,8 +98,6 @@ impl<'a> LogEntry<'a> {
     pub fn add_locless(mut self, kind: LogKind, msg: impl ToString) -> LogEntry<'a> {
         self.parts.push(LogPart {
             node: None,
-            source: None,
-            span: None,
             kind,
             msg: Some(msg.to_string()),
         });
@@ -119,6 +111,30 @@ pub const YELLOW: &str = "\x1b[33m";
 pub const BLUE: &str = "\x1b[34m";
 pub const GREEN: &str = "\x1b[32m";
 pub const RESET: &str = "\x1b[0;22m";
+
+pub fn expand_range_to_start_end_line(
+    range: std::ops::Range<usize>,
+    source: &str,
+) -> (std::ops::Range<usize>, &str) {
+    let start = source[..range.start]
+        .char_indices()
+        .rev()
+        .find_map(|c| (c.1 == '\n').then_some(c.0.saturating_add(1)))
+        .unwrap_or(0);
+    let to_end = if range.end < source.len() {
+        &source[range.end..]
+    } else {
+        Default::default()
+    };
+    let end = range.end
+        + to_end
+            .chars()
+            .position(|c| c == '\n')
+            .unwrap_or(to_end.len());
+    let expanded_range = start..end.min(source.len());
+
+    (expanded_range.clone(), &source[expanded_range])
+}
 
 impl<'a> std::fmt::Display for LogEntry<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,55 +154,42 @@ impl<'a> std::fmt::Display for LogEntry<'a> {
                 write!(f, ": {msg}")?;
             }
 
-            let (Some(span), Some(source)) = (part.span, part.source) else {
+            let Some(node) = part.node else {
                 writeln!(f)?;
                 continue;
             };
+            let span = node.span;
+            let source = node.source;
 
             let error_range = span.offset as usize..(span.offset as usize + span.len as usize);
-            let start = source.contents[..error_range.start]
-                .char_indices()
-                .rev()
-                .find_map(|c| (c.1 == '\n').then_some(c.0.saturating_add(1)))
-                .unwrap_or(0);
-            let to_end = if error_range.end < source.contents.len() {
-                &source.contents[error_range.end..]
-            } else {
-                Default::default()
-            };
-            let end = error_range.end
-                + to_end
-                    .chars()
-                    .position(|c| c == '\n')
-                    .unwrap_or(to_end.len());
-            let expanded_range = start..end;
-            let expanded = &source.contents
-                [expanded_range.start..expanded_range.end.min(source.contents.len())];
-
-            let line = span.line + 1;
-            let space = (((line as usize + expanded.lines().count()) as f32)
-                .log10()
-                .floor() as u8) as usize
-                + 1;
+            let (expanded_range, expanded) =
+                expand_range_to_start_end_line(error_range.clone(), source.contents);
+            let mut line = span.line as usize + 1;
+            let end_line = line + expanded.lines().count();
+            let max_line_digits = end_line.ilog10() as usize + 1;
 
             writeln!(
                 f,
-                "{BLUE}{BOLD}\n{: >space$}---> {RESET}{}:{}:{}",
+                "{BLUE}{BOLD}\n{: >max_line_digits$}---> {RESET}{}:{}:{}",
                 " ",
-                source.path,
+                source.path.display(),
                 line,
                 span.col + 1
             )?;
-            writeln!(f, "{BLUE}{BOLD}{: >space$} |", "")?;
+            writeln!(f, "{BLUE}{BOLD}{: >max_line_digits$} |", "")?;
+
             let mut index = expanded_range.start;
-            for (i, line_contents) in expanded.split('\n').enumerate() {
-                writeln!(
-                    f,
-                    "{: >space$} |{RESET} {}",
-                    line as usize + i,
-                    &line_contents
-                )?;
-                write!(f, "{BLUE}{BOLD}{: >space$} | ", "")?;
+            for line_contents in expanded.split('\n') {
+                write!(f, "{line: >max_line_digits$} |{RESET} ")?;
+                for char in line_contents.chars() {
+                    if char == '\t' {
+                        f.write_char(' ')?
+                    } else {
+                        f.write_char(char)?
+                    }
+                }
+                writeln!(f)?;
+                write!(f, "{BLUE}{BOLD}{: >max_line_digits$} | ", "")?;
                 for c in line_contents.chars() {
                     if error_range.contains(&index) {
                         write!(f, "~")?;
@@ -203,6 +206,8 @@ impl<'a> std::fmt::Display for LogEntry<'a> {
                 }
                 index += '\n'.len_utf8();
                 writeln!(f)?;
+
+                line += 1;
             }
             write!(f, "{RESET}")?
         }

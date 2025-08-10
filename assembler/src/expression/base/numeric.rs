@@ -118,7 +118,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                                         .error(n, format!("numeric literal too {smaller_larger} to fit in '{suffix}' valid range is {}..={}", <$num>::MIN, <$num>::MAX));
 
                                 if num.get_suffix().is_none() && hint == ValueType::Any {
-                                    error = error.hint_locless(format!("consider adding an explicit type suffix to the literal like '{}{}i64{}'", num.get_num(), crate::logs::GREEN, crate::logs::RESET))
+                                    error = error.hint_locless(format!("consider adding an explicit type suffix to the literal like {}{}i64{}", num.get_num(), crate::logs::GREEN, crate::logs::RESET))
                                 }
 
                                 self.context.report(error);

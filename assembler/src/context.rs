@@ -4,6 +4,7 @@ use crate::lex::Span;
 use crate::lex::Token;
 use bumpalo::Bump;
 use std::fmt::Display;
+use std::path::Path;
 use std::{collections::HashMap, error::Error};
 
 #[derive(Clone, Copy, Debug)]
@@ -23,11 +24,11 @@ pub type NodeId<'a> = &'a NodeInfo<'a>;
 pub type SourceId<'a> = &'a Source<'a>;
 
 pub type SourceSupplier<'a> =
-    Box<dyn Fn(&str, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a>;
+    Box<dyn Fn(&'a Path, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a>;
 
 #[derive(Clone, Copy)]
 pub struct Source<'a> {
-    pub path: &'a str,
+    pub path: &'a Path,
     pub contents: &'a str,
 }
 
@@ -83,11 +84,15 @@ pub struct NodeInfo<'a> {
 }
 impl<'a> NodeInfo<'a> {
     pub fn top(mut self: &'a Self) -> NodeId<'a> {
-        
-        while let Some(next) = self.parent.parent(){
+        while let Some(next) = self.parent.parent() {
             self = next;
         }
         self
+    }
+
+    pub fn src_slice(&self) -> &'a str {
+        &self.source.contents
+            [self.span.offset as usize..self.span.offset as usize + self.span.len as usize]
     }
 }
 
@@ -103,7 +108,7 @@ impl<'a> PartialEq for Source<'a> {
 pub struct Context<'a> {
     bump: &'a Bump,
     supplier: SourceSupplier<'a>,
-    source_map: HashMap<&'a str, SourceId<'a>>,
+    source_map: HashMap<&'a Path, SourceId<'a>>,
     log: Vec<LogEntry<'a>>,
     top_src: SourceId<'a>,
     top_src_eof: NodeId<'a>,
@@ -119,22 +124,24 @@ impl<'a> Context<'a> {
     pub fn new(
         bump: &'a Bump,
         config: AssemblerConfig,
-        source_supplier: impl Fn(&str, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a,
+        source_supplier: impl Fn(&'a Path, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a,
     ) -> Self {
+        const DEFAULT_PATH: &Path =
+            unsafe { std::mem::transmute::<&[u8], &Path>(b"<INVALID>".as_slice()) };
         Self {
             bump,
             source_map: Default::default(),
             supplier: Box::new(source_supplier),
             log: Default::default(),
             top_src: &Source {
-                path: "<INVALID>",
+                path: DEFAULT_PATH,
                 contents: "<INVALID>",
             },
             top_src_eof: &const {
                 NodeInfo {
                     span: Span::empty(),
                     source: &Source {
-                        path: "<INVALID>",
+                        path: DEFAULT_PATH,
                         contents: "<INVALID>",
                     },
                     parent: Parent::None,
@@ -150,13 +157,13 @@ impl<'a> Context<'a> {
 
     pub fn get_source_from_path(
         &mut self,
-        path: impl Into<String>,
+        path: &'a Path,
     ) -> Result<&'a Source<'a>, Box<dyn Error>> {
-        let path = path.into();
-        if let Some(id) = self.source_map.get(&path.as_str()) {
+        if let Some(id) = self.source_map.get(path) {
             return Ok(*id);
         }
-        let path = self.bump.alloc_str(&path);
+
+        // let path = self.bump.alloc_slice_copy(path.as_os_str().as_bytes());
         let contents = (self.supplier)(path, self)?;
         let source = self.bump.alloc(Source { path, contents });
         self.source_map.insert(path, source);
@@ -209,6 +216,10 @@ impl<'a> Context<'a> {
 
     pub fn eof(&self) -> NodeId<'a> {
         self.top_src_eof
+    }
+
+    pub fn src(&self) -> &'a Source<'a> {
+        self.top_src
     }
 
     pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {

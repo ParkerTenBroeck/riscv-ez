@@ -1,12 +1,10 @@
+use std::os::unix::ffi::OsStrExt;
+
 use crate::{
-    assembler::{LangCtx, lang},
+    assembler::{lang, LangCtx},
     context::{Node, NodeId},
     expression::{
-        ArgumentsTypeHint, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
-        FuncParamParser, Indexed, NodeVal, Value, ValueType,
-        args::{StrOpt, U32Opt, U32Pow2Opt},
-        binop::BinOp,
-        unop::UnOp,
+        args::{AsmStrArg, StrArg, U32Arg, U32Pow2Arg}, binop::BinOp, unop::UnOp, ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx, FuncParamParser, Indexed, NodeVal, Value, ValueType
     },
     lex::Number,
     logs::LogEntry,
@@ -145,7 +143,14 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::U64(v) => dat!(&v.to_le_bytes()),
                 Constant::F32(v) => dat!(&v.to_le_bytes()),
                 Constant::F64(v) => dat!(&v.to_le_bytes()),
-                Constant::String(v) => dat!(v.as_bytes()),
+                Constant::Str(v) => match v {
+                    crate::expression::AsmStr::Str(str) => dat!(str.as_bytes()),
+                    crate::expression::AsmStr::ByteStr(str) => dat!(str),
+                    crate::expression::AsmStr::CStr(str) => {
+                        self.add_data(ctx, str, align as usize, node);
+                        self.add_data(ctx, &[0], 1, node)
+                    }
+                },
                 Constant::Char(v) => dat!(&(v as u32).to_le_bytes()),
                 Constant::Bool(v) => dat!(&(v as u8).to_le_bytes()),
             },
@@ -160,7 +165,14 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::U64(v) => dat!(&v.to_be_bytes()),
                 Constant::F32(v) => dat!(&v.to_be_bytes()),
                 Constant::F64(v) => dat!(&v.to_be_bytes()),
-                Constant::String(v) => dat!(v.as_bytes()),
+                Constant::Str(v) => match v {
+                    crate::expression::AsmStr::Str(str) => dat!(str.as_bytes()),
+                    crate::expression::AsmStr::ByteStr(str) => dat!(str),
+                    crate::expression::AsmStr::CStr(str) => {
+                        self.add_data(ctx, str, align as usize, node);
+                        self.add_data(ctx, &[0], 1, node)
+                    }
+                },
                 Constant::Char(v) => dat!(&(v as u32).to_be_bytes()),
                 Constant::Bool(v) => dat!(&(v as u8).to_be_bytes()),
             },
@@ -221,14 +233,19 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
         ident: Node<'a, &'a str>,
         hint: crate::expression::ValueType<'a, Self>,
     ) -> crate::expression::Value<'a, Self> {
-
-        match ident.0{
+        match ident.0 {
             "__line__" => Value::Constant(Constant::U32(ident.1.top().span.line.wrapping_add(1))),
             "__col__" => Value::Constant(Constant::U32(ident.1.top().span.col)),
             "__len__" => Value::Constant(Constant::U32(ident.1.top().span.len)),
             "__offset__" => Value::Constant(Constant::U32(ident.1.top().span.offset)),
-            "__file__" => Value::Constant(Constant::String(ident.1.top().source.path)),
-            _ => self.parse_ident(ctx, ident, hint)
+            "__file__" => Value::Constant(Constant::Str(
+                if let Some(str) = ident.1.top().source.path.as_os_str().to_str() {
+                    AsmStr::Str(str)
+                } else {
+                    AsmStr::ByteStr(ident.1.top().source.path.as_os_str().as_bytes())
+                },
+            )),
+            _ => self.parse_ident(ctx, ident, hint),
         }
     }
 
@@ -307,11 +324,11 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
         n: NodeId<'a>,
     ) {
         macro_rules! constant {
-            ($kind:ident) => {
-                for Node(crate::expression::args::$kind::Val(arg), n) in
+            ($argument:ident, $kind:ident) => {
+                for Node(crate::expression::args::$argument::Val(arg), n) in
                     ctx.eval(self).coerced::<Vec<_>>(n).0
                 {
-                    self.add_constant_data(ctx, Constant::$kind(arg), n);
+                    self.add_constant_data(ctx, Constant::$kind(arg.unwrap_or_default()), n);
                 }
             };
         }
@@ -337,22 +354,22 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
             }
 
             ".section" => {
-                if let StrOpt::Val(Some(sec)) = ctx.eval(self).coerced(n).0 {
+                if let StrArg::Val(Some(sec)) = ctx.eval(self).coerced(n).0 {
                     self.set_section(ctx, sec, n);
                 }
             }
-            ".align" => if let U32Pow2Opt::Val(Some(align)) = ctx.eval(self).coerced(n).0 {},
+            ".align" => if let U32Pow2Arg::Val(Some(align)) = ctx.eval(self).coerced(n).0 {},
 
             ".label" => {
-                if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {
+                if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {
                     self.encounter_label(ctx, label, n);
                 }
             }
-            ".global" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
-            ".weak" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
-            ".local" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
-            ".type" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
-            ".size" => if let Node(StrOpt::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
+            ".global" => if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
+            ".weak" => if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
+            ".local" => if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
+            ".type" => if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
+            ".size" => if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {},
             ".text" => {
                 let Node((), node) = ctx.eval(self).coerced(n);
                 self.set_section(ctx, ".test", node);
@@ -371,7 +388,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
             }
 
             ".space" => {
-                if let U32Opt::Val(Some(size)) = ctx.eval(self).coerced(n).0 {
+                if let U32Arg::Val(Some(size)) = ctx.eval(self).coerced(n).0 {
                     self.add_space_data(ctx, size as usize, 1, n);
                 }
             }
@@ -381,32 +398,34 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
                 }
             }
             ".stringz" => {
-                for Node(crate::expression::args::Str::Val(arg), n) in
+                for Node(crate::expression::args::AsmStrArg::Val(arg), n) in
                     ctx.eval(self).coerced::<Vec<_>>(n).0
                 {
-                    self.add_constant_data(ctx, Constant::String(arg), n);
-                    self.add_constant_data(ctx, Constant::U8(0), n);
+                    self.add_constant_data(ctx, Constant::Str(arg.unwrap_or_default()), n);
+                    if !matches!(arg, Some(AsmStr::CStr(_))) {
+                        self.add_constant_data(ctx, Constant::U8(0), n);
+                    }
                 }
             }
             ".string" => {
-                for Node(crate::expression::args::Str::Val(arg), n) in
+                for Node(crate::expression::args::AsmStrArg::Val(arg), n) in
                     ctx.eval(self).coerced::<Vec<_>>(n).0
                 {
-                    self.add_constant_data(ctx, Constant::String(arg), n);
+                    self.add_constant_data(ctx, Constant::Str(arg.unwrap_or_default()), n);
                 }
             }
-            ".u8" => constant!(U8),
-            ".u16" => constant!(U16),
-            ".u32" => constant!(U32),
-            ".u64" => constant!(U64),
-            ".i8" => constant!(I8),
-            ".i16" => constant!(I16),
-            ".i32" => constant!(I32),
-            ".i64" => constant!(I64),
-            ".f32" => constant!(F32),
-            ".f64" => constant!(F64),
-            ".bool" => constant!(Bool),
-            ".char" => constant!(Char),
+            ".u8" => constant!(U8Arg, U8),
+            ".u16" => constant!(U16Arg, U16),
+            ".u32" => constant!(U32Arg, U32),
+            ".u64" => constant!(U64Arg, U64),
+            ".i8" => constant!(I8Arg, I8),
+            ".i16" => constant!(I16Arg, I16),
+            ".i32" => constant!(I32Arg, I32),
+            ".i64" => constant!(I64Arg, I64),
+            ".f32" => constant!(F32Arg, F32),
+            ".f64" => constant!(F64Arg, F64),
+            ".bool" => constant!(BoolArg, Bool),
+            ".char" => constant!(CharArg, Char),
 
             _ => self.assemble_mnemonic(ctx, mnemonic, n),
         }

@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
-    ArgumentsTypeHint, Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value, ValueType,
+    ArgumentsTypeHint, AsmStr, Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value,
+    ValueType,
 };
 use crate::lex::Token;
 use crate::util::IntoStrDelimable;
@@ -34,32 +35,6 @@ macro_rules! integer {
 
             fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
                 Self::Val(None)
-            }
-        }
-
-        #[non_exhaustive]
-        pub enum $vt<L>{
-            Val($ty),
-            __(Infallible, PhantomData<L>)
-        }
-        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $vt<L> {
-            type LANG = L;
-            const TYPE_REPR: &'static str = $kind;
-            const HINT: ValueType<'a, L> = ValueType::$vt;
-
-            fn from_arg(
-                context: &mut Context<'a>,
-                node: NodeId<'a>,
-                value: Value<'a, L>,
-            ) -> Result<Self, Option<String>> {
-                match value {
-                    Value::Constant(c) if c.is_integer() => Ok(Self::Val(c.cast(node, context).unwrap_or_default())),
-                    _ => Err(None),
-                }
-            }
-
-            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-                Self::Val(<$ty>::default())
             }
         }
 
@@ -113,7 +88,7 @@ macro_rules! value {
         impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<L> {
             type LANG = L;
             const TYPE_REPR: &'static str = $kind;
-            const HINT: ValueType<'a, L> = ValueType::String;
+            const HINT: ValueType<'a, L> = ValueType::Str;
 
             fn from_arg(
                 _: &mut Context<'a>,
@@ -130,62 +105,36 @@ macro_rules! value {
                Self::Val(None)
             }
         }
-
-        #[non_exhaustive]
-        pub enum $vt<L>{
-            Val($ty),
-            __(Infallible, PhantomData<L>)
-        }
-        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $vt<L> {
-            type LANG = L;
-            const TYPE_REPR: &'static str = $kind;
-            const HINT: ValueType<'a, L> = ValueType::String;
-
-            fn from_arg(
-                _: &mut Context<'a>,
-                _: NodeId<'a>,
-                value: Value<'a, L>,
-            ) -> Result<Self, Option<String>> {
-                match value {
-                    Value::Constant(Constant::$vt(v)) => Ok(Self::Val(v)),
-                    _ => Err(None),
-                }
-            }
-
-            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-                Self::Val(<$ty>::default())
-            }
-        }
     )*};
 }
 
 integer!(
-    i8, "<integer>", I8, I8Opt, ,
-    i16, "<integer>", I16, I16Opt, ,
-    i32, "<integer>", I32, I32Opt, ,
-    i64, "<integer>", I64, I64Opt, ,
+    i8, "i8", I8, I8Arg, ,
+    i16, "i16", I16, I16Arg, ,
+    i32, "i32", I32, I32Arg, ,
+    i64, "i64", I64, I64Arg, ,
 
-    u8, "<integer>", U8, U8Opt, U8Pow2Opt,
-    u16, "<integer>", U16, U16Opt, U16Pow2Opt,
-    u32, "<integer>", U32, U32Opt, U32Pow2Opt,
-    u64, "<integer>", U64, U64Opt, U64Pow2Opt,
+    u8, "u8", U8, U8Arg, U8Pow2Arg,
+    u16, "u16", U16, U16Arg, U16Pow2Arg,
+    u32, "u32", U32, U32Arg, U32Pow2Arg,
+    u64, "u64", U64, U64Arg, U64Pow2Arg,
 
 
-    f32, "<float>", F32, F32Opt, ,
-    f64, "<float>", F64, F64Opt, ,
+    f32, "f32", F32, F32Arg, ,
+    f64, "f64", F64, F64Arg, ,
 );
 
-value!(char, "char", Char, CharOpt, bool, "bool", Bool, BoolOpt,);
+value!(char, "char", Char, CharArg, bool, "bool", Bool, BoolArg,);
 
 #[non_exhaustive]
-pub enum StrOpt<'a, L> {
-    Val(Option<&'a str>),
+pub enum AsmStrArg<'a, L> {
+    Val(Option<AsmStr<'a>>),
     __(Infallible, PhantomData<L>),
 }
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for AsmStrArg<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "str";
-    const HINT: ValueType<'a, L> = ValueType::String;
+    const HINT: ValueType<'a, L> = ValueType::Str;
 
     fn from_arg(
         _: &mut Context<'a>,
@@ -193,7 +142,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
-            Value::Constant(Constant::String(str)) => Ok(Self::Val(Some(str))),
+            Value::Constant(Constant::Str(str)) => Ok(Self::Val(Some(str))),
             _ => Err(None),
         }
     }
@@ -203,11 +152,15 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrOpt<'a, L> {
     }
 }
 
-pub struct Reg<'a, L: AssemblyLanguage<'a>>(pub L::Reg);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L> {
+#[non_exhaustive]
+pub enum StrArg<'a, L> {
+    Val(Option<&'a str>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrArg<'a, L> {
     type LANG = L;
-    const TYPE_REPR: &'static str = "register";
-    const HINT: ValueType<'a, L> = ValueType::Register;
+    const TYPE_REPR: &'static str = "str";
+    const HINT: ValueType<'a, L> = ValueType::Str;
 
     fn from_arg(
         _: &mut Context<'a>,
@@ -215,18 +168,24 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Reg<'a, L> {
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
-            Value::Register(reg) => Ok(Self(reg)),
+            Value::Constant(Constant::Str(AsmStr::Str(str))) => Ok(Self::Val(Some(str))),
+            Value::Constant(Constant::Str(AsmStr::ByteStr(_))) => Err(Some(
+                "byte strings not permitted must be an ordinary string".into(),
+            )),
+            Value::Constant(Constant::Str(AsmStr::CStr(_))) => Err(Some(
+                "c strings not permitted must be an ordinary string".into(),
+            )),
             _ => Err(None),
         }
     }
 
     fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Self(L::Reg::default())
+        Self::Val(None)
     }
 }
 
-pub struct RegOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Reg>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L> {
+pub struct RegArg<'a, L: AssemblyLanguage<'a>>(pub Option<L::Reg>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegArg<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "register";
     const HINT: ValueType<'a, L> = ValueType::Register;
@@ -247,30 +206,8 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegOpt<'a, L> {
     }
 }
 
-pub struct Label<'a, L: AssemblyLanguage<'a>>(pub L::Label);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Label<'a, L> {
-    type LANG = L;
-    const TYPE_REPR: &'static str = "label";
-    const HINT: ValueType<'a, L> = ValueType::Label;
-
-    fn from_arg(
-        _: &mut Context<'a>,
-        _: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        match value {
-            Value::Label(reg) => Ok(Self(reg)),
-            _ => Err(None),
-        }
-    }
-
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Self(L::Label::default())
-    }
-}
-
-pub struct LabelOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Label>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L> {
+pub struct LabelArg<'a, L: AssemblyLanguage<'a>>(pub Option<L::Label>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelArg<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "label";
     const HINT: ValueType<'a, L> = ValueType::Label;
@@ -291,30 +228,8 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelOpt<'a, L> {
     }
 }
 
-pub struct Indexed<'a, L: AssemblyLanguage<'a>>(pub L::Indexed);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Indexed<'a, L> {
-    type LANG = L;
-    const TYPE_REPR: &'static str = "indexed";
-    const HINT: ValueType<'a, L> = ValueType::Indexed;
-
-    fn from_arg(
-        _: &mut Context<'a>,
-        _: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        match value {
-            Value::Indexed(reg) => Ok(Self(reg)),
-            _ => Err(None),
-        }
-    }
-
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Self(L::Indexed::default())
-    }
-}
-
-pub struct IndexedOpt<'a, L: AssemblyLanguage<'a>>(pub Option<L::Indexed>);
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedOpt<'a, L> {
+pub struct IndexedArg<'a, L: AssemblyLanguage<'a>>(pub Option<L::Indexed>);
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedArg<'a, L> {
     type LANG = L;
     const TYPE_REPR: &'static str = "indexed";
     const HINT: ValueType<'a, L> = ValueType::Indexed;
@@ -332,32 +247,6 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedOpt<'a, L> {
 
     fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
         Self(None)
-    }
-}
-
-#[non_exhaustive]
-pub enum Str<'a, L> {
-    Val(&'a str),
-    __(Infallible, PhantomData<L>),
-}
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Str<'a, L> {
-    type LANG = L;
-    const TYPE_REPR: &'static str = "str";
-    const HINT: ValueType<'a, L> = ValueType::String;
-
-    fn from_arg(
-        _: &mut Context<'a>,
-        _: NodeId<'a>,
-        value: Value<'a, L>,
-    ) -> Result<Self, Option<String>> {
-        match value {
-            Value::Constant(Constant::String(str)) => Ok(Self::Val(str)),
-            _ => Err(None),
-        }
-    }
-
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-        Self::Val("")
     }
 }
 

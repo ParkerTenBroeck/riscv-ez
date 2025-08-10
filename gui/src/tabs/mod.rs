@@ -1,8 +1,10 @@
+use std::path::PathBuf;
+
 pub mod code_editor;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Tab {
-    CodeEditor(String),
+    CodeEditor(PathBuf),
     MemoryEditor,
     Log,
     Terminal,
@@ -14,7 +16,7 @@ pub enum Tab {
 impl Tab {
     pub fn str(&self) -> &str {
         match self {
-            Tab::CodeEditor(title) => title.as_str(),
+            Tab::CodeEditor(title) => title.file_name().and_then(|v| v.to_str()).unwrap_or(""),
             Tab::MemoryEditor => "memory",
             Tab::Log => "log",
             Tab::Terminal => "terminal",

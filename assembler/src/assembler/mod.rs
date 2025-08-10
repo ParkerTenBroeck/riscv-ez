@@ -1,5 +1,7 @@
 pub mod lang;
 
+use std::path::Path;
+
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, NodeId};
 use crate::expression::ExpressionEvaluator;
@@ -97,7 +99,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
         (self.lang, LangCtx::new(self.context, self.preprocessor))
     }
 
-    pub fn assemble(&mut self, path: impl Into<String>) -> T::AssembledResult {
+    pub fn assemble(&mut self, path: &'a Path) -> T::AssembledResult {
         if let Some(src) = self
             .preprocessor
             .begin(PreProcessorCtx::new(self.context, self.lang), path)

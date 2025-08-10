@@ -22,7 +22,7 @@ use crate::args::{FloatReg, Immediate, RegReg};
 use crate::label::{Label, LabelExpr};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
-use assembler::expression::args::{CoercedArg, LabelOpt, StrOpt, U32Opt, U32Pow2Opt};
+use assembler::expression::args::{AsmStrArg, CoercedArg, LabelArg, U32Arg, U32Pow2Arg};
 use assembler::expression::{
     AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExprCtx,
     ImplicitCastTo, Indexed, Value, ValueType,
@@ -147,26 +147,6 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                     self.instruction(asm, UTypeOpCode::Lui as u32 | r.rd(), n);
                 }
             },
-            ".global" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
-                    asm.context.report_warning(node, "not implemented yet");
-                }
-            }
-            ".local" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
-                    asm.context.report_warning(node, "not implemented yet");
-                }
-            }
-            ".weak" => {
-                if let Node(StrOpt::Val(Some(_label)), node) = asm.eval(self).coerced(n).0 {
-                    asm.context.report_warning(node, "not implemented yet");
-                }
-            }
-            ".align" => {
-                if let U32Pow2Opt::Val(Some(align)) = asm.eval(self).coerced(n).0 {
-                    // asm.state.add_data(0, align);
-                }
-            }
             _ => asm.asm(self).unknown_mnemonic(mnemonic, n),
         }
     }
@@ -217,7 +197,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             //     }
             // },
             "pcrel" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     match l.ty {
                         label::LabelExprType::Empty => {}
                         label::LabelExprType::Unspecified(label) => {
@@ -236,7 +216,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "absolute" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     match l.ty {
                         label::LabelExprType::Empty => {}
                         label::LabelExprType::Unspecified(label) => {
@@ -255,7 +235,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "hi" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");
@@ -267,7 +247,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "lo" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");
@@ -279,7 +259,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "u8" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");
@@ -291,7 +271,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "u16" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");
@@ -303,7 +283,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "u32" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");
@@ -315,7 +295,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                 }
             }
             "u64" => {
-                if let Node(LabelOpt(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
+                if let Node(LabelArg(Some(mut l)), n) = func.coerced_args(self, ctx).0 {
                     if l.pattern.is_some() {
                         ctx.context
                             .report_error(n, "label pattern kind is already set");

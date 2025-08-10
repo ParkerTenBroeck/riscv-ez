@@ -3,7 +3,11 @@ use std::fmt::Write;
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::Node,
-    expression::{Constant, ExpressionEvaluator, FuncParamParser, Value, ValueType, args::StrOpt},
+    expression::{
+        AsmString, Constant, ExpressionEvaluator, FuncParamParser, Value, ValueType, WriteStrError,
+        args::AsmStrArg,
+    },
+    logs::LogEntry,
 };
 
 impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
@@ -15,35 +19,54 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         let (lang, mut ctx) = self.split_ctx();
         match func.func() {
             "format" => {
-                if let Node((StrOpt::Val(Some(format)), v), n) =
-                    func.coerced_args::<(_, Vec<Value<'a, L>>), _>(lang, &mut ctx)
+                if let Node((Node(AsmStrArg::Val(Some(format)), formt_n), v), n) =
+                    func.coerced_args::<(_, Vec<Node<'a, Value<'a, L>>>), _>(lang, &mut ctx)
                 {
-                    let expected = format.matches('%').count();
-                    if expected != v.len() {
-                        self.context.report_error(
+                    let mut result = AsmString::new(format.kind());
+                    let count = format.split('%').count() - 1;
+                    if count - 1 != v.len() {
+                        ctx.context.report_error(
                             n,
                             format!(
                                 "wrong number of arguments provided expected {} found {}",
-                                expected,
+                                count,
                                 v.len()
                             ),
                         )
                     }
-                    let mut result = String::new();
                     let mut iter = v.into_iter();
                     for part in format.split('%') {
-                        result
-                            .write_fmt(format_args!(
-                                "{}{}",
-                                part,
-                                iter.next().unwrap_or(Value::Constant(Constant::String("")))
-                            ))
-                            .unwrap();
+                        if let Some(Node(value, vn)) = iter.next() {
+                            match value {
+                                Value::Constant(Constant::Str(str)) => {
+                                    match result.write_str(str) {
+                                        Ok(_) => {}
+                                        Err(WriteStrError::CannotWriteByteStrToRegularString) => {
+                                            ctx.context.report(
+                                                LogEntry::new().error(vn, "byte strings can contain values which are not permitted in ordinary strings")
+                                                .hint(formt_n, format!("consider adding leading `b` {}b{}{}", crate::logs::GREEN, crate::logs::RESET, formt_n.src_slice(),))
+                                            );
+                                        }
+                                        Err(WriteStrError::CannotWriteCStrToRegularString) => {
+                                            ctx.context.report(
+                                                LogEntry::new().error(vn, "c strings can contain values which are not permitted in ordinary strings")
+                                                .hint(formt_n, format!("consider adding leading `c` {}c{}{}", crate::logs::GREEN, crate::logs::RESET, formt_n.src_slice(),))
+                                            );
+                                        }
+                                    }
+                                }
+                                _ => _ = result.write_fmt(format_args!("{value}")),
+                            }
+                        }
+                        match result.write_str(part) {
+                            Ok(_) => {}
+                            Err(_) => unreachable!(),
+                        }
                     }
 
-                    Value::Constant(Constant::String(self.context.alloc_str(result)))
+                    Value::Constant(Constant::Str(result.alloc_str(ctx.context)))
                 } else {
-                    Value::Constant(Constant::String(""))
+                    Value::Constant(Constant::Str(Default::default()))
                 }
             }
             _ => self.invalid_func(func, hint),

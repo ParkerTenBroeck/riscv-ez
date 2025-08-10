@@ -6,6 +6,7 @@ use crate::logs::LogEntry;
 use crate::preprocess::PreProcessor;
 use bumpalo::Bump;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub mod assembler;
@@ -73,8 +74,8 @@ pub fn with_bump<R>(func: impl FnOnce(&Bump) -> R) -> R {
 }
 
 pub fn assemble_and_link<'a>(
-    sources: &'a HashMap<String, String>,
-    files: Vec<impl Into<String>>,
+    sources: &'a HashMap<PathBuf, String>,
+    files: Vec<&'a Path>,
     bump: &'a Bump,
     mut lang: impl AssemblyLanguage<'a>,
 ) -> AssemblerResult<'a> {
@@ -83,7 +84,7 @@ pub fn assemble_and_link<'a>(
         if let Some(contents) = sources.get(path) {
             Ok(contents.as_str())
         } else {
-            Err(format!("No source found with path '{path}'").into())
+            Err(format!("No source found with path '{}'", path.display()).into())
         }
     });
     let mut preprocessor = PreProcessor::new();

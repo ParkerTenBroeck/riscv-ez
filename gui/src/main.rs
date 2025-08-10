@@ -78,7 +78,7 @@ impl eframe::App for MyApp {
                             with_bump(|bump| {
                                 let res = assembler::assemble_and_link(
                                     &sources,
-                                    vec!["test.asm"],
+                                    vec!["test.asm".as_ref()],
                                     bump,
                                     RiscvAssembler::default(),
                                 );
@@ -100,16 +100,20 @@ impl eframe::App for MyApp {
                             let mut count = 0;
                             for path in context.project_paths() {
                                 let now = path
-                                    .str()
-                                    .matches("/")
+                                    .path()
+                                    .iter()
                                     .count()
                                     .saturating_sub(path.is_file() as usize);
                                 for _ in now..count {
                                     builder.close_dir();
                                 }
                                 count = now;
-                                let disp =
-                                    path.str().split("/").last().unwrap_or("ERROR").to_owned();
+                                let disp = path
+                                    .path()
+                                    .file_name()
+                                    .and_then(|v| v.to_str())
+                                    .unwrap_or("INVALID NAME")
+                                    .to_owned();
                                 if path.is_file() {
                                     builder.leaf(path, disp);
                                 } else {
@@ -130,7 +134,7 @@ impl eframe::App for MyApp {
                                     if !tab.is_file() {
                                         continue;
                                     }
-                                    let tab = Tab::CodeEditor(tab.into_string());
+                                    let tab = Tab::CodeEditor(tab.path().to_path_buf());
                                     let tab_location = self.tree.find_tab(&tab);
                                     if let Some(tab_location) = tab_location {
                                         self.tree.set_active_tab(tab_location);

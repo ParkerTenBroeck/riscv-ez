@@ -2,23 +2,17 @@ use crate::tabs::{Tab, code_editor};
 use egui_dock::TabViewer;
 use poll_promise::Promise;
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct ProjectFilePath {
-    path: String,
+    path: PathBuf,
     file: bool,
 }
 
 impl ProjectFilePath {
-    pub fn into_string(self) -> String {
-        self.path
-    }
-}
-
-impl ProjectFilePath {
-    pub fn str(&self) -> &str {
-        self.path.as_str()
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
     }
 
     pub fn is_file(&self) -> bool {
@@ -27,12 +21,12 @@ impl ProjectFilePath {
 }
 
 pub struct Context {
-    pub project: String,
+    pub project: PathBuf,
     files: BTreeMap<ProjectFilePath, Option<Vec<u8>>>,
 }
 
 impl Context {
-    pub fn source_map(&self) -> HashMap<String, String> {
+    pub fn source_map(&self) -> HashMap<PathBuf, String> {
         self.files
             .iter()
             .filter_map(|(k, e)| {
@@ -72,54 +66,41 @@ impl Context {
     }
 
     pub fn project_paths(&mut self) -> Vec<ProjectFilePath> {
-        self.add_dir_rec(self.project.clone().as_str());
+        self.add_dir_rec(self.project.clone());
         self.files.iter().map(|i| i.0.clone()).collect()
     }
 
     fn add_dir_rec(&mut self, path: impl AsRef<Path>) {
         for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
-            let Some(p) = entry
-                .path()
-                .to_str()
-                .and_then(|path| path.strip_prefix(&self.project).map(|s| s.to_owned()))
-            else {
-                continue;
-            };
+            let path = entry.path();
+            let path = path.strip_prefix(&self.project).unwrap().to_owned();
             match entry.file_type() {
                 Ok(ft) if ft.is_dir() => {
-                    self.files.insert(
-                        ProjectFilePath {
-                            path: p,
-                            file: false,
-                        },
-                        None,
-                    );
+                    self.files
+                        .insert(ProjectFilePath { path, file: false }, None);
                     self.add_dir_rec(entry.path());
                 }
                 Ok(ft) if ft.is_file() => {
-                    self.files.insert(
-                        ProjectFilePath {
-                            path: p,
-                            file: true,
-                        },
-                        None,
-                    );
+                    self.files
+                        .insert(ProjectFilePath { path, file: true }, None);
                 }
                 _ => continue,
             }
         }
     }
 
-    fn get_file(&mut self, path: &str) -> Option<&mut Vec<u8>> {
+    fn get_file(&mut self, path: &Path) -> Option<&mut Vec<u8>> {
         let nya = self
             .files
             .entry(ProjectFilePath {
-                path: path.into(),
+                path: path.to_path_buf(),
                 file: false,
             })
             .or_default();
         if nya.is_none() {
-            *nya = std::fs::read(format!("{}/{path}", self.project)).ok();
+            let mut p = self.project.clone();
+            p.push(path);
+            *nya = std::fs::read(p).ok();
         }
         nya.as_mut()
     }

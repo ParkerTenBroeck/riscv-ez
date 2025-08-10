@@ -1,4 +1,4 @@
-use crate::expression::ValueType;
+use crate::expression::{AsmStr, ValueType};
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
@@ -90,9 +90,19 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         }
 
         match ty {
-            "str" => Value::Constant(Constant::String(
+            "str" => Value::Constant(Constant::Str(AsmStr::Str(
                 self.context.alloc_str(format!("{}", expr.0).as_str()),
-            )),
+            ))),
+            "cstr" => Value::Constant(Constant::Str(AsmStr::CStr(
+                self.context
+                    .alloc_str(format!("{}", expr.0).as_str())
+                    .as_bytes(),
+            ))),
+            "bstr" => Value::Constant(Constant::Str(AsmStr::ByteStr(
+                self.context
+                    .alloc_str(format!("{}", expr.0).as_str())
+                    .as_bytes(),
+            ))),
             "i8" => integer!(I8, i8),
             "i16" => integer!(I16, i16),
             "i32" => integer!(I32, i32),

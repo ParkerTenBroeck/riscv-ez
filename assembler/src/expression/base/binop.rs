@@ -105,7 +105,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::U64($l), Constant::U64($r)) => Constant::Bool($block),
                         (Constant::F32($l), Constant::F32($r)) => Constant::Bool($block),
                         (Constant::F64($l), Constant::F64($r)) => Constant::Bool($block),
-                        (Constant::String($l), Constant::String($r)) => Constant::Bool($block),
+                        // (Constant::Str($l), Constant::Str($r)) => Constant::Bool($block),
                         (Constant::Char($l), Constant::Char($r)) => Constant::Bool($block),
                         (Constant::Bool($l), Constant::Bool($r)) => Constant::Bool($block),
                         _ => break 'label (self.invalid_binop(op, node, lhs, rhs, hint)),
@@ -116,12 +116,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
         match op {
             BinOp::Add => match (lhs.0, rhs.0) {
-                (Value::Constant(Constant::String(l)), r) => {
-                    Value::Constant(Constant::String(self.context.alloc_str(format!("{l}{r}"))))
-                }
-                (l, Value::Constant(Constant::String(r))) => {
-                    Value::Constant(Constant::String(self.context.alloc_str(format!("{l}{r}"))))
-                }
+                (Value::Constant(Constant::Str(l)), r) => Value::Constant(Constant::Str(
+                    self.context.alloc_str(format!("{l}{r}")).into(),
+                )),
+                (l, Value::Constant(Constant::Str(r))) => Value::Constant(Constant::Str(
+                    self.context.alloc_str(format!("{l}{r}")).into(),
+                )),
 
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/
