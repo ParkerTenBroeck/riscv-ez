@@ -1,10 +1,14 @@
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{
-    assembler::{lang, LangCtx},
+    assembler::{LangCtx, lang},
     context::{Node, NodeId},
     expression::{
-        args::{AsmStrArg, StrArg, U32Arg, U32Pow2Arg}, binop::BinOp, unop::UnOp, ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx, FuncParamParser, Indexed, NodeVal, Value, ValueType
+        ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
+        FuncParamParser, Indexed, NodeVal, Value, ValueType,
+        args::{AsmStrArg, StrArg, U32Arg, U32Pow2Arg},
+        binop::BinOp,
+        unop::UnOp,
     },
     lex::Number,
     logs::LogEntry,
@@ -137,10 +141,12 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::I16(v) => dat!(&v.to_le_bytes()),
                 Constant::I32(v) => dat!(&v.to_le_bytes()),
                 Constant::I64(v) => dat!(&v.to_le_bytes()),
+                Constant::I128(v) => dat!(&v.to_le_bytes()),
                 Constant::U8(v) => dat!(&v.to_le_bytes()),
                 Constant::U16(v) => dat!(&v.to_le_bytes()),
                 Constant::U32(v) => dat!(&v.to_le_bytes()),
                 Constant::U64(v) => dat!(&v.to_le_bytes()),
+                Constant::U128(v) => dat!(&v.to_le_bytes()),
                 Constant::F32(v) => dat!(&v.to_le_bytes()),
                 Constant::F64(v) => dat!(&v.to_le_bytes()),
                 Constant::Str(v) => match v {
@@ -159,10 +165,12 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::I16(v) => dat!(&v.to_be_bytes()),
                 Constant::I32(v) => dat!(&v.to_be_bytes()),
                 Constant::I64(v) => dat!(&v.to_be_bytes()),
+                Constant::I128(v) => dat!(&v.to_be_bytes()),
                 Constant::U8(v) => dat!(&v.to_be_bytes()),
                 Constant::U16(v) => dat!(&v.to_be_bytes()),
                 Constant::U32(v) => dat!(&v.to_be_bytes()),
                 Constant::U64(v) => dat!(&v.to_be_bytes()),
+                Constant::U128(v) => dat!(&v.to_be_bytes()),
                 Constant::F32(v) => dat!(&v.to_be_bytes()),
                 Constant::F64(v) => dat!(&v.to_be_bytes()),
                 Constant::Str(v) => match v {

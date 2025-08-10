@@ -237,7 +237,7 @@ pub enum WriteStrError {
 }
 
 impl AsmString {
-    pub fn write_str(&mut self, to_write: AsmStr<'_>) -> Result<(), WriteStrError> {
+    pub fn write_asm_str(&mut self, to_write: AsmStr<'_>) -> Result<(), WriteStrError> {
         match self {
             AsmString::String(str) => match to_write {
                 AsmStr::Str(to_write) => str.push_str(to_write),

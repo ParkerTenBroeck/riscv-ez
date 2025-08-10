@@ -30,6 +30,7 @@ use assembler::expression::{
 use std::fmt::{Display, Formatter};
 
 pub type NodeVal<'a> = assembler::expression::NodeVal<'a, RiscvAssembler<'a>>;
+pub type V<'a> = Value<'a, RiscvAssembler<'a>>;
 
 #[derive(Default, Clone)]
 pub struct RiscvAssembler<'a> {

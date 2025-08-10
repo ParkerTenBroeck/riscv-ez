@@ -1,5 +1,8 @@
 use std::convert::Infallible;
+use std::ffi::OsStr;
 use std::marker::PhantomData;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
@@ -143,6 +146,34 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for AsmStrArg<'a, L> {
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Constant(Constant::Str(str)) => Ok(Self::Val(Some(str))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum PathArg<'a, L> {
+    Val(Option<&'a Path>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for PathArg<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "str";
+    const HINT: ValueType<'a, L> = ValueType::Str;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::Str(str)) => Ok(Self::Val(Some(Path::new(
+                OsStr::from_bytes(str.as_bytes()),
+            )))),
             _ => Err(None),
         }
     }

@@ -176,9 +176,21 @@ impl Span {
         }
     }
 
+    pub fn subspan(mut self, sub: Span) -> Self {
+        self.offset += sub.offset;
+        self.len = sub.len;
+        if sub.line == 0 {
+            self.col += sub.col;
+        } else {
+            self.line += sub.line;
+            self.col = sub.col;
+        }
+        self
+    }
+
     pub fn combine(&self, other: Span) -> Span {
-        let send = self.len + self.offset;
-        let oend = other.len + other.offset;
+        let send = self.len.wrapping_add(self.offset) + self.offset;
+        let oend = other.len.wrapping_add(other.offset);
         let offset = self.offset.min(other.offset);
         Span {
             line: self.line.min(other.line),
@@ -189,6 +201,24 @@ impl Span {
             } else {
                 oend - offset
             },
+        }
+    }
+
+    pub fn shrink(self, left: u32, right: u32) -> Span {
+        let len = self.len;
+        let left = left.min(len);
+        let len = len.saturating_sub(left);
+        let right = right.min(len);
+        let len = len.saturating_sub(right);
+
+        let offset = self.offset.saturating_add(left);
+        let col = self.col.saturating_add(left);
+
+        Span {
+            line: self.line,
+            col,
+            offset,
+            len,
         }
     }
 }

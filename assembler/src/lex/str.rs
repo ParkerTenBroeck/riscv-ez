@@ -27,10 +27,19 @@ pub enum TokenString<'a> {
 impl<'a> TokenString<'a> {
     pub fn as_bytes(&self) -> &'a [u8] {
         match self {
-            TokenString::Unparsed(str, _) => str.as_bytes(),
-            TokenString::ParsedReg(str) => str.as_bytes(),
-            TokenString::ParsedC(str) => str,
-            TokenString::ParsedByte(str) => str,
+            Self::Unparsed(str, _) => str.as_bytes(),
+            Self::ParsedReg(str) => str.as_bytes(),
+            Self::ParsedC(str) => str,
+            Self::ParsedByte(str) => str,
+        }
+    }
+
+    pub fn kind(&self) -> StringKind {
+        match self {
+            Self::Unparsed(_, kind) => *kind,
+            Self::ParsedReg(_) => StringKind::Regular,
+            Self::ParsedC(_) => StringKind::CStr,
+            Self::ParsedByte(_) => StringKind::Byte,
         }
     }
 }
@@ -69,5 +78,13 @@ impl<'a> TokenChar<'a> {
 
     pub fn unparsed_byte(repr: &'a str) -> Self {
         Self::Unparsed(repr.into(), CharKind::Byte)
+    }
+
+    pub fn kind(&self) -> CharKind {
+        match self {
+            Self::Unparsed(_, kind) => *kind,
+            Self::ParsedReg(_) => CharKind::Regular,
+            Self::ParsedByte(_) => CharKind::Byte,
+        }
     }
 }

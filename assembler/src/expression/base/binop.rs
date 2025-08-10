@@ -73,10 +73,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::I16($l), Constant::I16($r)) => Constant::I16($integer),
                         (Constant::I32($l), Constant::I32($r)) => Constant::I32($integer),
                         (Constant::I64($l), Constant::I64($r)) => Constant::I64($integer),
+                        (Constant::I128($l), Constant::I128($r)) => Constant::I128($integer),
                         (Constant::U8($l), Constant::U8($r)) => Constant::U8($integer),
                         (Constant::U16($l), Constant::U16($r)) => Constant::U16($integer),
                         (Constant::U32($l), Constant::U32($r)) => Constant::U32($integer),
                         (Constant::U64($l), Constant::U64($r)) => Constant::U64($integer),
+                        (Constant::U128($l), Constant::U128($r)) => Constant::U128($integer),
                     )?
                     $(
                         (Constant::F32($l), Constant::F32($r)) => Constant::F32($float),
@@ -99,10 +101,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::I16($l), Constant::I16($r)) => Constant::Bool($block),
                         (Constant::I32($l), Constant::I32($r)) => Constant::Bool($block),
                         (Constant::I64($l), Constant::I64($r)) => Constant::Bool($block),
+                        (Constant::I128($l), Constant::I128($r)) => Constant::Bool($block),
                         (Constant::U8($l), Constant::U8($r)) => Constant::Bool($block),
                         (Constant::U16($l), Constant::U16($r)) => Constant::Bool($block),
                         (Constant::U32($l), Constant::U32($r)) => Constant::Bool($block),
                         (Constant::U64($l), Constant::U64($r)) => Constant::Bool($block),
+                        (Constant::U128($l), Constant::U128($r)) => Constant::Bool($block),
                         (Constant::F32($l), Constant::F32($r)) => Constant::Bool($block),
                         (Constant::F64($l), Constant::F64($r)) => Constant::Bool($block),
                         // (Constant::Str($l), Constant::Str($r)) => Constant::Bool($block),
@@ -194,10 +198,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             Constant::I16(l) => Constant::I16(l.wrapping_shl(c)),
                             Constant::I32(l) => Constant::I32(l.wrapping_shl(c)),
                             Constant::I64(l) => Constant::I64(l.wrapping_shl(c)),
+                            Constant::I128(l) => Constant::I128(l.wrapping_shl(c)),
                             Constant::U8(l) => Constant::U8(l.wrapping_shl(c)),
                             Constant::U16(l) => Constant::U16(l.wrapping_shl(c)),
                             Constant::U32(l) => Constant::U32(l.wrapping_shl(c)),
                             Constant::U64(l) => Constant::U64(l.wrapping_shl(c)),
+                            Constant::U128(l) => Constant::U128(l.wrapping_shl(c)),
 
                             _ => break 'label self.invalid_binop(op, node, lhs, rhs, hint),
                         }
@@ -215,10 +221,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             Constant::I16(l) => Constant::I16(l.wrapping_shr(c)),
                             Constant::I32(l) => Constant::I32(l.wrapping_shr(c)),
                             Constant::I64(l) => Constant::I64(l.wrapping_shr(c)),
+                            Constant::I128(l) => Constant::I128(l.wrapping_shr(c)),
                             Constant::U8(l) => Constant::U8(l.wrapping_shr(c)),
                             Constant::U16(l) => Constant::U16(l.wrapping_shr(c)),
                             Constant::U32(l) => Constant::U32(l.wrapping_shr(c)),
                             Constant::U64(l) => Constant::U64(l.wrapping_shr(c)),
+                            Constant::U128(l) => Constant::U128(l.wrapping_shr(c)),
 
                             _ => break 'label self.invalid_binop(op, node, lhs, rhs, hint),
                         }

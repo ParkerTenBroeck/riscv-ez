@@ -153,10 +153,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             "i16" => Constant::I16(integer!(i16)),
             "i32" => Constant::I32(integer!(i32)),
             "i64" => Constant::I64(integer!(i64)),
+            "i128" => Constant::I128(integer!(i128)),
             "u8" => Constant::U8(integer!(u8)),
             "u16" => Constant::U16(integer!(u16)),
             "u32" => Constant::U32(integer!(u32)),
             "u64" => Constant::U64(integer!(u64)),
+            "u128" => Constant::U128(integer!(u128)),
 
             "f32" => Constant::F32(float!(f32)),
             "f64" => Constant::F64(float!(f64)),

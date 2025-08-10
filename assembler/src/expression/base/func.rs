@@ -5,7 +5,7 @@ use crate::{
     context::Node,
     expression::{
         AsmString, Constant, ExpressionEvaluator, FuncParamParser, Value, ValueType, WriteStrError,
-        args::AsmStrArg,
+        args::{AsmStrArg, PathArg},
     },
     logs::LogEntry,
 };
@@ -39,7 +39,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         if let Some(Node(value, vn)) = iter.next() {
                             match value {
                                 Value::Constant(Constant::Str(str)) => {
-                                    match result.write_str(str) {
+                                    match result.write_asm_str(str) {
                                         Ok(_) => {}
                                         Err(WriteStrError::CannotWriteByteStrToRegularString) => {
                                             ctx.context.report(
@@ -58,13 +58,45 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                                 _ => _ = result.write_fmt(format_args!("{value}")),
                             }
                         }
-                        match result.write_str(part) {
+                        match result.write_asm_str(part) {
                             Ok(_) => {}
                             Err(_) => unreachable!(),
                         }
                     }
 
                     Value::Constant(Constant::Str(result.alloc_str(ctx.context)))
+                } else {
+                    Value::Constant(Constant::Str(Default::default()))
+                }
+            }
+            "include_bytes" => {
+                if let Node(PathArg::Val(Some(path)), n) = func.coerced_args(lang, &mut ctx) {
+                    match ctx.context.get_source_from_path(path) {
+                        Ok(str) => Value::Constant(Constant::Str(
+                            crate::expression::AsmStr::ByteStr(str.contents.as_bytes()),
+                        )),
+                        Err(err) => {
+                            ctx.context
+                                .report_error(n, format!("failed to include bytes: {err}"));
+                            Value::Constant(Constant::Str(crate::expression::AsmStr::ByteStr(&[])))
+                        }
+                    }
+                } else {
+                    Value::Constant(Constant::Str(crate::expression::AsmStr::ByteStr(&[])))
+                }
+            }
+            "include_str" => {
+                if let Node(PathArg::Val(Some(path)), n) = func.coerced_args(lang, &mut ctx) {
+                    match ctx.context.get_source_from_path(path) {
+                        Ok(str) => Value::Constant(Constant::Str(crate::expression::AsmStr::Str(
+                            str.contents,
+                        ))),
+                        Err(err) => {
+                            ctx.context
+                                .report_error(n, format!("failed to include str: {err}"));
+                            Value::Constant(Constant::Str(Default::default()))
+                        }
+                    }
                 } else {
                     Value::Constant(Constant::Str(Default::default()))
                 }
