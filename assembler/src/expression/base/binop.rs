@@ -1,3 +1,5 @@
+use num_traits::*;
+
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
@@ -74,11 +76,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::I32($l), Constant::I32($r)) => Constant::I32($integer),
                         (Constant::I64($l), Constant::I64($r)) => Constant::I64($integer),
                         (Constant::I128($l), Constant::I128($r)) => Constant::I128($integer),
+                        (Constant::Isize($l), Constant::Isize($r)) => Constant::Isize($integer),
+                        (Constant::Iptr($l), Constant::Iptr($r)) => Constant::Iptr($integer),
                         (Constant::U8($l), Constant::U8($r)) => Constant::U8($integer),
                         (Constant::U16($l), Constant::U16($r)) => Constant::U16($integer),
                         (Constant::U32($l), Constant::U32($r)) => Constant::U32($integer),
                         (Constant::U64($l), Constant::U64($r)) => Constant::U64($integer),
                         (Constant::U128($l), Constant::U128($r)) => Constant::U128($integer),
+                        (Constant::Usize($l), Constant::Usize($r)) => Constant::Usize($integer),
+                        (Constant::Uptr($l), Constant::Uptr($r)) => Constant::Uptr($integer),
                     )?
                     $(
                         (Constant::F32($l), Constant::F32($r)) => Constant::F32($float),
@@ -102,11 +108,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::I32($l), Constant::I32($r)) => Constant::Bool($block),
                         (Constant::I64($l), Constant::I64($r)) => Constant::Bool($block),
                         (Constant::I128($l), Constant::I128($r)) => Constant::Bool($block),
+                        (Constant::Isize($l), Constant::Isize($r)) => Constant::Bool($block),
+                        (Constant::Iptr($l), Constant::Iptr($r)) => Constant::Bool($block),
                         (Constant::U8($l), Constant::U8($r)) => Constant::Bool($block),
                         (Constant::U16($l), Constant::U16($r)) => Constant::Bool($block),
                         (Constant::U32($l), Constant::U32($r)) => Constant::Bool($block),
                         (Constant::U64($l), Constant::U64($r)) => Constant::Bool($block),
                         (Constant::U128($l), Constant::U128($r)) => Constant::Bool($block),
+                        (Constant::Usize($l), Constant::Usize($r)) => Constant::Bool($block),
+                        (Constant::Uptr($l), Constant::Uptr($r)) => Constant::Bool($block),
                         (Constant::F32($l), Constant::F32($r)) => Constant::Bool($block),
                         (Constant::F64($l), Constant::F64($r)) => Constant::Bool($block),
                         // (Constant::Str($l), Constant::Str($r)) => Constant::Bool($block),
@@ -128,30 +138,30 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 )),
 
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_add(r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/
+                    l, r,/*int*/{WrappingAdd::wrapping_add(&l, &r)},/*float*/{l+r},/*str*/,/*char*/,/*bool*/
                 ),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Sub => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_sub(r)},/*float*/{l-r},/*str*/,/*char*/,/*bool*/
+                    l, r,/*int*/{WrappingSub::wrapping_sub(&l, &r)},/*float*/{l-r},/*str*/,/*char*/,/*bool*/
                 ),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Mul => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
-                    l, r,/*int*/{l.wrapping_mul(r)},/*float*/{l*r},/*str*/,/*char*/,/*bool*/
+                    l, r,/*int*/{WrappingMul::wrapping_mul(&l, &r)},/*float*/{l*r},/*str*/,/*char*/,/*bool*/
                 ),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Div => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{
-                        if r!=0{
-                            l.wrapping_div(r)
+                        if r!=num_traits::zero(){
+                            l / r
                         }else{
                             self.context.report_error(node, "divide by zero");
-                            0
+                            num_traits::zero()
                         }
                     },/*float*/{l/r},/*str*/,/*char*/,/*bool*/
                 ),
@@ -160,11 +170,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             BinOp::Rem => match (lhs.0, rhs.0) {
                 (Value::Constant(l), Value::Constant(r)) => constants_grouped!(
                     l, r,/*int*/{
-                        if r!=0{
-                            l.wrapping_rem(r)
+                        if r!=num_traits::zero(){
+                            l % r
                         }else{
                             self.context.report_error(node, "remainder by zero");
-                            0
+                            num_traits::zero()
                         }
                     },/*float*/{l%r},/*str*/,/*char*/,/*bool*/
                 ),
@@ -222,11 +232,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             Constant::I32(l) => Constant::I32(l.wrapping_shr(c)),
                             Constant::I64(l) => Constant::I64(l.wrapping_shr(c)),
                             Constant::I128(l) => Constant::I128(l.wrapping_shr(c)),
+                            Constant::Isize(l) => Constant::Isize(l.wrapping_shr(c)),
+                            Constant::Iptr(l) => Constant::Iptr(l.wrapping_shr(c)),
                             Constant::U8(l) => Constant::U8(l.wrapping_shr(c)),
                             Constant::U16(l) => Constant::U16(l.wrapping_shr(c)),
                             Constant::U32(l) => Constant::U32(l.wrapping_shr(c)),
                             Constant::U64(l) => Constant::U64(l.wrapping_shr(c)),
                             Constant::U128(l) => Constant::U128(l.wrapping_shr(c)),
+                            Constant::Usize(l) => Constant::Usize(l.wrapping_shr(c)),
+                            Constant::Uptr(l) => Constant::Uptr(l.wrapping_shr(c)),
 
                             _ => break 'label self.invalid_binop(op, node, lhs, rhs, hint),
                         }
@@ -309,26 +323,36 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn invalid_index(
         &mut self,
         node: NodeId<'a>,
-        lhs: NodeVal<'a, L>,
-        rhs: NodeVal<'a, L>,
+        lhs: Option<NodeVal<'a, L>>,
+        rhs: Option<NodeVal<'a, L>>,
     ) -> Value<'a, L> {
-        self.context.report_error(
-            node,
-            format!(
-                "cannot index '{}' with '{}'",
-                lhs.0.get_type(),
-                rhs.0.get_type()
+        match (lhs, rhs) {
+            (None, None) => self.context.report_error(node, "cannot index with nothing"),
+            (None, Some(rhs)) => self
+                .context
+                .report_error(node, format!("cannot index with '{}'", rhs.0.get_type())),
+            (Some(lhs), None) => self
+                .context
+                .report_error(node, format!("cannot index '{}''", lhs.0.get_type(),)),
+
+            (Some(lhs), Some(rhs)) => self.context.report_error(
+                node,
+                format!(
+                    "cannot index '{}' with '{}'",
+                    lhs.0.get_type(),
+                    rhs.0.get_type()
+                ),
             ),
-        );
+        }
         Value::Indexed(L::Indexed::default())
     }
 
     pub fn index_base(
         &mut self,
         node: NodeId<'a>,
-        lhs: NodeVal<'a, L>,
+        lhs: Option<NodeVal<'a, L>>,
         _opening: NodeId<'a>,
-        rhs: NodeVal<'a, L>,
+        rhs: Option<NodeVal<'a, L>>,
         _closing: NodeId<'a>,
         _hint: ValueType<'a, L>,
     ) -> Value<'a, L> {

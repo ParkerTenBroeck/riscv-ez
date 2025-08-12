@@ -196,8 +196,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             ArgumentsTypeHint::None,
                         );
                         self.context.report(LogEntry::new()
-                    .error(loc.1, "function arguments never consumer"
-                ).info_locless("this is an internal assembler error, if possible please make an issue"));
+                            .error(loc.1, "function arguments never consumer"
+                        ).info_locless("this is an internal assembler error, if possible please make an issue"));
                         loc.1
                     };
 
@@ -269,6 +269,23 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 arg
             }
 
+            Some(Node(Token::LBracket, opening)) => {
+                let rhs = self.parse_expr(hint);
+                let closing = match self.peek() {
+                    Some(Node(Token::RBracket, closing)) => {
+                        self.next();
+                        closing
+                    }
+                    t => self.context.unexpected_token(t, Token::RBracket, false),
+                };
+                let node = self.context.merge_nodes(opening, closing);
+                return Node(
+                    self.lang
+                        .eval_index(ctx!(self), node, None, opening, Some(rhs), closing, hint),
+                    node,
+                );
+            }
+
             t => Node(
                 hint.default_value(),
                 self.context.unexpected_token(
@@ -276,6 +293,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     [
                         Token::Ident(""),
                         Token::LPar,
+                        Token::LBracket,
                         Token::CharLiteral(Default::default()),
                         Token::StringLiteral(Default::default()),
                         Token::FalseLiteral,
@@ -302,8 +320,15 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             };
             let node = self.context.merge_nodes(expr.1, closing);
             return Node(
-                self.lang
-                    .eval_index(ctx!(self), node, expr, opening, rhs, closing, hint),
+                self.lang.eval_index(
+                    ctx!(self),
+                    node,
+                    Some(expr),
+                    opening,
+                    Some(rhs),
+                    closing,
+                    hint,
+                ),
                 node,
             );
         }

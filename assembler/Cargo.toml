@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 bumpalo = { version = "*", features = ["boxed"] }
+num-traits = "*"

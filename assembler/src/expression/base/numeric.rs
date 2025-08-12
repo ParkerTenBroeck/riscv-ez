@@ -102,6 +102,9 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             str::from_utf8(&buf[..index]).unwrap()
         };
 
+        use num_traits::Bounded;
+        use num_traits::Num;
+        use num_traits::WrappingNeg;
         macro_rules! integer {
             ($num:ty) => {{
                 let v = <$num>::from_str_radix(number, radix)
@@ -114,8 +117,9 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                                     IntErrorKind::PosOverflow => "large",
                                     _ => "???????",
                                 };
+                                #[allow(clippy::legacy_numeric_constants)]
                                 let mut error = LogEntry::new()
-                                        .error(n, format!("numeric literal too {smaller_larger} to fit in '{suffix}' valid range is {}..={}", <$num>::MIN, <$num>::MAX));
+                                        .error(n, format!("numeric literal too {smaller_larger} to fit in '{suffix}' valid range is {}..={}", <$num>::min_value(), <$num>::max_value()));
 
                                 if num.get_suffix().is_none() && hint == ValueType::Any {
                                     error = error.hint_locless(format!("consider adding an explicit type suffix to the literal like {}{}i64{}", num.get_num(), crate::logs::GREEN, crate::logs::RESET))
@@ -127,7 +131,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                             _ => self.context.report_error(n, format!("invalid numeric literal"))
                         }
                     })
-                    .unwrap_or(0);
+                    .unwrap_or(num_traits::zero());
                 if negated{
                     v.wrapping_neg()
                 }else{
@@ -154,11 +158,16 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             "i32" => Constant::I32(integer!(i32)),
             "i64" => Constant::I64(integer!(i64)),
             "i128" => Constant::I128(integer!(i128)),
+            "isize" => Constant::Isize(integer!(L::Isize)),
+            "iptr" => Constant::Iptr(integer!(L::Iptr)),
+
             "u8" => Constant::U8(integer!(u8)),
             "u16" => Constant::U16(integer!(u16)),
             "u32" => Constant::U32(integer!(u32)),
             "u64" => Constant::U64(integer!(u64)),
             "u128" => Constant::U128(integer!(u128)),
+            "usize" => Constant::Usize(integer!(L::Usize)),
+            "uptr" => Constant::Uptr(integer!(L::Uptr)),
 
             "f32" => Constant::F32(float!(f32)),
             "f64" => Constant::F64(float!(f64)),

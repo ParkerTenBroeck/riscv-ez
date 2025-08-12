@@ -43,6 +43,11 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     type Label = LabelExpr<'a>;
     type AssembledResult = ();
 
+    type Usize = u32;
+    type Isize = i32;
+    type Uptr = u32;
+    type Iptr = i32;
+
     fn parse_ident(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
@@ -315,13 +320,21 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
-        lhs: assembler::expression::NodeVal<'a, Self>,
+        lhs: Option<NodeVal<'a>>,
         opening: NodeId<'a>,
-        rhs: assembler::expression::NodeVal<'a, Self>,
+        rhs: Option<NodeVal<'a>>,
         closing: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
-        match (rhs.0, lhs.0) {
+        let (lhs, rhs) = match (lhs, rhs) {
+            (Some(lhs), Some(rhs)) => (lhs, rhs),
+            (lhs, rhs) => {
+                return ctx
+                    .eval(self)
+                    .index_base(node, lhs, opening, rhs, closing, hint);
+            }
+        };
+        match (lhs.0, rhs.0) {
             (Value::Register(r), Value::Constant(Constant::I32(i))) => {
                 Value::Indexed(MemoryIndex::RegisterOffset(r, i))
             }
@@ -354,7 +367,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             }
             _ => ctx
                 .eval(self)
-                .index_base(node, lhs, opening, rhs, closing, hint),
+                .index_base(node, Some(lhs), opening, Some(rhs), closing, hint),
         }
     }
 

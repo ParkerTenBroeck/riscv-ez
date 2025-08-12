@@ -1,12 +1,16 @@
+#![allow(warnings)]
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{
-    assembler::{LangCtx, lang},
+    assembler::{
+        LangCtx,
+        lang::{self, AsmNum},
+    },
     context::{Node, NodeId},
     expression::{
         ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
         FuncParamParser, Indexed, NodeVal, Value, ValueType,
-        args::{AsmStrArg, StrArg, U32Arg, U32Pow2Arg},
+        args::{StrArg, U32Arg, U32Pow2Arg},
         binop::BinOp,
         unop::UnOp,
     },
@@ -23,6 +27,11 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     type CustomValue: CustomValue<'a, Lang = Self>;
     type Label: AssemblyLabel<'a, Lang = Self>;
     type AssembledResult;
+
+    type Usize: AsmNum;
+    type Isize: AsmNum;
+    type Uptr: AsmNum;
+    type Iptr: AsmNum;
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 
@@ -81,9 +90,9 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
-        lhs: NodeVal<'a, Self>,
+        lhs: Option<NodeVal<'a, Self>>,
         opening: NodeId<'a>,
-        rhs: NodeVal<'a, Self>,
+        rhs: Option<NodeVal<'a, Self>>,
         closing: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
@@ -126,15 +135,21 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
     fn add_constant_data(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
-        constant: Constant<'a>,
+        constant: Constant<'a, Self>,
         node: NodeId<'a>,
     ) {
-        let align = constant.get_align();
+        use num_traits::ToPrimitive;
+        let align = constant
+            .get_align()
+            .unwrap_or_default()
+            .to_usize()
+            .unwrap_or_default();
         macro_rules! dat {
             ($expr:expr) => {
-                self.add_data(ctx, $expr, align as usize, node)
+                self.add_data(ctx, $expr, align, node)
             };
         }
+        use num_traits::ToBytes;
         match self.state_mut().endianess {
             Endianess::Little => match constant {
                 Constant::I8(v) => dat!(&v.to_le_bytes()),
@@ -142,18 +157,22 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::I32(v) => dat!(&v.to_le_bytes()),
                 Constant::I64(v) => dat!(&v.to_le_bytes()),
                 Constant::I128(v) => dat!(&v.to_le_bytes()),
+                Constant::Isize(v) => dat!(v.to_le_bytes().as_ref()),
+                Constant::Iptr(v) => dat!(v.to_le_bytes().as_ref()),
                 Constant::U8(v) => dat!(&v.to_le_bytes()),
                 Constant::U16(v) => dat!(&v.to_le_bytes()),
                 Constant::U32(v) => dat!(&v.to_le_bytes()),
                 Constant::U64(v) => dat!(&v.to_le_bytes()),
                 Constant::U128(v) => dat!(&v.to_le_bytes()),
+                Constant::Usize(v) => dat!(v.to_le_bytes().as_ref()),
+                Constant::Uptr(v) => dat!(v.to_le_bytes().as_ref()),
                 Constant::F32(v) => dat!(&v.to_le_bytes()),
                 Constant::F64(v) => dat!(&v.to_le_bytes()),
                 Constant::Str(v) => match v {
                     crate::expression::AsmStr::Str(str) => dat!(str.as_bytes()),
                     crate::expression::AsmStr::ByteStr(str) => dat!(str),
                     crate::expression::AsmStr::CStr(str) => {
-                        self.add_data(ctx, str, align as usize, node);
+                        self.add_data(ctx, str, align, node);
                         self.add_data(ctx, &[0], 1, node)
                     }
                 },
@@ -166,18 +185,22 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                 Constant::I32(v) => dat!(&v.to_be_bytes()),
                 Constant::I64(v) => dat!(&v.to_be_bytes()),
                 Constant::I128(v) => dat!(&v.to_be_bytes()),
+                Constant::Isize(v) => dat!(v.to_be_bytes().as_ref()),
+                Constant::Iptr(v) => dat!(v.to_be_bytes().as_ref()),
                 Constant::U8(v) => dat!(&v.to_be_bytes()),
                 Constant::U16(v) => dat!(&v.to_be_bytes()),
                 Constant::U32(v) => dat!(&v.to_be_bytes()),
                 Constant::U64(v) => dat!(&v.to_be_bytes()),
                 Constant::U128(v) => dat!(&v.to_be_bytes()),
+                Constant::Usize(v) => dat!(v.to_be_bytes().as_ref()),
+                Constant::Uptr(v) => dat!(v.to_be_bytes().as_ref()),
                 Constant::F32(v) => dat!(&v.to_be_bytes()),
                 Constant::F64(v) => dat!(&v.to_be_bytes()),
                 Constant::Str(v) => match v {
                     crate::expression::AsmStr::Str(str) => dat!(str.as_bytes()),
                     crate::expression::AsmStr::ByteStr(str) => dat!(str),
                     crate::expression::AsmStr::CStr(str) => {
-                        self.add_data(ctx, str, align as usize, node);
+                        self.add_data(ctx, str, align, node);
                         self.add_data(ctx, &[0], 1, node)
                     }
                 },
@@ -231,6 +254,11 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
     type CustomValue = T::CustomValue;
     type Label = T::Label;
     type AssembledResult = T::AssembledResult;
+
+    type Usize = T::Usize;
+    type Isize = T::Isize;
+    type Uptr = T::Uptr;
+    type Iptr = T::Iptr;
 
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
@@ -304,9 +332,9 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
         node: NodeId<'a>,
-        lhs: NodeVal<'a, Self>,
+        lhs: Option<NodeVal<'a, Self>>,
         opening: NodeId<'a>,
-        rhs: NodeVal<'a, Self>,
+        rhs: Option<NodeVal<'a, Self>>,
         closing: NodeId<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
@@ -426,10 +454,12 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
             ".u16" => constant!(U16Arg, U16),
             ".u32" => constant!(U32Arg, U32),
             ".u64" => constant!(U64Arg, U64),
+            ".u128" => constant!(U128Arg, U128),
             ".i8" => constant!(I8Arg, I8),
             ".i16" => constant!(I16Arg, I16),
             ".i32" => constant!(I32Arg, I32),
             ".i64" => constant!(I64Arg, I64),
+            ".i128" => constant!(I128Arg, I128),
             ".f32" => constant!(F32Arg, F32),
             ".f64" => constant!(F64Arg, F64),
             ".bool" => constant!(BoolArg, Bool),

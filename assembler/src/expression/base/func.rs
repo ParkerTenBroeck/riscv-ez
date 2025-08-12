@@ -101,6 +101,18 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     Value::Constant(Constant::Str(Default::default()))
                 }
             }
+            "size_of" => {
+                let val: Value<'a, L> = func.coerced_args(lang, &mut ctx).0;
+                Value::Constant(Constant::Uptr(val.get_size().unwrap_or(num_traits::one())))
+            }
+            "align_of" => {
+                let val: Value<'a, L> = func.coerced_args(lang, &mut ctx).0;
+                Value::Constant(Constant::Uptr(val.get_align().unwrap_or(num_traits::one())))
+            }
+            "type_of" => {
+                let val: Value<'a, L> = func.coerced_args(lang, &mut ctx).0;
+                Value::Type(val.get_type())
+            }
             _ => self.invalid_func(func, hint),
         }
     }

@@ -116,11 +116,13 @@ integer!(
     i16, "i16", I16, I16Arg, ,
     i32, "i32", I32, I32Arg, ,
     i64, "i64", I64, I64Arg, ,
+    i128, "i128", I128, I128Arg, ,
 
     u8, "u8", U8, U8Arg, U8Pow2Arg,
     u16, "u16", U16, U16Arg, U16Pow2Arg,
     u32, "u32", U32, U32Arg, U32Pow2Arg,
     u64, "u64", U64, U64Arg, U64Pow2Arg,
+    u128, "u128", U128, U128Arg, U128Pow2Arg,
 
 
     f32, "f32", F32, F32Arg, ,

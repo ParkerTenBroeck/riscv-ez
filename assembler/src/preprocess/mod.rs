@@ -6,9 +6,9 @@ use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::NodeInfo;
 use crate::context::Parent;
-use crate::expression::args::PathArg;
 use crate::expression::Value;
 use crate::expression::ValueType;
+use crate::expression::args::PathArg;
 use crate::lex::Spanned;
 use crate::logs::LogEntry;
 use crate::{
@@ -348,11 +348,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         match tag {
             "include" => {
                 if let Node(PathArg::Val(Some(path)), n) = ctx.eval(self).coerced(n) {
-                    self.include(
-                        ctx,
-                        path,
-                        Parent::Included { parent: n },
-                    );
+                    self.include(ctx, path, Parent::Included { parent: n });
                 }
             }
             "def" => match self.stack_next(ctx) {
