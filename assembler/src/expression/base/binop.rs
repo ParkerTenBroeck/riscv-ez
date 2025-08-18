@@ -3,7 +3,7 @@ use num_traits::*;
 use crate::{
     assembler::lang::AssemblyLanguage,
     context::{Node, NodeId},
-    expression::{Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value, ValueType},
+    expression::{Constant, ExpressionEvaluator, NodeVal, Value, ValueType},
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -99,7 +99,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             };
         }
 
-        macro_rules! constants_bool {
+        macro_rules! constant_cmp {
             ($l:ident, $r:ident, $block:block) => {
                 'label: {
                     Value::Constant(match ($l, $r) {
@@ -119,7 +119,6 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                         (Constant::Uptr($l), Constant::Uptr($r)) => Constant::Bool($block),
                         (Constant::F32($l), Constant::F32($r)) => Constant::Bool($block),
                         (Constant::F64($l), Constant::F64($r)) => Constant::Bool($block),
-                        // (Constant::Str($l), Constant::Str($r)) => Constant::Bool($block),
                         (Constant::Char($l), Constant::Char($r)) => Constant::Bool($block),
                         (Constant::Bool($l), Constant::Bool($r)) => Constant::Bool($block),
                         _ => break 'label (self.invalid_binop(op, node, lhs, rhs, hint)),
@@ -201,19 +200,28 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             BinOp::Shl => 'label: {
                 match (lhs.0, rhs.0) {
                     (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                        let v = self.context.config().implicit_cast_shift_value;
-                        let c = r.cast_with(node, self.context, v).unwrap_or(0);
+                        let Some(c) = r.checked_cast_u32_with(
+                            rhs.1,
+                            self.context,
+                            self.context.config().implicit_cast_shift_value,
+                        ) else {
+                            break 'label self.invalid_binop(op, node, lhs, rhs, hint);
+                        };
                         match l {
                             Constant::I8(l) => Constant::I8(l.wrapping_shl(c)),
                             Constant::I16(l) => Constant::I16(l.wrapping_shl(c)),
                             Constant::I32(l) => Constant::I32(l.wrapping_shl(c)),
                             Constant::I64(l) => Constant::I64(l.wrapping_shl(c)),
                             Constant::I128(l) => Constant::I128(l.wrapping_shl(c)),
+                            Constant::Isize(l) => Constant::Isize(l.wrapping_shl(c)),
+                            Constant::Iptr(l) => Constant::Iptr(l.wrapping_shl(c)),
                             Constant::U8(l) => Constant::U8(l.wrapping_shl(c)),
                             Constant::U16(l) => Constant::U16(l.wrapping_shl(c)),
                             Constant::U32(l) => Constant::U32(l.wrapping_shl(c)),
                             Constant::U64(l) => Constant::U64(l.wrapping_shl(c)),
                             Constant::U128(l) => Constant::U128(l.wrapping_shl(c)),
+                            Constant::Usize(l) => Constant::Usize(l.wrapping_shl(c)),
+                            Constant::Uptr(l) => Constant::Uptr(l.wrapping_shl(c)),
 
                             _ => break 'label self.invalid_binop(op, node, lhs, rhs, hint),
                         }
@@ -224,8 +232,14 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
             BinOp::Shr => 'label: {
                 match (lhs.0, rhs.0) {
                     (Value::Constant(l), Value::Constant(r)) => Value::Constant({
-                        let v = self.context.config().implicit_cast_shift_value;
-                        let c = r.cast_with(node, self.context, v).unwrap_or(0);
+                        let Some(c) = r.checked_cast_u32_with(
+                            rhs.1,
+                            self.context,
+                            self.context.config().implicit_cast_shift_value,
+                        ) else {
+                            break 'label self.invalid_binop(op, node, lhs, rhs, hint);
+                        };
+
                         match l {
                             Constant::I8(l) => Constant::I8(l.wrapping_shr(c)),
                             Constant::I16(l) => Constant::I16(l.wrapping_shr(c)),
@@ -251,20 +265,20 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
             BinOp::Lt => match (lhs.0, rhs.0) {
                 #[allow(clippy::bool_comparison)]
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l < r }),
+                (Value::Constant(l), Value::Constant(r)) => constant_cmp!(l, r, { l < r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Lte => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l <= r }),
+                (Value::Constant(l), Value::Constant(r)) => constant_cmp!(l, r, { l <= r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Gt => match (lhs.0, rhs.0) {
                 #[allow(clippy::bool_comparison)]
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l > r }),
+                (Value::Constant(l), Value::Constant(r)) => constant_cmp!(l, r, { l > r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Gte => match (lhs.0, rhs.0) {
-                (Value::Constant(l), Value::Constant(r)) => constants_bool!(l, r, { l >= r }),
+                (Value::Constant(l), Value::Constant(r)) => constant_cmp!(l, r, { l >= r }),
                 _ => self.invalid_binop(op, node, lhs, rhs, hint),
             },
             BinOp::Eq => {

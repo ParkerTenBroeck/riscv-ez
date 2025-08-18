@@ -3,9 +3,7 @@ use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::CoercedArg;
-use assembler::expression::{
-    AssemblyRegister, Constant, ImplicitCastFrom, ImplicitCastTo as _, Indexed, Value, ValueType,
-};
+use assembler::expression::{AssemblyRegister, Constant, Indexed, Value, ValueType};
 use std::fmt::{Display, Formatter};
 
 pub enum RegOffset<'a> {
@@ -19,7 +17,7 @@ impl<'a> Default for RegOffset<'a> {
 }
 impl<'a> CoercedArg<'a> for RegOffset<'a> {
     type LANG = RiscvAssembler<'a>;
-    const TYPE_REPR: &'static str = "indexed|register|label|<integer>";
+    const TYPE_REPR: &'static str = "indexed|register|label|iptr";
     const HINT: ValueType<'a, RiscvAssembler<'a>> = ValueType::<'a, RiscvAssembler>::Indexed;
 
     fn from_arg(
@@ -30,8 +28,12 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
         match value {
             Value::Constant(c) => Ok(RegOffset::Constant(
                 Default::default(),
-                c.cast_with(node, context, context.config().implicit_cast_label_offset)
-                    .ok_or(None)?,
+                c.checked_cast_iptr_with(
+                    node,
+                    context,
+                    context.config().implicit_cast_label_offset,
+                )
+                .ok_or(None)?,
             )),
 
             Value::Label(label) => Ok(RegOffset::Label(Default::default(), label)),
@@ -106,31 +108,27 @@ impl<'a, L: AssemblyLanguage<'a>> Default for Immediate<'a, L> {
         Self::UnsignedConstant(0)
     }
 }
-impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Immediate<'a, L> {
-    type LANG = L;
-    const TYPE_REPR: &'static str = "<integer>|label";
-    const HINT: ValueType<'a, L> = ValueType::I32;
+impl<'a> CoercedArg<'a> for Immediate<'a, RiscvAssembler<'a>> {
+    type LANG = RiscvAssembler<'a>;
+    const TYPE_REPR: &'static str = "isize|usize|label";
+    const HINT: ValueType<'a, RiscvAssembler<'a>> = ValueType::I32;
 
     fn from_arg(
         context: &mut Context<'a>,
         node: NodeId<'a>,
-        value: Value<'a, L>,
+        value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
             Value::Constant(c) => match c {
                 c if c.is_signed_integer() => Ok(Immediate::SignedConstant(
-                    c.cast(node, context).ok_or(None)?,
+                    c.checked_cast_isize(node, context).ok_or(None)?,
                 )),
                 c if c.is_unsigned_integer() => Ok(Immediate::UnsignedConstant(
-                    c.cast(node, context).ok_or(None)?,
+                    c.checked_cast_usize(node, context).ok_or(None)?,
                 )),
-                _ => {
-                    context.report_error(
-                        node,
-                        format!("expected <integer> constant found {}", value.get_type()),
-                    );
-                    Err(None)
-                }
+                _ => Ok(Immediate::SignedConstant(
+                    c.checked_cast_isize(node, context).ok_or(None)?,
+                )),
             },
             Value::Label(label) => Ok(Immediate::Label(label)),
             _ => Err(None),

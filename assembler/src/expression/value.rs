@@ -6,8 +6,6 @@ use std::ops::Index;
 use num_traits::FromPrimitive;
 
 use crate::assembler::lang::AssemblyLanguage;
-use crate::config::ImplicitCastConfig;
-use crate::context::{Context, NodeId};
 use crate::expression::AsmStr;
 
 pub trait AssemblyLabel<'a>:
@@ -25,7 +23,6 @@ pub trait AssemblyLabel<'a>:
             <Self::Lang as AssemblyLanguage<'a>>::Uptr,
         >())
     }
-    type Offset: ImplicitCastFrom<'a, Constant<'a, Self::Lang>> + Default;
 }
 
 pub trait AssemblyRegister<'a>:
@@ -63,6 +60,8 @@ pub enum ValueType<'a, L: AssemblyLanguage<'a>> {
     Any,
 
     Str,
+    Cstr,
+    Bstr,
 
     Indexed,
     Register,
@@ -116,6 +115,8 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             Self::F32 => <L::Uptr as FromPrimitive>::from_usize(4),
             Self::F64 => <L::Uptr as FromPrimitive>::from_usize(8),
             Self::Str => <L::Uptr as FromPrimitive>::from_usize(1),
+            Self::Cstr => <L::Uptr as FromPrimitive>::from_usize(1),
+            Self::Bstr => <L::Uptr as FromPrimitive>::from_usize(1),
             Self::Char => <L::Uptr as FromPrimitive>::from_usize(4),
             Self::Bool => <L::Uptr as FromPrimitive>::from_usize(1),
             _ => Some(num_traits::one()),
@@ -154,31 +155,33 @@ where
 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
-            ValueType::Any => f.write_str("Any"),
-            ValueType::Str => f.write_str("Str"),
-            ValueType::Indexed => f.write_str("Indexed"),
-            ValueType::Register => f.write_str("Register"),
-            ValueType::Label => f.write_str("Label"),
-            ValueType::I8 => f.write_str("I8"),
-            ValueType::I16 => f.write_str("I16"),
-            ValueType::I32 => f.write_str("I32"),
-            ValueType::I64 => f.write_str("I64"),
-            ValueType::I128 => f.write_str("I128"),
-            ValueType::Isize => f.write_str("Isize"),
-            ValueType::Iptr => f.write_str("Iptr"),
-            ValueType::U8 => f.write_str("U8"),
-            ValueType::U16 => f.write_str("U16"),
-            ValueType::U32 => f.write_str("U32"),
-            ValueType::U64 => f.write_str("U64"),
-            ValueType::U128 => f.write_str("U128"),
-            ValueType::Usize => f.write_str("Usize"),
-            ValueType::Uptr => f.write_str("Uptr"),
-            ValueType::F32 => f.write_str("F32"),
-            ValueType::F64 => f.write_str("F64"),
-            ValueType::Bool => f.write_str("Bool"),
-            ValueType::Char => f.write_str("Char"),
-            ValueType::Type => f.write_str("Type"),
-            ValueType::Custom(f0) => f.debug_tuple("Custom").field(&f0).finish(),
+            ValueType::Any => f.write_str("any"),
+            ValueType::Str => f.write_str("str"),
+            ValueType::Cstr => f.write_str("cstr"),
+            ValueType::Bstr => f.write_str("cstr"),
+            ValueType::Indexed => f.write_str("indexed"),
+            ValueType::Register => f.write_str("register"),
+            ValueType::Label => f.write_str("label"),
+            ValueType::I8 => f.write_str("i8"),
+            ValueType::I16 => f.write_str("i16"),
+            ValueType::I32 => f.write_str("i32"),
+            ValueType::I64 => f.write_str("i64"),
+            ValueType::I128 => f.write_str("i128"),
+            ValueType::Isize => f.write_str("isize"),
+            ValueType::Iptr => f.write_str("iptr"),
+            ValueType::U8 => f.write_str("u8"),
+            ValueType::U16 => f.write_str("u16"),
+            ValueType::U32 => f.write_str("u32"),
+            ValueType::U64 => f.write_str("u64"),
+            ValueType::U128 => f.write_str("u128"),
+            ValueType::Usize => f.write_str("usize"),
+            ValueType::Uptr => f.write_str("uptr"),
+            ValueType::F32 => f.write_str("f32"),
+            ValueType::F64 => f.write_str("f64"),
+            ValueType::Bool => f.write_str("bool"),
+            ValueType::Char => f.write_str("char"),
+            ValueType::Type => f.write_str("type"),
+            ValueType::Custom(f0) => f.debug_tuple("custom").field(&f0).finish(),
         }
     }
 }
@@ -188,6 +191,8 @@ impl<'a, L: AssemblyLanguage<'a>> core::cmp::PartialEq for ValueType<'a, L> {
         match (self, other) {
             (ValueType::Any, ValueType::Any) => true,
             (ValueType::Str, ValueType::Str) => true,
+            (ValueType::Cstr, ValueType::Cstr) => true,
+            (ValueType::Bstr, ValueType::Bstr) => true,
             (ValueType::Indexed, ValueType::Indexed) => true,
             (ValueType::Register, ValueType::Register) => true,
             (ValueType::Label, ValueType::Label) => true,
@@ -228,6 +233,8 @@ impl<'a, L: AssemblyLanguage<'a>> std::fmt::Display for ValueType<'a, L> {
         match self {
             ValueType::Any => write!(f, "any"),
             ValueType::Str => write!(f, "str"),
+            ValueType::Cstr => write!(f, "cstr"),
+            ValueType::Bstr => write!(f, "bstr"),
             ValueType::Indexed => write!(f, "indexed"),
             ValueType::Register => write!(f, "register"),
             ValueType::Label => write!(f, "label"),
@@ -260,7 +267,9 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
         match self {
             ValueType::Any => Value::Constant(Constant::I32(0)),
             ValueType::Type => Value::Type(ValueType::Any),
-            ValueType::Str => Value::Constant(Constant::Str(Default::default())),
+            ValueType::Str => Value::Constant(Constant::Str(AsmStr::Str(""))),
+            ValueType::Cstr => Value::Constant(Constant::Str(AsmStr::CStr(&[]))),
+            ValueType::Bstr => Value::Constant(Constant::Str(AsmStr::ByteStr(&[]))),
             ValueType::Indexed => Value::Indexed(L::Indexed::default()),
             ValueType::Register => Value::Register(L::Reg::default()),
             ValueType::Label => Value::Label(Default::default()),
@@ -554,7 +563,9 @@ impl<'a, L: AssemblyLanguage<'a>> Constant<'a, L> {
             Constant::Uptr(_) => ValueType::Uptr,
             Constant::F32(_) => ValueType::F32,
             Constant::F64(_) => ValueType::F64,
-            Constant::Str(_) => ValueType::Str,
+            Constant::Str(AsmStr::Str(_)) => ValueType::Str,
+            Constant::Str(AsmStr::CStr(_)) => ValueType::Cstr,
+            Constant::Str(AsmStr::ByteStr(_)) => ValueType::Bstr,
             Constant::Char(_) => ValueType::Char,
             Constant::Bool(_) => ValueType::Bool,
         }
@@ -675,290 +686,6 @@ impl<'a, L: AssemblyLanguage<'a>> std::fmt::Display for Constant<'a, L> {
 
 //----------------------------------------------------------------------------
 
-pub trait ImplicitCastTo<'a, To>
-where
-    Self: Sized,
-{
-    fn cast(self, node: NodeId<'a>, ctx: &mut Context<'a>) -> Option<To> {
-        Self::cast_with(self, node, ctx, ctx.config().implicit_cast_defaults)
-    }
-    fn cast_with(
-        self,
-        node: NodeId<'a>,
-        ctx: &mut Context<'a>,
-        cfg: ImplicitCastConfig,
-    ) -> Option<To>;
-}
-
-pub trait ImplicitCastFrom<'a, From>
-where
-    Self: Sized,
-{
-    fn cast_with(
-        from: From,
-        node: NodeId<'a>,
-        ctx: &mut Context<'a>,
-        cfg: ImplicitCastConfig,
-    ) -> Option<Self>;
-}
-
-impl<'a, To: ImplicitCastFrom<'a, From>, From> ImplicitCastTo<'a, To> for From {
-    fn cast_with(
-        self,
-        node: NodeId<'a>,
-        ctx: &mut Context<'a>,
-        cfg: ImplicitCastConfig,
-    ) -> Option<To> {
-        To::cast_with(self, node, ctx, cfg)
-    }
-}
-
-macro_rules! implicit_cast_impl {
-    ($into:ty, identity: $identity:ident, $(identity_inv_sign: $identity_sign_change:ident,)? $(fnarrow: $fnarrow:ident,)? $(fwide: $fwide:ident,)? narrowing: [$($narrowing:ident),*], widening: [$($widening:ident),*], f2i: [$($f2i:ident),*], i2f: [$($i2f:ident),*] $(,)?) => {
-        impl<'a, L: AssemblyLanguage<'a>> ImplicitCastFrom<'a, Constant<'a,  L>> for $into {
-            fn cast_with(
-                from: Constant<'a, L>,
-                node: NodeId<'a>,
-                ctx: &mut Context<'a>,
-                cfg: ImplicitCastConfig,
-            ) -> Option<$into> {
-                use $crate::config::LogOn as LO;
-                use $crate::logs::LogEntry;
-
-                match from {
-                    Constant::$identity(i) => Some(i),
-                    $(Constant::$identity_sign_change(i) => match cfg.sign {
-                        LO::Error => implicit_cast_impl!(!error, node, ctx, $identity_sign_change, $into),
-                        LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
-                        LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $identity_sign_change, $into),
-                    },)?
-                    $(
-                        Constant::$fnarrow(i) => match cfg.narrowing {
-                            LO::Error => implicit_cast_impl!(!error, node, ctx, $fnarrow, $into),
-                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as f32)}, $fnarrow, $into),
-                            LO::None => {Some(i as  f32)},
-                        }
-                    )?
-                    $(
-                        Constant::$fwide(i) => match cfg.widening {
-                            LO::Error => implicit_cast_impl!(!error, node, ctx, $fwide, $into),
-                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as  f64)}, $fwide, $into),
-                            LO::None => Some(i as f64),
-                        }
-                    )?
-                    $(
-                        Constant::$narrowing(i) => match cfg.narrowing {
-                            LO::Error => implicit_cast_impl!(!error, node, ctx, $narrowing, $into),
-                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $narrowing, $into),
-                            LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $narrowing, $into),
-                        }
-                    )*
-                    $(
-                        Constant::$widening(i) => match cfg.widening {
-                            LO::Error => implicit_cast_impl!(!error, node, ctx, $widening, $into),
-                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, i, cfg.lossy, $widening, $into),
-                            LO::None => implicit_cast_impl!(!try_into, node, ctx, i, cfg.lossy, $widening, $into),
-                        }
-                    )*
-                    $(
-                        Constant::$i2f(i) => match cfg.i2f {
-                            LO::Error => implicit_cast_impl!(!error, node, ctx, $i2f, $into),
-                            LO::Warning => implicit_cast_impl!(!warning, node, ctx, {Some(i as $into)}, $i2f, $into),
-                            LO::None => Some(i as $into),
-                        },
-                    )*
-                    $(
-                        Constant::$f2i(i) => implicit_cast_impl!(!error, node, ctx, $f2i, $into),
-                    )*
-                    Constant::Char(_) => implicit_cast_impl!(!error, node, ctx, Char, $into),
-                    Constant::Bool(_) => implicit_cast_impl!(!error, node, ctx, Bool, $into),
-                    Constant::Str(_) => implicit_cast_impl!(!error_hard, node, ctx, Str, $into),
-                    _ => todo!()
-                }
-            }
-        }
-    };
-    (!error_hard, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
-        let from = stringify!($from).to_lowercase();
-        let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().error($node, format!("cannot cast '{from}' to '{to}'")));
-        None
-    }};
-    (!error, $node:ident, $ctx:ident, $from:ident, $to:ty) => {{
-        let from = stringify!($from).to_lowercase();
-        let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().error($node, format!("cannot implicitly cast '{from}' to '{to}'")).hint_locless(format!("consider casting expression with 'as {to}'")));
-        None
-    }};
-    (!warning, $node:ident, $ctx:ident, $block:block, $from:ident, $to:ty) => {{
-        let from = stringify!($from).to_lowercase();
-        let to = stringify!($to).to_lowercase();
-        $ctx.report(LogEntry::new().warning($node, format!("implicit cast '{from}' to '{to}'")).hint_locless(format!("consider casting expression with 'as {to}'")));
-        $block
-    }};
-    (!warning, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
-        implicit_cast_impl!(!warning, $node, $ctx, {
-            implicit_cast_impl!(!try_into, $node, $ctx, $expr, $lossy, $from, $to)
-        }, $from, $to)
-    }};
-
-    (!checked_cast, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
-        match $lossy{
-            LO::Error => {
-                match $expr.try_into(){
-                    Ok(ok) => Some(ok),
-                    Err(_) => implicit_cast_impl!(!error_hard, node, ctx, $from, $into)
-                }
-            },
-            LO::Warning => {
-                match $expr.try_into(){
-                    Ok(ok) => Some(ok),
-                    Err(_) => implicit_cast_impl!(!warning, $node, $ctx, {Some($expr as $to)}, $from, $to)
-                }
-            },
-            LO::None => Some($expr as $to),
-        }
-
-    }};
-    (!try_into, $node:ident, $ctx:ident, $expr:expr, $lossy:expr, $from:ident, $to:ty) => {{
-        match $lossy{
-            LO::Error => {
-                match $expr.try_into(){
-                    Ok(ok) => Some(ok),
-                    Err(_) => {
-                        let from = stringify!($from).to_lowercase();
-                        let to = stringify!($to).to_lowercase();
-                        $ctx.report(LogEntry::new().error($node, format!("implicit cast '{from}' to '{to}' is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
-                        None
-                    }
-                }
-            },
-            LO::Warning => {
-                match $expr.try_into(){
-                    Ok(ok) => Some(ok),
-                    Err(_) => {
-                        let from = stringify!($from).to_lowercase();
-                        let to = stringify!($to).to_lowercase();
-                        $ctx.report(LogEntry::new().error($node, format!("implicit cast '{from}' to '{to}' is lossy")).hint_locless(format!("consider casting expression with 'as {to}'")));
-                        Some($expr as $to)
-                    }
-                }
-            },
-            LO::None => Some($expr as $to),
-        }
-
-    }};
-}
-
-implicit_cast_impl!(
-    u8,
-    identity: U8,
-    identity_inv_sign: I8,
-    narrowing: [ I16, I32, I64, I128, U16, U32, U64, U128],
-    widening: [],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    u16,
-    identity: U16,
-    identity_inv_sign: I16,
-    narrowing: [I32, I64, I128, U32, U64, U128],
-    widening: [U8, I8],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    u32,
-    identity: U32,
-    identity_inv_sign: I32,
-    narrowing: [I64, I128, U64, U128],
-    widening: [U8, I8, I16, U16],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    u64,
-    identity: U64,
-    identity_inv_sign: I64,
-    narrowing: [I128, U128],
-    widening: [U8, I8, I16, U16, I32, U32],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    u128,
-    identity: U128,
-    identity_inv_sign: I128,
-    narrowing: [],
-    widening: [U8, I8, I16, U16, I32, U32, I64, U64],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    i8,
-    identity: I8,
-    identity_inv_sign: U8,
-    narrowing: [ I16, I32, I64, I128, U16, U32, U64, U128],
-    widening: [],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    i16,
-    identity: I16,
-    identity_inv_sign: U16,
-    narrowing: [I32, I64, I128, U32, U64, U128],
-    widening: [U8, I8],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    i32,
-    identity: I32,
-    identity_inv_sign: U32,
-    narrowing: [ I64, I128, U64, U128],
-    widening: [U8, I8, I16, U16],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    i64,
-    identity: I64,
-    identity_inv_sign: U64,
-    narrowing: [I128, U128],
-    widening: [U8, I8, I16, U16, I32, U32],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    i128,
-    identity: I128,
-    identity_inv_sign: U128,
-    narrowing: [],
-    widening: [U8, I8, I16, U16, I32, U32, I64, U64],
-    f2i: [],
-    i2f: [F32, F64],
-);
-implicit_cast_impl!(
-    f32,
-    identity: F32,
-    fnarrow: F64,
-    narrowing: [],
-    widening: [],
-    f2i: [],
-    i2f: [U8, I8, I16, U16, I32, U32, I64, I128, U64, U128],
-);
-implicit_cast_impl!(
-    f64,
-    identity: F64,
-    fwide: F32,
-    narrowing: [],
-    widening: [],
-    f2i: [],
-    i2f: [U8, I8, I16, U16, I32, U32, I64, I128, U64, U128],
-);
-
 impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
     pub fn is_numeric(&self) -> bool {
         self.numeric_suffix().is_some()
@@ -969,6 +696,8 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::Register => false,
             ValueType::Indexed => false,
             ValueType::Str => false,
+            ValueType::Cstr => false,
+            ValueType::Bstr => false,
             ValueType::Label => false,
             ValueType::I8 => true,
             ValueType::I16 => true,
@@ -998,6 +727,8 @@ impl<'a, L: AssemblyLanguage<'a>> ValueType<'a, L> {
             ValueType::Register => None,
             ValueType::Indexed => None,
             ValueType::Str => None,
+            ValueType::Cstr => None,
+            ValueType::Bstr => None,
             ValueType::Label => None,
             ValueType::I8 => Some("i8"),
             ValueType::I16 => Some("i16"),

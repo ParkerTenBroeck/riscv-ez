@@ -24,8 +24,8 @@ use assembler::assembler::{Assembler, lang::AssemblyLanguage};
 use assembler::context::{Context, Node, NodeId};
 use assembler::expression::args::{AsmStrArg, CoercedArg, LabelArg, U32Arg, U32Pow2Arg};
 use assembler::expression::{
-    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExprCtx,
-    ImplicitCastTo, Indexed, Value, ValueType,
+    AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExprCtx, Indexed,
+    Value, ValueType,
 };
 use std::fmt::{Display, Formatter};
 
@@ -391,7 +391,8 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                         Value::Indexed(MemoryIndex::LabelRegisterOffset(
                             register,
                             label.offset(
-                                c.cast_with(cn, ctx.context, lbl_config).unwrap_or_default(),
+                                c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
+                                    .unwrap_or_default(),
                             ),
                         ))
                     }
@@ -399,7 +400,8 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                         Value::Indexed(MemoryIndex::RegisterOffset(
                             register,
                             offset.wrapping_add(
-                                c.cast_with(cn, ctx.context, lbl_config).unwrap_or_default(),
+                                c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
+                                    .unwrap_or_default(),
                             ),
                         ))
                     }
@@ -414,7 +416,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                         Value::Indexed(MemoryIndex::LabelRegisterOffset(
                             register,
                             label.offset(
-                                c.cast_with(cn, ctx.context, lbl_config)
+                                c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
                                     .unwrap_or(0i32)
                                     .wrapping_neg(),
                             ),
@@ -424,7 +426,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
                         Value::Indexed(MemoryIndex::RegisterOffset(
                             register,
                             offset.wrapping_add(
-                                c.cast_with(cn, ctx.context, lbl_config)
+                                c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
                                     .unwrap_or(0i32)
                                     .wrapping_neg(),
                             ),
@@ -439,7 +441,8 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             {
                 Value::Indexed(MemoryIndex::RegisterOffset(
                     reg,
-                    c.cast_with(cn, ctx.context, lbl_config).unwrap_or(0i32),
+                    c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
+                        .unwrap_or(0i32),
                 ))
             }
 
@@ -448,7 +451,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             {
                 Value::Indexed(MemoryIndex::RegisterOffset(
                     reg,
-                    c.cast_with(cn, ctx.context, lbl_config)
+                    c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
                         .unwrap_or(0i32)
                         .wrapping_neg(),
                 ))
@@ -493,7 +496,12 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             | (BinOp::Add, Node(Value::Constant(c), cn), Node(Value::Label(l), _))
                 if c.is_integer() =>
             {
-                Value::Label(l.offset(c.cast_with(cn, ctx.context, lbl_config).unwrap_or(0i32)))
+                Value::Label(
+                    l.offset(
+                        c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
+                            .unwrap_or(0i32),
+                    ),
+                )
             }
 
             (BinOp::Sub, Node(Value::Label(l), _), Node(Value::Constant(c), cn))
@@ -501,7 +509,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
             {
                 Value::Label(
                     l.offset(
-                        c.cast_with(cn, ctx.context, lbl_config)
+                        c.checked_cast_iptr_with(cn, ctx.context, lbl_config)
                             .unwrap_or(0i32)
                             .wrapping_neg(),
                     ),

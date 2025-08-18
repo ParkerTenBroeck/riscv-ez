@@ -1,5 +1,4 @@
-use num_traits::*;
-
+use crate::expression::conversion::AsmNum;
 use crate::{
     assembler::LangCtx,
     context::{Node, NodeId},
@@ -10,75 +9,6 @@ use crate::{
     lex::Number,
 };
 
-pub trait FromAsPrimitive<F> {
-    fn from_as(v: F) -> Self;
-}
-
-impl<F: 'static + Copy, T: 'static + Copy> FromAsPrimitive<F> for T
-where
-    F: AsPrimitive<T>,
-{
-    fn from_as(v: F) -> T {
-        v.as_()
-    }
-}
-
-pub trait AsmNum:
-    PrimInt
-    + FromPrimitive
-    + Default
-    + NumCast
-    + ToPrimitive
-    + ToBytes
-    + WrappingAdd
-    + WrappingSub
-    + WrappingNeg
-    + WrappingMul
-    + WrappingShl
-    + WrappingShr
-    + std::fmt::Display
-    + std::fmt::Debug
-    + Num<FromStrRadixErr = std::num::ParseIntError>
-    + AsPrimitive<u8>
-    + AsPrimitive<u16>
-    + AsPrimitive<u32>
-    + AsPrimitive<u64>
-    + AsPrimitive<u128>
-    + AsPrimitive<i8>
-    + AsPrimitive<i16>
-    + AsPrimitive<i32>
-    + AsPrimitive<i64>
-    + AsPrimitive<i128>
-    + AsPrimitive<f32>
-    + AsPrimitive<f64>
-    + FromAsPrimitive<u8>
-    + FromAsPrimitive<u16>
-    + FromAsPrimitive<u32>
-    + FromAsPrimitive<u64>
-    + FromAsPrimitive<u128>
-    + FromAsPrimitive<i8>
-    + FromAsPrimitive<i16>
-    + FromAsPrimitive<i32>
-    + FromAsPrimitive<i64>
-    + FromAsPrimitive<i128>
-    + FromAsPrimitive<f32>
-    + FromAsPrimitive<f64>
-    + FromAsPrimitive<bool>
-    + FromAsPrimitive<char>
-{
-    const POSTFIX: &str;
-}
-
-macro_rules! prims {
-    ($($ident:ident),* $(,)?) => {$(
-        impl AsmNum for $ident{
-            const POSTFIX: &str = stringify!($ident);
-        }
-    )*};
-}
-
-prims!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128);
-
 pub trait AssemblyLanguage<'a>: Sized {
     type Reg: AssemblyRegister<'a, Lang = Self>;
     type Indexed: Indexed<'a, Lang = Self>;
@@ -86,10 +16,10 @@ pub trait AssemblyLanguage<'a>: Sized {
     type Label: AssemblyLabel<'a, Lang = Self>;
     type AssembledResult;
 
-    type Usize: AsmNum;
-    type Isize: AsmNum;
-    type Uptr: AsmNum;
-    type Iptr: AsmNum;
+    type Usize: AsmNum<'a, Self>;
+    type Isize: AsmNum<'a, Self>;
+    type Uptr: AsmNum<'a, Self>;
+    type Iptr: AsmNum<'a, Self>;
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 

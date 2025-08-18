@@ -1,11 +1,9 @@
 #![allow(warnings)]
 use std::os::unix::ffi::OsStrExt;
 
+use crate::expression::conversion::AsmNum;
 use crate::{
-    assembler::{
-        LangCtx,
-        lang::{self, AsmNum},
-    },
+    assembler::LangCtx,
     context::{Node, NodeId},
     expression::{
         ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
@@ -21,6 +19,8 @@ use crate::{
 
 pub mod trans;
 
+use num_traits::AsPrimitive;
+
 pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     type Reg: AssemblyRegister<'a, Lang = Self>;
     type Indexed: Indexed<'a, Lang = Self>;
@@ -28,10 +28,10 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     type Label: AssemblyLabel<'a, Lang = Self>;
     type AssembledResult;
 
-    type Usize: AsmNum;
-    type Isize: AsmNum;
-    type Uptr: AsmNum;
-    type Iptr: AsmNum;
+    type Usize: AsmNum<'a, Self>;
+    type Isize: AsmNum<'a, Self>;
+    type Uptr: AsmNum<'a, Self>;
+    type Iptr: AsmNum<'a, Self>;
     const DEFAULT_INTEGER_POSTFIX: &'a str = "i32";
     const DEFAULT_FLOAT_POSTFIX: &'a str = "f32";
 
@@ -248,7 +248,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
 
 impl<'a, T: SimpleAssemblyLanguage<'a>> SimpleAssemblyLanguageBase<'a> for T {}
 
-impl<'a, T: SimpleAssemblyLanguage<'a>> lang::AssemblyLanguage<'a> for T {
+impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage<'a> for T {
     type Reg = T::Reg;
     type Indexed = T::Indexed;
     type CustomValue = T::CustomValue;

@@ -189,7 +189,7 @@ impl Span {
     }
 
     pub fn combine(&self, other: Span) -> Span {
-        let send = self.len.wrapping_add(self.offset) + self.offset;
+        let send = self.len.wrapping_add(self.offset);
         let oend = other.len.wrapping_add(other.offset);
         let offset = self.offset.min(other.offset);
         Span {

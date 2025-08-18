@@ -154,5 +154,4 @@ impl<'a> Display for Label<'a> {
 
 impl<'a> AssemblyLabel<'a> for LabelExpr<'a> {
     type Lang = RiscvAssembler<'a>;
-    type Offset = i32;
 }

@@ -18,6 +18,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         mut expr: NodeVal<'a, L>,
         _: ValueType<'a, L>,
     ) -> Value<'a, L> {
+        use num_traits::WrappingNeg;
         match op {
             UnOp::Neg => match &mut expr.0 {
                 Value::Constant(c) => match c {
@@ -25,6 +26,8 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     Constant::I16(i) => *i = i.wrapping_neg(),
                     Constant::I32(i) => *i = i.wrapping_neg(),
                     Constant::I64(i) => *i = i.wrapping_neg(),
+                    Constant::Isize(i) => *i = i.wrapping_neg(),
+                    Constant::Iptr(i) => *i = i.wrapping_neg(),
                     Constant::F32(i) => *i = -*i,
                     Constant::F64(i) => *i = -*i,
                     _ => self.invalid_unop(op, node, expr),

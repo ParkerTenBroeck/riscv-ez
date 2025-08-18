@@ -7,20 +7,19 @@ use std::path::Path;
 use crate::assembler::lang::AssemblyLanguage;
 use crate::context::{Context, Node, NodeId};
 use crate::expression::{
-    ArgumentsTypeHint, AsmStr, Constant, ExpressionEvaluator, ImplicitCastTo, NodeVal, Value,
-    ValueType,
+    ArgumentsTypeHint, AsmStr, Constant, ExpressionEvaluator, NodeVal, Value, ValueType,
 };
 use crate::lex::Token;
 use crate::util::IntoStrDelimable;
 
 macro_rules! integer {
-    ($($ty:ty, $kind:expr, $vt:ident, $opt:ident, $($pow:ident)?),* $(,)?) => {$(
+    ($(($ty:ty, $kind:expr, $func:ident, $vt:ident, $opt:ident $(, $pow:ident)? $(,)?)),* $(,)?) => {$(
         #[non_exhaustive]
-        pub enum $opt<L>{
+        pub enum $opt<'a, L: AssemblyLanguage<'a>>{
             Val(Option<$ty>),
-            __(Infallible, PhantomData<L>)
+            __(Infallible, PhantomData<&'a L>)
         }
-        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<L> {
+        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<'a, L> {
             type LANG = L;
             const TYPE_REPR: &'static str = $kind;
             const HINT: ValueType<'a, L> = ValueType::$vt;
@@ -31,7 +30,7 @@ macro_rules! integer {
                 value: Value<'a, L>,
             ) -> Result<Self, Option<String>> {
                 match value {
-                    Value::Constant(c) if c.is_integer() => Ok($opt::Val(c.cast(node, context))),
+                    Value::Constant(c) if c.is_integer() => Ok($opt::Val(c.$func(node, context))),
                     _ => Err(None),
                 }
             }
@@ -43,11 +42,11 @@ macro_rules! integer {
 
         $(
             #[non_exhaustive]
-            pub enum $pow<L>{
+            pub enum $pow<'a, L: AssemblyLanguage<'a>>{
                 Val(Option<$ty>),
-                __(Infallible, PhantomData<L>)
+                __(Infallible, PhantomData<&'a L>)
             }
-            impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $pow<L> {
+            impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $pow<'a, L> {
                 type LANG = L;
                 const TYPE_REPR: &'static str = $kind;
                 const HINT: ValueType<'a, L> = ValueType::$vt;
@@ -59,7 +58,7 @@ macro_rules! integer {
                 ) -> Result<Self, Option<String>> {
                     match value {
                         Value::Constant(c) => {
-                            let value: $ty = c.cast(node, context).ok_or(None)?;
+                            let value: $ty = c.$func(node, context).ok_or(None)?;
                             Ok(Self::Val(if value.is_power_of_two() {
                                     Some(value)
                                 } else {
@@ -81,55 +80,28 @@ macro_rules! integer {
     )*};
 }
 
-macro_rules! value {
-    ($($ty:ty, $kind:expr, $vt:ident, $opt:ident),* $(,)?) => {$(
-        #[non_exhaustive]
-        pub enum $opt<L>{
-            Val(Option<$ty>),
-            __(Infallible, PhantomData<L>)
-        }
-        impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for $opt<L> {
-            type LANG = L;
-            const TYPE_REPR: &'static str = $kind;
-            const HINT: ValueType<'a, L> = ValueType::Str;
-
-            fn from_arg(
-                _: &mut Context<'a>,
-                _: NodeId<'a>,
-                value: Value<'a, L>,
-            ) -> Result<Self, Option<String>> {
-                match value {
-                    Value::Constant(Constant::$vt(v)) => Ok(Self::Val(Some(v))),
-                    _ => Err(None),
-                }
-            }
-
-            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
-               Self::Val(None)
-            }
-        }
-    )*};
-}
-
 integer!(
-    i8, "i8", I8, I8Arg, ,
-    i16, "i16", I16, I16Arg, ,
-    i32, "i32", I32, I32Arg, ,
-    i64, "i64", I64, I64Arg, ,
-    i128, "i128", I128, I128Arg, ,
-
-    u8, "u8", U8, U8Arg, U8Pow2Arg,
-    u16, "u16", U16, U16Arg, U16Pow2Arg,
-    u32, "u32", U32, U32Arg, U32Pow2Arg,
-    u64, "u64", U64, U64Arg, U64Pow2Arg,
-    u128, "u128", U128, U128Arg, U128Pow2Arg,
-
-
-    f32, "f32", F32, F32Arg, ,
-    f64, "f64", F64, F64Arg, ,
+    (i8, "i8", checked_cast_i8, I8, I8Arg,),
+    (i16, "i16", checked_cast_i16, I16, I16Arg,),
+    (i32, "i32", checked_cast_i32, I32, I32Arg,),
+    (i64, "i64", checked_cast_i64, I64, I64Arg,),
+    (i128, "i128", checked_cast_i128, I128, I128Arg,),
+    (L::Isize, "isize", checked_cast_isize, Isize, IsizeArg,),
+    (L::Iptr, "iptr", checked_cast_iptr, Iptr, IptrArg,),
+    (u8, "u8", checked_cast_u8, U8, U8Arg, U8Pow2Arg),
+    (u16, "u16", checked_cast_u16, U16, U16Arg, U16Pow2Arg),
+    (u32, "u32", checked_cast_u32, U32, U32Arg, U32Pow2Arg),
+    (u64, "u64", checked_cast_u64, U64, U64Arg, U64Pow2Arg),
+    (u128, "u128", checked_cast_u128, U128, U128Arg, U128Pow2Arg),
+    (L::Usize, "usize", checked_cast_usize, Usize, UsizeArg,),
+    (L::Uptr, "uptr", checked_cast_uptr, Uptr, UptrArg,),
+    (f32, "f32", checked_cast_f32, F32, F32Arg,),
+    (f64, "f64", checked_cast_f64, F64, F64Arg,),
+    (char, "char", checked_cast_char, Char, CharArg,),
+    (bool, "bool", checked_cast_bool, Bool, BoolArg,),
 );
 
-value!(char, "char", Char, CharArg, bool, "bool", Bool, BoolArg,);
+// value!(char, "char", Char, CharArg, bool, "bool", Bool, BoolArg,);
 
 #[non_exhaustive]
 pub enum AsmStrArg<'a, L> {
@@ -208,6 +180,122 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrArg<'a, L> {
             Value::Constant(Constant::Str(AsmStr::CStr(_))) => Err(Some(
                 "c strings not permitted must be an ordinary string".into(),
             )),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum BStrArg<'a, L> {
+    Val(Option<&'a [u8]>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrArg<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "bstr";
+    const HINT: ValueType<'a, L> = ValueType::Str;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::Str(AsmStr::ByteStr(str))) => Ok(Self::Val(Some(str))),
+            Value::Constant(Constant::Str(AsmStr::Str(_))) => Err(Some(
+                "ordinary strings not permitted must be an byte string".into(),
+            )),
+            Value::Constant(Constant::Str(AsmStr::CStr(_))) => Err(Some(
+                "c strings not permitted must be an byte string".into(),
+            )),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum CStrArg<'a, L> {
+    Val(Option<&'a [u8]>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrArg<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "cstr";
+    const HINT: ValueType<'a, L> = ValueType::Str;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::Str(AsmStr::CStr(str))) => Ok(Self::Val(Some(str))),
+            Value::Constant(Constant::Str(AsmStr::Str(_))) => Err(Some(
+                "ordinary strings not permitted must be an c string".into(),
+            )),
+            Value::Constant(Constant::Str(AsmStr::ByteStr(_))) => Err(Some(
+                "byte strings not permitted must be an c string".into(),
+            )),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum BStrRelaxedArg<'a, L> {
+    Val(Option<&'a [u8]>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrRelaxedArg<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "str|bstr|cstr";
+    const HINT: ValueType<'a, L> = ValueType::Str;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::Str(str)) => Ok(Self::Val(Some(str.as_bytes()))),
+            _ => Err(None),
+        }
+    }
+
+    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+        Self::Val(None)
+    }
+}
+
+#[non_exhaustive]
+pub enum CStrRelaxedArg<'a, L> {
+    Val(Option<&'a [u8]>),
+    __(Infallible, PhantomData<L>),
+}
+impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrRelaxedArg<'a, L> {
+    type LANG = L;
+    const TYPE_REPR: &'static str = "str|bstr|cstr";
+    const HINT: ValueType<'a, L> = ValueType::Str;
+
+    fn from_arg(
+        _: &mut Context<'a>,
+        _: NodeId<'a>,
+        value: Value<'a, L>,
+    ) -> Result<Self, Option<String>> {
+        match value {
+            Value::Constant(Constant::Str(str)) => Ok(Self::Val(Some(str.as_bytes()))),
             _ => Err(None),
         }
     }

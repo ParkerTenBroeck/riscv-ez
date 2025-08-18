@@ -1,5 +1,6 @@
 pub mod args;
 pub mod base;
+pub mod conversion;
 pub mod str;
 pub mod value;
 

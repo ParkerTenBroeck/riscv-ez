@@ -15,65 +15,10 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         _: ValueType<'a, L>,
     ) -> Value<'a, L> {
         let ty = ty.0;
-        use num_traits::AsPrimitive;
-        macro_rules! integer {
-            ($ident:ident, $ty:ty) => {{
-                use Constant as C;
-                use Value::Constant as V_C;
-                match expr.0 {
-                    V_C(C::I8(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I16(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I64(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I128(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Isize(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::Iptr(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::U8(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U16(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U64(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U128(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Usize(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::Uptr(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::F32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::F64(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Bool(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Char(i)) => V_C(C::$ident(i as $ty)),
-                    _ => self.cast_error(expr, ValueType::$ident),
-                }
-            }};
-        }
 
-        macro_rules! float {
-            ($ident:ident, $ty:ty) => {{
-                use Constant as C;
-                use Value::Constant as V_C;
-
-                match expr.0 {
-                    V_C(C::I8(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I16(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I64(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::I128(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Isize(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::Iptr(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::U8(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U16(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U64(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::U128(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::Usize(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::Uptr(i)) => V_C(C::$ident(i.as_())),
-                    V_C(C::F32(i)) => V_C(C::$ident(i as $ty)),
-                    V_C(C::F64(i)) => V_C(C::$ident(i as $ty)),
-                    _ => self.cast_error(expr, ValueType::$ident),
-                }
-            }};
-        }
-
-        macro_rules! asm_num {
-            ($ident:ident) => {{
-                use crate::assembler::lang::FromAsPrimitive;
+        macro_rules! numeric_cast {
+            ($ident:ident $(, $additional:ident)*) => {{
+                use crate::expression::conversion::FromAsPrimitive;
                 use Constant as C;
                 use Value::Constant as V_C;
                 match expr.0 {
@@ -82,24 +27,26 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                     V_C(C::I32(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::I64(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::I128(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    // V_C(C::Isize(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    // V_C(C::Iptr(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    V_C(C::Isize(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    V_C(C::Iptr(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::U8(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::U16(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::U32(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::U64(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::U128(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    // V_C(C::Usize(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    // V_C(C::Uptr(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    V_C(C::Usize(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    V_C(C::Uptr(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::F32(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
                     V_C(C::F64(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    V_C(C::Bool(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
-                    V_C(C::Char(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    $(
+                        V_C(C::$additional(i)) => V_C(C::$ident(FromAsPrimitive::from_as(i))),
+                    )*
                     _ => self.cast_error(expr, ValueType::$ident),
                 }
             }};
         }
 
+        use num_traits::AsPrimitive;
         match ty {
             "str" => Value::Constant(Constant::Str(AsmStr::Str(match expr.0 {
                 Value::Constant(Constant::Str(AsmStr::Str(str))) => str,
@@ -121,22 +68,22 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 Value::Constant(Constant::Str(str)) => str.as_bytes(),
                 other => self.context.alloc_str(format!("{other}")).as_bytes(),
             }))),
-            "i8" => integer!(I8, i8),
-            "i16" => integer!(I16, i16),
-            "i32" => integer!(I32, i32),
-            "i64" => integer!(I64, i64),
-            "i128" => integer!(I128, i128),
-            "isize" => asm_num!(Isize),
-            "iptr" => asm_num!(Iptr),
-            "u8" => integer!(U8, u8),
-            "u16" => integer!(U16, u16),
-            "u32" => integer!(U32, u32),
-            "u64" => integer!(U64, u64),
-            "u128" => integer!(U128, u128),
-            "usize" => asm_num!(Usize),
-            "uptr" => asm_num!(Uptr),
-            "f32" => float!(F32, f32),
-            "f64" => float!(F64, f64),
+            "i8" => numeric_cast!(I8, Bool, Char),
+            "i16" => numeric_cast!(I16, Bool, Char),
+            "i32" => numeric_cast!(I32, Bool, Char),
+            "i64" => numeric_cast!(I64, Bool, Char),
+            "i128" => numeric_cast!(I128, Bool, Char),
+            "isize" => numeric_cast!(Isize, Bool, Char),
+            "iptr" => numeric_cast!(Iptr, Bool, Char),
+            "u8" => numeric_cast!(U8, Bool, Char),
+            "u16" => numeric_cast!(U16, Bool, Char),
+            "u32" => numeric_cast!(U32, Bool, Char),
+            "u64" => numeric_cast!(U64, Bool, Char),
+            "u128" => numeric_cast!(U128, Bool, Char),
+            "usize" => numeric_cast!(Usize, Bool, Char),
+            "uptr" => numeric_cast!(Uptr, Bool, Char),
+            "f32" => numeric_cast!(F32),
+            "f64" => numeric_cast!(F64),
             "char" => match expr.0 {
                 Value::Constant(Constant::U8(i)) => Value::Constant(Constant::Char(i as char)),
                 Value::Constant(Constant::U16(i)) => Value::Constant(Constant::Char(
@@ -147,6 +94,12 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
                 )),
                 Value::Constant(Constant::U64(i)) => Value::Constant(Constant::Char(
                     char::from_u32(i as u32).unwrap_or(char::REPLACEMENT_CHARACTER),
+                )),
+                Value::Constant(Constant::Uptr(i)) => Value::Constant(Constant::Char(
+                    char::from_u32(i.as_()).unwrap_or(char::REPLACEMENT_CHARACTER),
+                )),
+                Value::Constant(Constant::Usize(i)) => Value::Constant(Constant::Char(
+                    char::from_u32(i.as_()).unwrap_or(char::REPLACEMENT_CHARACTER),
                 )),
                 Value::Constant(Constant::Char(i)) => Value::Constant(Constant::Char(i)),
                 _ => self.cast_error(expr, ValueType::Char),
