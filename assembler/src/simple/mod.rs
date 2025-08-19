@@ -4,7 +4,7 @@ use std::os::unix::ffi::OsStrExt;
 use crate::expression::conversion::AsmNum;
 use crate::{
     assembler::LangCtx,
-    context::{Node, NodeId},
+    context::{Node, NodeRef},
     expression::{
         ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
         FuncParamParser, Indexed, NodeVal, Value, ValueType,
@@ -65,7 +65,7 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     fn eval_binop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: NodeVal<'a, Self>,
         op: Node<'a, BinOp>,
         rhs: NodeVal<'a, Self>,
@@ -77,7 +77,7 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     fn eval_unnop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         op: Node<'a, UnOp>,
         expr: NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
@@ -89,11 +89,11 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     fn eval_index(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a, Self>>,
-        opening: NodeId<'a>,
+        opening: NodeRef<'a>,
         rhs: Option<NodeVal<'a, Self>>,
-        closing: NodeId<'a>,
+        closing: NodeRef<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         ctx.eval(self)
@@ -103,9 +103,9 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     fn eval_cast(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         expr: NodeVal<'a, Self>,
-        as_node: NodeId<'a>,
+        as_node: NodeRef<'a>,
         ty: Node<'a, &'a str>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
@@ -116,15 +116,16 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         mnemonic: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     );
     #[allow(unused)]
-    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>) {}
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeRef<'a>) {
+    }
     fn add_value_data(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         value: Value<'a, Self>,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     );
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult;
     fn state_mut(&mut self) -> &mut SALState<'a>;
@@ -136,7 +137,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         constant: Constant<'a, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
     ) {
         use num_traits::ToPrimitive;
         let align = constant
@@ -215,7 +216,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         ctx: &mut LangCtx<'a, '_, Self>,
         data: &[u8],
         align: usize,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
     ) {
         if self.state().current_section.is_none() {
             ctx.context.report(LogEntry::new()
@@ -230,7 +231,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         ctx: &mut LangCtx<'a, '_, Self>,
         space: usize,
         align: usize,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
     ) {
         if self.state().current_section.is_none() {
             ctx.context.report(LogEntry::new()
@@ -241,7 +242,12 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         }
     }
 
-    fn set_section(&mut self, ctx: &mut LangCtx<'a, '_, Self>, section: &'a str, node: NodeId<'a>) {
+    fn set_section(
+        &mut self,
+        ctx: &mut LangCtx<'a, '_, Self>,
+        section: &'a str,
+        node: NodeRef<'a>,
+    ) {
         self.state_mut().current_section = Some(section);
     }
 }
@@ -307,7 +313,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
     fn eval_binop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: NodeVal<'a, Self>,
         op: Node<'a, BinOp>,
         rhs: NodeVal<'a, Self>,
@@ -319,7 +325,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
     fn eval_unnop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         op: Node<'a, UnOp>,
         expr: NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
@@ -331,11 +337,11 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
     fn eval_index(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a, Self>>,
-        opening: NodeId<'a>,
+        opening: NodeRef<'a>,
         rhs: Option<NodeVal<'a, Self>>,
-        closing: NodeId<'a>,
+        closing: NodeRef<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         self.eval_index(ctx, node, lhs, opening, rhs, closing, hint)
@@ -344,9 +350,9 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
     fn eval_cast(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         expr: NodeVal<'a, Self>,
-        as_node: NodeId<'a>,
+        as_node: NodeRef<'a>,
         ty: Node<'a, &'a str>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
@@ -357,7 +363,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         mnemonic: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) {
         macro_rules! constant {
             ($argument:ident, $kind:ident) => {
@@ -464,6 +470,10 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
             ".f64" => constant!(F64Arg, F64),
             ".bool" => constant!(BoolArg, Bool),
             ".char" => constant!(CharArg, Char),
+            ".iptr" => constant!(IptrArg, Iptr),
+            ".isize" => constant!(IsizeArg, Isize),
+            ".uptr" => constant!(UptrArg, Uptr),
+            ".iptr" => constant!(UsizeArg, Usize),
 
             _ => self.assemble_mnemonic(ctx, mnemonic, n),
         }
@@ -473,7 +483,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         mut label: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) {
         if label.starts_with('.') {
             if let Some(prev) = self.state_mut().last_non_local_label {
@@ -498,7 +508,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         comment: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) {
     }
 }

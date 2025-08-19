@@ -6,7 +6,7 @@ use crate::{
     reg::Register,
 };
 use assembler::{
-    context::NodeId,
+    context::NodeRef,
     expression::{Constant, Indexed, Value},
 };
 

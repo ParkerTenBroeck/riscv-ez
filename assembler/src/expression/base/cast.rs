@@ -1,16 +1,16 @@
 use crate::expression::{AsmStr, ValueType};
 use crate::{
     assembler::lang::AssemblyLanguage,
-    context::{Node, NodeId},
+    context::{Node, NodeRef},
     expression::{Constant, ExpressionEvaluator, NodeVal, Value},
 };
 
 impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn cast_base(
         &mut self,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         expr: NodeVal<'a, L>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         ty: Node<'a, &'a str>,
         _: ValueType<'a, L>,
     ) -> Value<'a, L> {

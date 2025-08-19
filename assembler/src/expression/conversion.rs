@@ -267,7 +267,7 @@ macro_rules! constant_conversion_functions {
 
             pub fn $checked(
                 self,
-                node: NodeId<'a>,
+                node: NodeRef<'a>,
                 ctx: &mut Context<'a>,
             ) -> Option<$ty> {
                 self.$checked_with(node, ctx, ctx.config().$cfg)
@@ -275,7 +275,7 @@ macro_rules! constant_conversion_functions {
 
             pub fn $checked_with(
                 self,
-                node: NodeId<'a>,
+                node: NodeRef<'a>,
                 ctx: &mut Context<'a>,
                 cfg: CastConfig,
             ) -> Option<$ty> {
@@ -565,7 +565,7 @@ impl<T> ConversionResult<T> {
         self,
         desired_ty: ValueType<'a, A>,
         actual_ty: ValueType<'a, A>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         ctx: &mut Context<'a>,
         cfg: CastConfig,
     ) -> Option<T> {

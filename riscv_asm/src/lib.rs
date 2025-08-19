@@ -21,7 +21,7 @@ use std::str::FromStr;
 use crate::args::{FloatReg, Immediate, RegReg};
 use crate::label::{Label, LabelExpr};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
-use assembler::context::{Context, Node, NodeId};
+use assembler::context::{Context, Node, NodeRef};
 use assembler::expression::args::{AsmStrArg, CoercedArg, LabelArg, U32Arg, U32Pow2Arg};
 use assembler::expression::{
     AssemblyRegister, Constant, CustomValue, CustomValueType, EmptyCustomValue, ExprCtx, Indexed,
@@ -65,7 +65,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
         mnemonic: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) {
         match mnemonic {
             "lui" => match asm.eval(self).coerced(n).0 {
@@ -319,11 +319,11 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     fn eval_index(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a>>,
-        opening: NodeId<'a>,
+        opening: NodeRef<'a>,
         rhs: Option<NodeVal<'a>>,
-        closing: NodeId<'a>,
+        closing: NodeRef<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         let (lhs, rhs) = match (lhs, rhs) {
@@ -374,7 +374,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     fn eval_binop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: assembler::expression::NodeVal<'a, Self>,
         op: Node<'a, assembler::expression::binop::BinOp>,
         rhs: assembler::expression::NodeVal<'a, Self>,
@@ -524,7 +524,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
         // todo!()
     }
 
-    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>) {
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeRef<'a>) {
         // todo!()
     }
 
@@ -532,7 +532,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         value: Value<'a, Self>,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) {
         match value {
             Value::Constant(constant) => self.add_constant_data(ctx, constant, n),
@@ -552,7 +552,7 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
 }
 
 impl<'a> RiscvAssembler<'a> {
-    fn instruction(&mut self, ctx: &mut LangCtx<'a, '_, Self>, ins: u32, node: NodeId<'a>) {
+    fn instruction(&mut self, ctx: &mut LangCtx<'a, '_, Self>, ins: u32, node: NodeRef<'a>) {
         self.add_data(ctx, &ins.to_le_bytes(), 4, node);
         // *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
@@ -560,14 +560,19 @@ impl<'a> RiscvAssembler<'a> {
     fn three_int_reg(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         ins: RTypeOpCode,
     ) {
         let (RegReg(rd), RegReg(rs1), RegReg(rs2)) = asm.eval(self).coerced(node).0;
         self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1() | rs2.rs2(), node);
     }
 
-    fn two_int_reg(&mut self, asm: &mut LangCtx<'a, '_, Self>, node: NodeId<'a>, ins: RTypeOpCode) {
+    fn two_int_reg(
+        &mut self,
+        asm: &mut LangCtx<'a, '_, Self>,
+        node: NodeRef<'a>,
+        ins: RTypeOpCode,
+    ) {
         let (RegReg(rd), RegReg(rs1)) = asm.eval(self).coerced(node).0;
         self.instruction(asm, ins as u32 | rd.rd() | rs1.rs1(), node);
     }
@@ -575,7 +580,7 @@ impl<'a> RiscvAssembler<'a> {
     fn float_reg_only_3(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         ins: RTypeOpCode,
     ) {
         let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2)) = asm.eval(self).coerced(node).0;
@@ -585,7 +590,7 @@ impl<'a> RiscvAssembler<'a> {
     fn float_reg_only_4(
         &mut self,
         asm: &mut LangCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         ins: RTypeOpCode,
     ) {
         let (FloatReg(rd), FloatReg(rs1), FloatReg(rs2), FloatReg(rs3)) =
@@ -597,7 +602,7 @@ impl<'a> RiscvAssembler<'a> {
         );
     }
 
-    fn no_args(&mut self, asm: &mut LangCtx<'a, '_, Self>, node: NodeId<'a>, ins: u32) {
+    fn no_args(&mut self, asm: &mut LangCtx<'a, '_, Self>, node: NodeRef<'a>, ins: u32) {
         let _: () = asm.eval(self).coerced(node).0;
         self.instruction(asm, ins, node);
     }

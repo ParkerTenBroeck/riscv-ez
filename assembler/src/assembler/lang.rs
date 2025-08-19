@@ -1,7 +1,7 @@
 use crate::expression::conversion::AsmNum;
 use crate::{
     assembler::LangCtx,
-    context::{Node, NodeId},
+    context::{Node, NodeRef},
     expression::{
         AssemblyLabel, AssemblyRegister, CustomValue, ExprCtx, FuncParamParser, Indexed, NodeVal,
         Value, ValueType, binop::BinOp, unop::UnOp,
@@ -53,7 +53,7 @@ pub trait AssemblyLanguage<'a>: Sized {
     fn eval_binop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: NodeVal<'a, Self>,
         op: Node<'a, BinOp>,
         rhs: NodeVal<'a, Self>,
@@ -65,7 +65,7 @@ pub trait AssemblyLanguage<'a>: Sized {
     fn eval_unnop(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         op: Node<'a, UnOp>,
         expr: NodeVal<'a, Self>,
         hint: ValueType<'a, Self>,
@@ -77,11 +77,11 @@ pub trait AssemblyLanguage<'a>: Sized {
     fn eval_index(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a, Self>>,
-        opening: NodeId<'a>,
+        opening: NodeRef<'a>,
         rhs: Option<NodeVal<'a, Self>>,
-        closing: NodeId<'a>,
+        closing: NodeRef<'a>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
         ctx.eval(self)
@@ -91,9 +91,9 @@ pub trait AssemblyLanguage<'a>: Sized {
     fn eval_cast(
         &mut self,
         ctx: &mut ExprCtx<'a, '_, Self>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         expr: NodeVal<'a, Self>,
-        as_node: NodeId<'a>,
+        as_node: NodeRef<'a>,
         ty: Node<'a, &'a str>,
         hint: ValueType<'a, Self>,
     ) -> Value<'a, Self> {
@@ -104,15 +104,15 @@ pub trait AssemblyLanguage<'a>: Sized {
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         mnemonic: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     );
 
-    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeId<'a>);
+    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeRef<'a>);
     fn encounter_comment(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         comment: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     );
 
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult;

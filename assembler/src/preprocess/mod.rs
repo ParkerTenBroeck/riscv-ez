@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
-use crate::context::NodeInfo;
+use crate::context::NodeInfoRef;
 use crate::context::Parent;
 use crate::expression::Value;
 use crate::expression::ValueType;
@@ -12,14 +12,14 @@ use crate::expression::args::PathArg;
 use crate::lex::Spanned;
 use crate::logs::LogEntry;
 use crate::{
-    context::{Node, NodeId, SourceId},
+    context::{Node, NodeRef, SourceRef},
     lex::Token,
 };
 
 #[derive(Clone, Copy)]
 pub struct SrcSlice<'a> {
     pub contents: &'a [Spanned<Token<'a>>],
-    pub src: SourceId<'a>,
+    pub src: SourceRef<'a>,
 }
 
 impl<'a> Iterator for SrcSlice<'a> {
@@ -40,12 +40,12 @@ impl<'a> SrcSlice<'a> {
     pub fn make<T: AssemblyLanguage<'a>>(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
-        parent: Parent<'a>,
+        parent: Parent<NodeRef<'a>>,
     ) -> Option<Node<'a, Token<'a>>> {
         let token = self.next()?;
         Some(Node(
             token.val,
-            ctx.context.node(NodeInfo {
+            ctx.context.node(NodeInfoRef {
                 span: token.span,
                 source: self.src,
                 parent,
@@ -56,12 +56,12 @@ impl<'a> SrcSlice<'a> {
     pub fn peek_make<T: AssemblyLanguage<'a>>(
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
-        parent: Parent<'a>,
+        parent: Parent<NodeRef<'a>>,
     ) -> Option<Node<'a, Token<'a>>> {
         let token = self.peek()?;
         Some(Node(
             token.val,
-            ctx.context.node(NodeInfo {
+            ctx.context.node(NodeInfoRef {
                 span: token.span,
                 source: self.src,
                 parent,
@@ -69,14 +69,14 @@ impl<'a> SrcSlice<'a> {
         ))
     }
 
-    pub fn new(contents: &'a [Spanned<Token<'a>>], src: SourceId<'a>) -> Self {
+    pub fn new(contents: &'a [Spanned<Token<'a>>], src: SourceRef<'a>) -> Self {
         Self { contents, src }
     }
 }
 
 pub struct Stage<'a, T: AssemblyLanguage<'a>> {
     pub contents: SrcSlice<'a>,
-    pub parent: Parent<'a>,
+    pub parent: Parent<NodeRef<'a>>,
     pub filter: Option<Box<dyn PreProcessorFilter<'a, T> + 'a>>,
 }
 
@@ -121,7 +121,7 @@ pub trait PreProcessorFilter<'a, T: AssemblyLanguage<'a>> {
 }
 
 pub struct MacroDef<'a> {
-    definition: NodeId<'a>,
+    definition: NodeRef<'a>,
     contents: SrcSlice<'a>,
 }
 
@@ -171,7 +171,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         &mut self,
         mut ctx: PreProcessorCtx<'a, '_, T>,
         path: &'a Path,
-    ) -> Option<SourceId<'a>> {
+    ) -> Option<SourceRef<'a>> {
         self.macros.clear();
         self.stack.clear();
         self.peek = None;
@@ -179,7 +179,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         self.include(&mut ctx, path, Parent::None)
     }
 
-    pub fn top_parent(&mut self) -> Parent<'a> {
+    pub fn top_parent(&mut self) -> Parent<NodeRef<'a>> {
         self.stack.last().map(|p| p.parent).unwrap_or(Parent::None)
     }
 
@@ -217,7 +217,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
                     val: Token::RBrace, ..
                 }) => indent -= 1,
                 None => {
-                    let node = ctx.context.node(NodeInfo {
+                    let node = ctx.context.node(NodeInfoRef {
                         span: top.contents.src.eof(),
                         source: top.contents.src,
                         parent: top.parent,
@@ -237,8 +237,8 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
         path: &'a Path,
-        parent: Parent<'a>,
-    ) -> Option<SourceId<'a>> {
+        parent: Parent<NodeRef<'a>>,
+    ) -> Option<SourceRef<'a>> {
         let src = crate::lex::lex_file(ctx.context, path, parent)?;
         self.add_stage(
             ctx,
@@ -274,7 +274,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         None
     }
 
-    fn parse_if(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, _: NodeId<'a>) {
+    fn parse_if(&mut self, ctx: &mut PreProcessorCtx<'a, '_, T>, _: NodeRef<'a>) {
         let res = ctx.eval(self).expr(ValueType::Bool);
 
         let parent = self.top_parent();
@@ -343,7 +343,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
         tag: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) -> Option<Node<'a, Token<'a>>> {
         match tag {
             "include" => {
@@ -406,7 +406,7 @@ impl<'a, T: AssemblyLanguage<'a>> PreProcessor<'a, T> {
         &mut self,
         ctx: &mut PreProcessorCtx<'a, '_, T>,
         ident: &'a str,
-        n: NodeId<'a>,
+        n: NodeRef<'a>,
     ) -> bool {
         if let Some(value) = self.macros.get(ident) {
             self.add_stage(

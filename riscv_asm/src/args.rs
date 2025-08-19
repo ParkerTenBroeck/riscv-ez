@@ -1,7 +1,7 @@
 use crate::label::{Label, LabelExpr};
 use crate::{Register, RiscvAssembler};
 use assembler::assembler::{Assembler, lang::AssemblyLanguage};
-use assembler::context::{Context, Node, NodeId};
+use assembler::context::{Context, Node, NodeRef};
 use assembler::expression::args::CoercedArg;
 use assembler::expression::{AssemblyRegister, Constant, Indexed, Value, ValueType};
 use std::fmt::{Display, Formatter};
@@ -22,7 +22,7 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
 
     fn from_arg(
         context: &mut Context<'a>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -41,7 +41,7 @@ impl<'a> CoercedArg<'a> for RegOffset<'a> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Default::default()
     }
 }
@@ -55,7 +55,7 @@ impl<'a> CoercedArg<'a> for RegReg {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -67,7 +67,7 @@ impl<'a> CoercedArg<'a> for RegReg {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Default::default()
     }
 }
@@ -81,7 +81,7 @@ impl<'a> CoercedArg<'a> for FloatReg {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -93,7 +93,7 @@ impl<'a> CoercedArg<'a> for FloatReg {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Default::default()
     }
 }
@@ -115,7 +115,7 @@ impl<'a> CoercedArg<'a> for Immediate<'a, RiscvAssembler<'a>> {
 
     fn from_arg(
         context: &mut Context<'a>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         value: Value<'a, RiscvAssembler<'a>>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -135,7 +135,7 @@ impl<'a> CoercedArg<'a> for Immediate<'a, RiscvAssembler<'a>> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Default::default()
     }
 }

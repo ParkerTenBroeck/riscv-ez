@@ -12,12 +12,13 @@ pub use number::*;
 pub use token::*;
 
 use crate::{
-    context::{Context, NodeInfo, Parent, SourceId},
+    context::{Context, NodeInfoRef, Parent, SourceRef},
     expression::AsmString,
     lex::{
         escape::{EscapeParser, EscapeToken},
         str::{TokenChar, TokenString},
     },
+    node::NodeRef,
     preprocess::SrcSlice,
 };
 
@@ -52,8 +53,8 @@ impl Position {
 fn parse_char_literal<'a>(
     context: &mut Context<'a>,
     Spanned { span, val }: Spanned<TokenChar<'a>>,
-    source: SourceId<'a>,
-    parent: Parent<'a>,
+    source: SourceRef<'a>,
+    parent: Parent<NodeRef<'a>>,
 ) -> TokenChar<'a> {
     let (str, kind) = match val {
         TokenChar::Unparsed(sstr, kind) => (sstr.as_str(), kind),
@@ -70,7 +71,7 @@ fn parse_char_literal<'a>(
             str::CharKind::Regular if byte.is_ascii() => TokenChar::ParsedReg(byte as char),
             str::CharKind::Regular => {
                 context.report_error(
-                    context.node(NodeInfo {
+                    context.node(NodeInfoRef {
                         span: span.subspan(esc_span),
                         source,
                         parent,
@@ -89,7 +90,7 @@ fn parse_char_literal<'a>(
             str::CharKind::Byte if char.is_ascii() => TokenChar::ParsedByte(char as u8),
             str::CharKind::Byte => {
                 context.report_error(
-                    context.node(NodeInfo {
+                    context.node(NodeInfoRef {
                         span: span.subspan(esc_span),
                         source,
                         parent,
@@ -105,7 +106,7 @@ fn parse_char_literal<'a>(
         }) => {
             if str.chars().count() > 1 {
                 context.report_error(
-                    context.node(NodeInfo {
+                    context.node(NodeInfoRef {
                         span,
                         source,
                         parent,
@@ -123,7 +124,7 @@ fn parse_char_literal<'a>(
                     str::CharKind::Byte if c.is_ascii() => TokenChar::ParsedByte(c as u8),
                     str::CharKind::Byte => {
                         context.report_error(
-                            context.node(NodeInfo {
+                            context.node(NodeInfoRef {
                                 span,
                                 source,
                                 parent,
@@ -140,7 +141,7 @@ fn parse_char_literal<'a>(
             span: err_span,
         }) => {
             context.report_error(
-                context.node(NodeInfo {
+                context.node(NodeInfoRef {
                     span: span.subspan(err_span),
                     source,
                     parent,
@@ -154,7 +155,7 @@ fn parse_char_literal<'a>(
         }
         None => {
             context.report_error(
-                context.node(NodeInfo {
+                context.node(NodeInfoRef {
                     span,
                     source,
                     parent,
@@ -170,7 +171,7 @@ fn parse_char_literal<'a>(
 
     if escape_parser.next().is_some() {
         context.report_error(
-            context.node(NodeInfo {
+            context.node(NodeInfoRef {
                 span,
                 source,
                 parent,
@@ -185,8 +186,8 @@ fn parse_char_literal<'a>(
 fn parse_string_literal<'a>(
     context: &mut Context<'a>,
     Spanned { span, val }: Spanned<TokenString<'a>>,
-    source: SourceId<'a>,
-    parent: Parent<'a>,
+    source: SourceRef<'a>,
+    parent: Parent<NodeRef<'a>>,
 ) -> TokenString<'a> {
     let (str, kind) = match val {
         TokenString::Unparsed(str, kind) => (str, kind),
@@ -201,7 +202,7 @@ fn parse_string_literal<'a>(
                 AsmString::String(str) if byte.is_ascii() => str.push(byte as char),
                 AsmString::String(_) => {
                     context.report_error(
-                        context.node(NodeInfo {
+                        context.node(NodeInfoRef {
                             span: span.subspan(part.span),
                             source,
                             parent,
@@ -213,7 +214,7 @@ fn parse_string_literal<'a>(
             },
             Err(err) => {
                 context.report_error(
-                    context.node(NodeInfo {
+                    context.node(NodeInfoRef {
                         span: span.subspan(part.span),
                         source,
                         parent,
@@ -233,7 +234,7 @@ fn parse_string_literal<'a>(
 pub fn lex_file<'a>(
     context: &mut Context<'a>,
     path: &'a Path,
-    parent: Parent<'a>,
+    parent: Parent<NodeRef<'a>>,
 ) -> Option<SrcSlice<'a>> {
     let result = context.get_source_from_path(path);
     let src = match result {
@@ -283,7 +284,7 @@ pub fn lex_file<'a>(
             },
             Err(err) => {
                 context.report_error(
-                    context.node(NodeInfo {
+                    context.node(NodeInfoRef {
                         span: err.span,
                         source: src,
                         parent,

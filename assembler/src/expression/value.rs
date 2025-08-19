@@ -582,14 +582,24 @@ impl<'a, L: AssemblyLanguage<'a>> Constant<'a, L> {
     pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
-            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U64(_)
+            Self::U8(_)
+                | Self::U16(_)
+                | Self::U32(_)
+                | Self::U64(_)
+                | Self::Uptr(_)
+                | Self::Usize(_)
         )
     }
 
     pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
-            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_)
+            Self::I8(_)
+                | Self::I16(_)
+                | Self::I32(_)
+                | Self::I64(_)
+                | Self::Iptr(_)
+                | Self::Isize(_)
         )
     }
 

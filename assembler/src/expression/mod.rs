@@ -10,7 +10,7 @@ pub use value::*;
 
 use crate::assembler::PreProcessorCtx;
 use crate::assembler::lang::AssemblyLanguage;
-use crate::context::{Context, Node, NodeId};
+use crate::context::{Context, Node, NodeRef};
 use crate::expression::args::CoercedArgs;
 use crate::lex::{Number, Token};
 use crate::logs::LogEntry;
@@ -28,7 +28,7 @@ pub enum ExprKind {
 
 pub struct FuncParamParser<'a, 'b> {
     func: Node<'a, &'a str>,
-    func_node: &'b mut Option<NodeId<'a>>,
+    func_node: &'b mut Option<NodeRef<'a>>,
 }
 
 impl<'a, 'b> FuncParamParser<'a, 'b> {
@@ -129,7 +129,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn args(
         &mut self,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         self.parse_arguments(init, hint)
@@ -137,7 +137,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn args_delim(
         &mut self,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         start: Token<'a>,
         end: Token<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
@@ -145,7 +145,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         self.parse_arguments_delim(init, start, end, hint)
     }
 
-    pub fn coerced<T: CoercedArgs<'a, L>>(&mut self, init: NodeId<'a>) -> Node<'a, T>
+    pub fn coerced<T: CoercedArgs<'a, L>>(&mut self, init: NodeRef<'a>) -> Node<'a, T>
     where
         Self: Sized,
     {
@@ -154,7 +154,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn coerced_delim<T: CoercedArgs<'a, L>>(
         &mut self,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         start: Token<'a>,
         end: Token<'a>,
     ) -> Node<'a, T>
@@ -441,7 +441,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn parse_arguments_delim(
         &mut self,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         opening: Token<'a>,
         closing: Token<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
@@ -482,7 +482,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn parse_arguments(
         &mut self,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         hint: ArgumentsTypeHint<'a, '_, L>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         let mut args = Vec::new();

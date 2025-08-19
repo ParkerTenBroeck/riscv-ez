@@ -3,6 +3,7 @@ use crate::assembler::{Assembler, lang::AssemblyLanguage};
 use crate::config::AssemblerConfig;
 use crate::context::Context;
 use crate::logs::LogEntry;
+use crate::node::NodeOwned;
 use crate::preprocess::PreProcessor;
 use bumpalo::Bump;
 use std::collections::HashMap;
@@ -18,16 +19,17 @@ pub mod simple;
 pub mod config;
 pub mod context;
 pub mod logs;
+pub mod node;
 pub mod util;
 
-pub struct AssemblerResult<'a> {
+pub struct AssemblerResult {
     pub time: f64,
     pub allocated: usize,
     pub output: Vec<u8>,
-    pub log: Vec<LogEntry<'a>>,
+    pub log: Vec<LogEntry<NodeOwned>>,
 }
 
-impl<'a> std::fmt::Display for AssemblerResult<'a> {
+impl std::fmt::Display for AssemblerResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut errors = 0;
         let mut warnings = 0;
@@ -78,7 +80,7 @@ pub fn assemble_and_link<'a>(
     files: Vec<&'a Path>,
     bump: &'a Bump,
     mut lang: impl AssemblyLanguage<'a>,
-) -> AssemblerResult<'a> {
+) -> AssemblerResult {
     let now = Instant::now();
     let mut context = Context::new(bump, AssemblerConfig::new(), move |path, _ctx| {
         if let Some(contents) = sources.get(path) {

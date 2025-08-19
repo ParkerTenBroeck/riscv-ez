@@ -2,117 +2,29 @@ use super::logs::LogEntry;
 use crate::config::AssemblerConfig;
 use crate::lex::Span;
 use crate::lex::Token;
+use crate::logs::LogPart;
 use bumpalo::Bump;
 use std::fmt::Display;
 use std::path::Path;
+use std::sync::Arc;
 use std::{collections::HashMap, error::Error};
 
-#[derive(Clone, Copy, Debug)]
-pub struct Node<'a, T>(pub T, pub NodeId<'a>);
-
-impl<'a, T> Node<'a, T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Node<'a, U> {
-        Node(f(self.0), self.1)
-    }
-
-    pub fn as_ref(&self) -> Node<'a, &T> {
-        Node(&self.0, self.1)
-    }
-}
-
-pub type NodeId<'a> = &'a NodeInfo<'a>;
-pub type SourceId<'a> = &'a Source<'a>;
+pub use super::node::*;
 
 pub type SourceSupplier<'a> =
     Box<dyn Fn(&'a Path, &Context<'a>) -> Result<&'a str, Box<dyn Error>> + 'a>;
 
-#[derive(Clone, Copy)]
-pub struct Source<'a> {
-    pub path: &'a Path,
-    pub contents: &'a str,
-}
-
-impl<'a> Source<'a> {
-    pub fn eof(&self) -> Span {
-        Span {
-            line: self.contents.lines().count() as u32,
-            col: self.contents.lines().last().unwrap_or("").len() as u32,
-            offset: (self.contents.len() as u32),
-            len: 1,
-        }
-    }
-}
-
-impl<'a> std::fmt::Debug for Source<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Source").field("path", &self.path).finish()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Parent<'a> {
-    None,
-    Included {
-        parent: NodeId<'a>,
-    },
-    Pasted {
-        parent: NodeId<'a>,
-        definition: Option<NodeId<'a>>,
-    },
-    Generated {
-        parent: NodeId<'a>,
-        definition: Option<NodeId<'a>>,
-    },
-}
-
-impl<'a> Parent<'a> {
-    pub fn parent(&self) -> Option<NodeId<'a>> {
-        match self {
-            Self::None => None,
-            Self::Included { parent } => Some(parent),
-            Self::Pasted { parent, .. } => Some(parent),
-            Self::Generated { parent, .. } => Some(parent),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NodeInfo<'a> {
-    pub span: Span,
-    pub source: SourceId<'a>,
-    pub parent: Parent<'a>,
-}
-impl<'a> NodeInfo<'a> {
-    pub fn top(mut self: &'a Self) -> NodeId<'a> {
-        while let Some(next) = self.parent.parent() {
-            self = next;
-        }
-        self
-    }
-
-    pub fn src_slice(&self) -> &'a str {
-        &self.source.contents
-            [self.span.offset as usize..self.span.offset as usize + self.span.len as usize]
-    }
-}
-
-impl<'a> PartialEq for Source<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        if std::ptr::eq(self, other) {
-            return true;
-        };
-        self.path == other.path
-    }
-}
-
 pub struct Context<'a> {
     bump: &'a Bump,
     supplier: SourceSupplier<'a>,
-    source_map: HashMap<&'a Path, SourceId<'a>>,
-    log: Vec<LogEntry<'a>>,
-    top_src: SourceId<'a>,
-    top_src_eof: NodeId<'a>,
+    source_map: HashMap<&'a Path, SourceRef<'a>>,
+    log: Vec<LogEntry<NodeOwned>>,
+    top_src: SourceRef<'a>,
+    top_src_eof: NodeRef<'a>,
     config: AssemblerConfig,
+
+    owned_source_map: HashMap<*const SourceInfoRef<'a>, SourceOwned>,
+    owned_node_map: HashMap<*const NodeInfoRef<'a>, NodeOwned>,
 }
 
 #[derive(Debug, Default)]
@@ -133,14 +45,14 @@ impl<'a> Context<'a> {
             source_map: Default::default(),
             supplier: Box::new(source_supplier),
             log: Default::default(),
-            top_src: &Source {
+            top_src: &SourceInfoRef {
                 path: DEFAULT_PATH,
                 contents: "<INVALID>",
             },
             top_src_eof: &const {
-                NodeInfo {
+                NodeInfoRef {
                     span: Span::empty(),
-                    source: &Source {
+                    source: &SourceInfoRef {
                         path: DEFAULT_PATH,
                         contents: "<INVALID>",
                     },
@@ -148,6 +60,9 @@ impl<'a> Context<'a> {
                 }
             },
             config,
+
+            owned_source_map: HashMap::new(),
+            owned_node_map: HashMap::new(),
         }
     }
 
@@ -158,22 +73,22 @@ impl<'a> Context<'a> {
     pub fn get_source_from_path(
         &mut self,
         path: &'a Path,
-    ) -> Result<&'a Source<'a>, Box<dyn Error>> {
+    ) -> Result<&'a SourceInfoRef<'a>, Box<dyn Error>> {
         if let Some(id) = self.source_map.get(path) {
             return Ok(*id);
         }
 
         // let path = self.bump.alloc_slice_copy(path.as_os_str().as_bytes());
         let contents = (self.supplier)(path, self)?;
-        let source = self.bump.alloc(Source { path, contents });
+        let source = self.bump.alloc(SourceInfoRef { path, contents });
         self.source_map.insert(path, source);
         Ok(source)
     }
 
-    pub fn merge_nodes(&self, left: NodeId<'a>, right: NodeId<'a>) -> NodeId<'a> {
+    pub fn merge_nodes(&self, left: NodeRef<'a>, right: NodeRef<'a>) -> NodeRef<'a> {
         // TODO optimizing this might be something to do
-        fn meow<'a>(thingies: &mut Vec<NodeId<'a>>, start: NodeId<'a>) {
-            let mut nya = Some(start);
+        fn meow<'a>(thingies: &mut Vec<NodeRef<'a>>, start: NodeRef<'a>) {
+            let mut nya = Some(&start);
             while let Some(thing) = nya {
                 thingies.push(thing);
                 nya = thing.parent.parent();
@@ -189,7 +104,7 @@ impl<'a> Context<'a> {
                 if lhs.source != rhs.source {
                     panic!("uhhhhhhh, {left:?}, {right:?}")
                 } else {
-                    return self.node(NodeInfo {
+                    return self.node(NodeInfoRef {
                         span: lhs.span.combine(rhs.span),
                         source: lhs.source,
                         parent: lhs.parent,
@@ -214,66 +129,115 @@ impl<'a> Context<'a> {
         self.bump.alloc_slice_copy(data)
     }
 
-    pub fn eof(&self) -> NodeId<'a> {
+    pub fn eof(&self) -> NodeRef<'a> {
         self.top_src_eof
     }
 
-    pub fn src(&self) -> &'a Source<'a> {
+    pub fn src(&self) -> SourceRef<'a> {
         self.top_src
     }
 
-    pub fn node(&self, node: NodeInfo<'a>) -> NodeId<'a> {
+    pub fn node(&self, node: NodeInfoRef<'a>) -> NodeRef<'a> {
         self.bump.alloc(node)
     }
 
-    pub fn report(&mut self, error: LogEntry<'a>) {
-        self.log.push(error);
+    pub fn node_to_owned(&mut self, node: NodeRef<'a>) -> NodeOwned {
+        let node_ptr = node as *const NodeInfoRef<'a>;
+        if let Some(node) = self.owned_node_map.get(&node_ptr) {
+            return node.clone();
+        }
+
+        let src_ptr = node.source as *const SourceInfoRef<'a>;
+        let source = if let Some(src) = self.owned_source_map.get(&src_ptr) {
+            src.clone()
+        } else {
+            let owned = SourceOwned{
+                path: node.source.path.into(),
+                contents: node.source.contents.into(),
+            };
+
+            self.owned_source_map.insert(src_ptr, owned.clone());
+            
+            owned
+        };
+
+        let parent = match node.parent {
+            Parent::None => Parent::None,
+            Parent::Included { parent } => Parent::Included {
+                parent: self.node_to_owned(parent),
+            },
+            Parent::Pasted { parent, definition } => Parent::Pasted {
+                parent: self.node_to_owned(parent),
+                definition: definition.map(|def|self.node_to_owned(def)),
+            },
+            Parent::Generated { parent, definition } => Parent::Generated {
+                parent: self.node_to_owned(parent),
+                definition: definition.map(|def|self.node_to_owned(def)),
+            },
+        };
+
+        let owned = Arc::new(NodeInfoOwned {
+            span: node.span,
+            source,
+            parent,
+        });
+
+        self.owned_node_map.insert(node_ptr, owned.clone());
+
+        owned
+    }
+
+    pub fn report(&mut self, entry: LogEntry<NodeRef<'a>>) {
+        let parts = entry
+            .parts
+            .into_iter()
+            .map(|part| LogPart {
+                node: part.node.map(|n| self.node_to_owned(n)),
+                kind: part.kind,
+                msg: part.msg,
+            })
+            .collect();
+        self.log.push(LogEntry { parts });
     }
 
     pub fn report_error_locless(&mut self, msg: impl ToString) {
-        self.log.push(LogEntry::default().error_locless(msg));
+        self.report(LogEntry::new().error_locless(msg));
     }
 
     pub fn report_warning_locless(&mut self, msg: impl ToString) {
-        self.log.push(LogEntry::default().warning_locless(msg));
+        self.report(LogEntry::new().warning_locless(msg));
     }
 
     pub fn report_info_locless(&mut self, msg: impl ToString) {
-        self.log.push(LogEntry::default().info_locless(msg));
+        self.report(LogEntry::new().info_locless(msg));
     }
 
     pub fn report_hint_locless(&mut self, msg: impl ToString) {
-        self.log.push(LogEntry::default().hint_locless(msg));
+        self.report(LogEntry::new().hint_locless(msg));
     }
 
-    pub fn report_error(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new().error(node, error);
-        self.log.push(error);
+    pub fn report_error(&mut self, node: NodeRef<'a>, error: impl ToString) {
+        self.report(LogEntry::new().error(node, error));
     }
 
-    pub fn report_warning(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new().warning(node, error);
-        self.log.push(error);
+    pub fn report_warning(&mut self, node: NodeRef<'a>, error: impl ToString) {
+        self.report(LogEntry::new().warning(node, error));
     }
 
-    pub fn report_info(&mut self, node: NodeId<'a>, error: impl ToString) {
-        let error = LogEntry::new().info(node, error);
-        self.log.push(error);
+    pub fn report_info(&mut self, node: NodeRef<'a>, error: impl ToString) {
+        self.report(LogEntry::new().info(node, error));
     }
 
     pub fn report_error_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new().error(self.top_src_eof, error);
-        self.log.push(error);
+        self.report(LogEntry::new().error(self.top_src_eof, error));
     }
 
     pub fn report_warning_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new().warning(self.top_src_eof, error);
-        self.log.push(error);
+        self.report(LogEntry::new().warning(self.top_src_eof, error));
     }
 
     pub fn report_info_eof(&mut self, error: impl ToString) {
-        let error = LogEntry::new().info(self.top_src_eof, error);
-        self.log.push(error);
+        self.report(LogEntry::new().info(self.top_src_eof, error));
     }
 
     pub fn unexpected_token(
@@ -281,7 +245,7 @@ impl<'a> Context<'a> {
         got: Option<Node<'a, Token<'a>>>,
         expected: impl Display,
         alternate: bool,
-    ) -> NodeId<'a> {
+    ) -> NodeRef<'a> {
         if alternate {
             match got {
                 Some(Node(got, n)) => self.report_error(
@@ -309,22 +273,16 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn set_top_level_src(&mut self, src: SourceId<'a>) {
+    pub fn set_top_level_src(&mut self, src: SourceRef<'a>) {
         self.top_src = src;
-        self.top_src_eof = self.node(NodeInfo {
+        self.top_src_eof = self.node(NodeInfoRef {
             span: src.eof(),
             source: src,
             parent: Parent::None,
         });
     }
 
-    pub fn print_errors(&self) {
-        for error in &*self.log {
-            println!("{error}")
-        }
-    }
-
-    pub fn take_logs(self) -> Vec<LogEntry<'a>> {
+    pub fn take_logs(self) -> Vec<LogEntry<NodeOwned>> {
         self.log
     }
 

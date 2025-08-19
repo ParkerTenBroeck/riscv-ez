@@ -2,7 +2,7 @@ use num_traits::*;
 
 use crate::{
     assembler::lang::AssemblyLanguage,
-    context::{Node, NodeId},
+    context::{Node, NodeRef},
     expression::{Constant, ExpressionEvaluator, NodeVal, Value, ValueType},
 };
 
@@ -59,7 +59,7 @@ impl BinOp {
 impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn binop_base(
         &mut self,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: NodeVal<'a, L>,
         op: Node<'a, BinOp>,
         rhs: NodeVal<'a, L>,
@@ -301,7 +301,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn invalid_binop(
         &mut self,
         op: BinOp,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: NodeVal<'a, L>,
         rhs: NodeVal<'a, L>,
         _: ValueType<'a, L>,
@@ -336,7 +336,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn invalid_index(
         &mut self,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a, L>>,
         rhs: Option<NodeVal<'a, L>>,
     ) -> Value<'a, L> {
@@ -363,11 +363,11 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
 
     pub fn index_base(
         &mut self,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         lhs: Option<NodeVal<'a, L>>,
-        _opening: NodeId<'a>,
+        _opening: NodeRef<'a>,
         rhs: Option<NodeVal<'a, L>>,
-        _closing: NodeId<'a>,
+        _closing: NodeRef<'a>,
         _hint: ValueType<'a, L>,
     ) -> Value<'a, L> {
         self.invalid_index(node, lhs, rhs)

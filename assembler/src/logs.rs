@@ -1,4 +1,5 @@
-use super::context::NodeId;
+use crate::node::NodeTrait;
+use crate::node::Source;
 use std::fmt::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,51 +14,49 @@ pub enum LogKind {
     Included,
 }
 
-pub struct LogPart<'a> {
-    pub node: Option<NodeId<'a>>,
+pub struct LogPart<T: NodeTrait> {
+    pub node: Option<T>,
     pub kind: LogKind,
     pub msg: Option<String>,
 }
 
 #[derive(Default)]
-pub struct LogEntry<'a> {
-    pub parts: Vec<LogPart<'a>>,
+pub struct LogEntry<T: NodeTrait> {
+    pub parts: Vec<LogPart<T>>,
 }
 
-impl<'a> LogEntry<'a> {
+impl<T: NodeTrait + Clone> LogEntry<T> {
     pub fn new() -> Self {
-        Self::default()
+        Self { parts: Vec::new() }
     }
 
-    pub fn error(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+    pub fn error(self, node_id: T, msg: impl ToString) -> Self {
         self.add(node_id, LogKind::Error, msg)
     }
 
-    pub fn warning(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+    pub fn warning(self, node_id: T, msg: impl ToString) -> Self {
         self.add(node_id, LogKind::Warning, msg)
     }
 
-    pub fn info(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+    pub fn info(self, node_id: T, msg: impl ToString) -> Self {
         self.add(node_id, LogKind::Info, msg)
     }
 
-    pub fn hint(self, node_id: NodeId<'a>, msg: impl ToString) -> Self {
+    pub fn hint(self, node_id: T, msg: impl ToString) -> Self {
         self.add(node_id, LogKind::Hint, msg)
     }
 
-    pub fn add(mut self, node_id: NodeId<'a>, kind: LogKind, msg: impl ToString) -> Self {
-        let mut node_id = Some(node_id);
+    pub fn add(mut self, node_id: T, kind: LogKind, msg: impl ToString) -> Self {
+        let mut node_id = Some(&node_id);
         let mut msg = Some(msg.to_string());
         let mut kind = kind;
 
         let position = self.parts.len();
         while let Some(node) = node_id {
-            let node = *node;
-
             self.parts.insert(
                 position,
                 LogPart {
-                    node: node_id,
+                    node: node_id.map(|f| (*f).clone()),
                     kind,
                     msg: msg.take(),
                 },
@@ -66,14 +65,14 @@ impl<'a> LogEntry<'a> {
                 break;
             }
             use crate::context::Parent;
-            match node.parent {
+            match node.parent() {
                 Parent::None => kind = LogKind::From,
                 Parent::Included { .. } => kind = LogKind::Included,
                 Parent::Pasted { .. } => kind = LogKind::Pasted,
                 Parent::Generated { .. } => kind = LogKind::Generated,
             }
 
-            node_id = node.parent.parent();
+            node_id = node.parent().parent();
         }
 
         self
@@ -95,7 +94,7 @@ impl<'a> LogEntry<'a> {
         self.add_locless(LogKind::Hint, msg)
     }
 
-    pub fn add_locless(mut self, kind: LogKind, msg: impl ToString) -> LogEntry<'a> {
+    pub fn add_locless(mut self, kind: LogKind, msg: impl ToString) -> LogEntry<T> {
         self.parts.push(LogPart {
             node: None,
             kind,
@@ -136,7 +135,7 @@ pub fn expand_range_to_start_end_line(
     (expanded_range.clone(), &source[expanded_range])
 }
 
-impl<'a> std::fmt::Display for LogEntry<'a> {
+impl<T: NodeTrait> std::fmt::Display for LogEntry<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in self.parts.iter() {
             match part.kind {
@@ -154,16 +153,16 @@ impl<'a> std::fmt::Display for LogEntry<'a> {
                 write!(f, ": {msg}")?;
             }
 
-            let Some(node) = part.node else {
+            let Some(node) = part.node.as_ref() else {
                 writeln!(f)?;
                 continue;
             };
-            let span = node.span;
-            let source = node.source;
+            let span = node.span();
+            let source = &node.source();
 
             let error_range = span.offset as usize..(span.offset as usize + span.len as usize);
             let (expanded_range, expanded) =
-                expand_range_to_start_end_line(error_range.clone(), source.contents);
+                expand_range_to_start_end_line(error_range.clone(), source.contents());
             let mut line = span.line as usize + 1;
             let end_line = line + expanded.lines().count();
             let max_line_digits = end_line.ilog10() as usize + 1;
@@ -172,7 +171,7 @@ impl<'a> std::fmt::Display for LogEntry<'a> {
                 f,
                 "{BLUE}{BOLD}\n{: >max_line_digits$}---> {RESET}{}:{}:{}",
                 " ",
-                source.path.display(),
+                source.path().display(),
                 line,
                 span.col + 1
             )?;

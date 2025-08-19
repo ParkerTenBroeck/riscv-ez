@@ -1,6 +1,6 @@
 use crate::{
     assembler::lang::AssemblyLanguage,
-    context::{Node, NodeId},
+    context::{Node, NodeRef},
     expression::{Constant, ExpressionEvaluator, NodeVal, Value, ValueType},
 };
 
@@ -13,7 +13,7 @@ pub enum UnOp {
 impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
     pub fn unop_base(
         &mut self,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         Node(op, _): Node<'a, UnOp>,
         mut expr: NodeVal<'a, L>,
         _: ValueType<'a, L>,
@@ -53,7 +53,7 @@ impl<'a, 'b, L: AssemblyLanguage<'a>> ExpressionEvaluator<'a, 'b, L> {
         expr.0
     }
 
-    pub fn invalid_unop(&mut self, op: UnOp, node: NodeId<'a>, expr: NodeVal<'a, L>) {
+    pub fn invalid_unop(&mut self, op: UnOp, node: NodeRef<'a>, expr: NodeVal<'a, L>) {
         match op {
             UnOp::Neg => self.context.report_error(
                 node,

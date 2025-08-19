@@ -5,7 +5,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use crate::assembler::lang::AssemblyLanguage;
-use crate::context::{Context, Node, NodeId};
+use crate::context::{Context, Node, NodeRef};
 use crate::expression::{
     ArgumentsTypeHint, AsmStr, Constant, ExpressionEvaluator, NodeVal, Value, ValueType,
 };
@@ -26,16 +26,16 @@ macro_rules! integer {
 
             fn from_arg(
                 context: &mut Context<'a>,
-                node: NodeId<'a>,
+                node: NodeRef<'a>,
                 value: Value<'a, L>,
             ) -> Result<Self, Option<String>> {
                 match value {
-                    Value::Constant(c) if c.is_integer() => Ok($opt::Val(c.$func(node, context))),
+                    Value::Constant(c) => Ok($opt::Val(c.$func(node, context))),
                     _ => Err(None),
                 }
             }
 
-            fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+            fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
                 Self::Val(None)
             }
         }
@@ -53,7 +53,7 @@ macro_rules! integer {
 
                 fn from_arg(
                     context: &mut Context<'a>,
-                    node: NodeId<'a>,
+                    node: NodeRef<'a>,
                     value: Value<'a, L>,
                 ) -> Result<Self, Option<String>> {
                     match value {
@@ -71,7 +71,7 @@ macro_rules! integer {
                     }
                 }
 
-                fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+                fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
                     Self::Val(None)
                 }
             }
@@ -115,7 +115,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for AsmStrArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -124,7 +124,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for AsmStrArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -141,7 +141,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for PathArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -152,7 +152,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for PathArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -169,7 +169,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -184,7 +184,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for StrArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -201,7 +201,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -216,7 +216,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -233,7 +233,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -248,7 +248,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -265,7 +265,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrRelaxedArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -274,7 +274,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for BStrRelaxedArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -291,7 +291,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrRelaxedArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -300,7 +300,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for CStrRelaxedArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Val(None)
     }
 }
@@ -313,7 +313,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -322,7 +322,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for RegArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self(None)
     }
 }
@@ -335,7 +335,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -344,7 +344,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for LabelArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self(None)
     }
 }
@@ -357,7 +357,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedArg<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         match value {
@@ -366,7 +366,7 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for IndexedArg<'a, L> {
         }
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self(None)
     }
 }
@@ -378,13 +378,13 @@ impl<'a, L: AssemblyLanguage<'a>> CoercedArg<'a> for Value<'a, L> {
 
     fn from_arg(
         _: &mut Context<'a>,
-        _: NodeId<'a>,
+        _: NodeRef<'a>,
         value: Value<'a, Self::LANG>,
     ) -> Result<Self, Option<String>> {
         Ok(value)
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         Self::Constant(Constant::I32(0))
     }
 }
@@ -396,13 +396,13 @@ impl<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>> CoercedArg<'a> fo
 
     fn from_arg(
         context: &mut Context<'a>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         value: Value<'a, L>,
     ) -> Result<Self, Option<String>> {
         T::from_arg(context, node, value).map(|v| Node(v, node))
     }
 
-    fn default(context: &mut Context<'a>, node: NodeId<'a>) -> Self {
+    fn default(context: &mut Context<'a>, node: NodeRef<'a>) -> Self {
         Node(T::default(context, node), node)
     }
 }
@@ -414,11 +414,11 @@ pub trait CoercedArg<'a>: Sized {
     const OPTIONAL: bool = false;
     fn from_arg(
         context: &mut Context<'a>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         value: Value<'a, Self::LANG>,
     ) -> Result<Self, Option<String>>;
 
-    fn default(context: &mut Context<'a>, node: NodeId<'a>) -> Self;
+    fn default(context: &mut Context<'a>, node: NodeRef<'a>) -> Self;
 }
 
 impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Option<T> {
@@ -429,13 +429,13 @@ impl<'a, T: CoercedArg<'a>> CoercedArg<'a> for Option<T> {
 
     fn from_arg(
         context: &mut Context<'a>,
-        node: NodeId<'a>,
+        node: NodeRef<'a>,
         value: Value<'a, Self::LANG>,
     ) -> Result<Self, Option<String>> {
         T::from_arg(context, node, value).map(Some)
     }
 
-    fn default(_: &mut Context<'a>, _: NodeId<'a>) -> Self {
+    fn default(_: &mut Context<'a>, _: NodeRef<'a>) -> Self {
         None
     }
 }
@@ -452,21 +452,21 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
 
     fn args(
         ctx: &mut ExpressionEvaluator<'a, '_, L>,
-        fb: NodeId<'a>,
+        fb: NodeRef<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         Self::with_hint(|args| ctx.args(fb, args))
     }
 
     fn args_delim(
         ctx: &mut ExpressionEvaluator<'a, '_, L>,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         start: Token<'a>,
         end: Token<'a>,
     ) -> Node<'a, Vec<NodeVal<'a, L>>> {
         Self::with_hint(|args| ctx.args_delim(init, start, end, args))
     }
 
-    fn coerced_args(ctx: &mut ExpressionEvaluator<'a, '_, L>, init: NodeId<'a>) -> Node<'a, Self>
+    fn coerced_args(ctx: &mut ExpressionEvaluator<'a, '_, L>, init: NodeRef<'a>) -> Node<'a, Self>
     where
         Self: Sized,
     {
@@ -476,7 +476,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
 
     fn coerced_args_delim(
         ctx: &mut ExpressionEvaluator<'a, '_, L>,
-        init: NodeId<'a>,
+        init: NodeRef<'a>,
         start: Token<'a>,
         end: Token<'a>,
     ) -> Node<'a, Self>
@@ -490,7 +490,7 @@ pub trait CoercedArgs<'a, L: AssemblyLanguage<'a>> {
 
 fn wrong_number_args<'a>(
     context: &mut Context<'a>,
-    node: NodeId<'a>,
+    node: NodeRef<'a>,
     args: Vec<Node<'a, Value<'a, impl AssemblyLanguage<'a>>>>,
     expected: &[&str],
     vargs: bool,
@@ -509,7 +509,7 @@ fn wrong_number_args<'a>(
 fn coerce_argument<'a, L: AssemblyLanguage<'a>, T: CoercedArg<'a, LANG = L>>(
     context: &mut Context<'a>,
     a: Option<Node<'a, Value<'a, L>>>,
-    backup: NodeId<'a>,
+    backup: NodeRef<'a>,
 ) -> T {
     if let Some(Node(arg, node)) = a {
         T::from_arg(context, node, arg)

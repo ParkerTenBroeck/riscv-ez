@@ -3,7 +3,7 @@ pub mod lang;
 use std::path::Path;
 
 use crate::assembler::lang::AssemblyLanguage;
-use crate::context::{Context, NodeId};
+use crate::context::{Context, NodeRef};
 use crate::expression::ExpressionEvaluator;
 use crate::{context::Node, lex::Token, preprocess::PreProcessor};
 
@@ -155,7 +155,7 @@ impl<'a, 'b, T: AssemblyLanguage<'a>> Assembler<'a, 'b, T> {
         }
     }
 
-    pub fn unknown_mnemonic(&mut self, mnemonic: &'a str, n: NodeId<'a>) {
+    pub fn unknown_mnemonic(&mut self, mnemonic: &'a str, n: NodeRef<'a>) {
         self.context
             .report_error(n, format!("unrecognized mnemonic '{mnemonic}'"));
 

@@ -35,27 +35,6 @@ pub struct CastConfig {
     pub changed: LogOn,
 }
 
-impl CastConfig {
-    // pub fn supress(
-    //     self,
-    //     narrowing: bool,
-    //     widening: bool,
-    //     sign: bool,
-    //     lossy: bool,
-    //     f2i: bool,
-    //     i2f: bool,
-    // ) -> Self {
-    //     Self {
-    //         narrowing: self.narrowing.supress(narrowing),
-    //         widening: self.widening.supress(widening),
-    //         sign: self.sign.supress(sign),
-    //         lossy: self.lossy.supress(lossy),
-    //         f2i: self.f2i.supress(f2i),
-    //         i2f: self.i2f.supress(i2f),
-    //     }
-    // }
-}
-
 #[derive(Debug)]
 pub struct AssemblerConfig {
     pub preprocessor_stack_limit: usize,
@@ -68,6 +47,10 @@ pub struct AssemblerConfig {
 
     pub implicit_cast_label_offset: CastConfig,
     pub implicit_cast_shift_value: CastConfig,
+
+    pub emit_line_debug: bool,
+    pub emit_reloc_debug: bool,
+    pub emit_symbol_debug: bool,
 }
 
 impl AssemblerConfig {
@@ -138,6 +121,9 @@ impl AssemblerConfig {
                 changed: LogOn::Error,
                 changed_identity: LogOn::Error,
             },
+            emit_line_debug: true,
+            emit_reloc_debug: true,
+            emit_symbol_debug: true,
         }
     }
 }
