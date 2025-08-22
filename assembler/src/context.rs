@@ -151,13 +151,13 @@ impl<'a> Context<'a> {
         let source = if let Some(src) = self.owned_source_map.get(&src_ptr) {
             src.clone()
         } else {
-            let owned = SourceOwned{
+            let owned = SourceOwned {
                 path: node.source.path.into(),
                 contents: node.source.contents.into(),
             };
 
             self.owned_source_map.insert(src_ptr, owned.clone());
-            
+
             owned
         };
 
@@ -168,11 +168,11 @@ impl<'a> Context<'a> {
             },
             Parent::Pasted { parent, definition } => Parent::Pasted {
                 parent: self.node_to_owned(parent),
-                definition: definition.map(|def|self.node_to_owned(def)),
+                definition: definition.map(|def| self.node_to_owned(def)),
             },
             Parent::Generated { parent, definition } => Parent::Generated {
                 parent: self.node_to_owned(parent),
-                definition: definition.map(|def|self.node_to_owned(def)),
+                definition: definition.map(|def| self.node_to_owned(def)),
             },
         };
 
