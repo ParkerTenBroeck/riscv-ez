@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use crate::simple::trans::str::StrIdx;
+use crate::simple::trans::{str::StrIdx, SectionIdx};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SymbolIdx(usize);
@@ -29,6 +29,7 @@ pub enum SymbolVisibility {
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct Symbol {
     name: StrIdx,
+    section: Option<SectionIdx>,
     pub kind: SymbolKind,
     pub visibility: SymbolVisibility,
     pub size: u32,
@@ -39,6 +40,7 @@ impl Symbol {
     pub fn new(name: StrIdx) -> Self {
         Self {
             name,
+            section: None,
             kind: Default::default(),
             visibility: Default::default(),
             size: Default::default(),
