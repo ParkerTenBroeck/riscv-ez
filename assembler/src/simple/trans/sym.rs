@@ -1,4 +1,6 @@
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::collections::HashMap;
+
+use num_traits::PrimInt;
 
 use crate::{
     logs::LogEntry,
@@ -31,31 +33,31 @@ pub enum SymbolVisibility {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct Symbol {
+pub struct Symbol<T: PrimInt> {
     name: StrIdx,
     pub section: Option<SectionIdx>,
     pub kind: SymbolKind,
     pub visibility: SymbolVisibility,
-    pub size: u32,
-    pub offset: u32,
+    pub size: T,
+    pub offset: T,
 }
 
-impl Symbol {
+impl<T: PrimInt> Symbol<T> {
     pub fn new(name: StrIdx) -> Self {
         Self {
             name,
             section: None,
             kind: Default::default(),
             visibility: Default::default(),
-            size: Default::default(),
-            offset: Default::default(),
+            size: num_traits::zero(),
+            offset: num_traits::zero(),
         }
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Symbols {
-    symbols: Vec<Symbol>,
+pub struct Symbols<T: PrimInt> {
+    symbols: Vec<Symbol<T>>,
     symbol_map: HashMap<StrIdx, SymbolIdx>,
 }
 
@@ -69,19 +71,20 @@ impl SymbolError {
     pub fn to_log_entry(&self, label: &str, node: NodeOwned) -> LogEntry<NodeOwned> {
         let (log, node) = match self {
             SymbolError::SizePreviouslyDeclared(last_node) => (
-                LogEntry::new().warning(node, "size previously defined"),
+                LogEntry::new().warning(node, format!("size previously defined for '{label}'")),
                 last_node,
             ),
             SymbolError::KindPreviouslyDeclared(last_node) => (
-                LogEntry::new().warning(node, "kind previously defined"),
+                LogEntry::new().warning(node, format!("kind previously defined for '{label}'")),
                 last_node,
             ),
             SymbolError::VisibilityPreviouslyDeclared(last_node) => (
-                LogEntry::new().warning(node, "visibility previously defined"),
+                LogEntry::new()
+                    .warning(node, format!("visibility previously defined for '{label}'")),
                 last_node,
             ),
             SymbolError::PreviouslyBound(last_node) => (
-                LogEntry::new().error(node, "symbol previously bound"),
+                LogEntry::new().error(node, format!("symbol '{label}' previously bound")),
                 last_node,
             ),
         };
@@ -93,7 +96,7 @@ impl SymbolError {
     }
 }
 
-impl Symbols {
+impl<T: PrimInt> Symbols<T> {
     pub fn new() -> Self {
         Self {
             symbols: Vec::new(),
@@ -112,7 +115,7 @@ impl Symbols {
         }
     }
 
-    pub fn symbol(&mut self, symbol_idx: SymbolIdx) -> &mut Symbol {
+    pub fn symbol(&mut self, symbol_idx: SymbolIdx) -> &mut Symbol<T> {
         self.symbols.get_mut(symbol_idx.0).unwrap()
     }
 }

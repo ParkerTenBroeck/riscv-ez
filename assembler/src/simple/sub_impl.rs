@@ -1,22 +1,4 @@
-use crate::context::Context;
-use crate::expression::args::{AsmStrArg, UptrArg, UptrPow2Arg};
-use crate::expression::conversion::AsmNum;
-use crate::simple::trans::TranslationUnit;
-use crate::{
-    assembler::LangCtx,
-    context::{Node, NodeRef},
-    expression::{
-        ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
-        FuncParamParser, Indexed, NodeVal, Value, ValueType,
-        args::{StrArg, U32Arg, U32Pow2Arg},
-        binop::BinOp,
-        unop::UnOp,
-    },
-    lex::Number,
-    logs::LogEntry,
-    util::IntoStrDelimable,
-};
-
+use crate::{assembler::LangCtx, context::NodeRef, expression::Constant};
 
 use super::*;
 
@@ -27,12 +9,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         constant: Constant<'a, Self>,
         node: NodeRef<'a>,
     ) {
-        use num_traits::ToPrimitive;
-        let align = constant
-            .get_align()
-            .unwrap_or_default()
-            .to_usize()
-            .unwrap_or_default();
+        let align = constant.get_align().unwrap_or_default();
         macro_rules! dat {
             ($expr:expr) => {
                 self.add_data(ctx, $expr, align, node)
@@ -62,7 +39,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                     crate::expression::AsmStr::ByteStr(str) => dat!(str),
                     crate::expression::AsmStr::CStr(str) => {
                         self.add_data(ctx, str, align, node);
-                        self.add_data(ctx, &[0], 1, node)
+                        self.add_data(ctx, &[0], num_traits::one(), node)
                     }
                 },
                 Constant::Char(v) => dat!(&(v as u32).to_le_bytes()),
@@ -90,7 +67,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
                     crate::expression::AsmStr::ByteStr(str) => dat!(str),
                     crate::expression::AsmStr::CStr(str) => {
                         self.add_data(ctx, str, align, node);
-                        self.add_data(ctx, &[0], 1, node)
+                        self.add_data(ctx, &[0], num_traits::one(), node)
                     }
                 },
                 Constant::Char(v) => dat!(&(v as u32).to_be_bytes()),
@@ -103,7 +80,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
         data: &[u8],
-        align: usize,
+        align: Self::Uptr,
         node: NodeRef<'a>,
     ) {
         let section = self.state_mut().expect_section(ctx.context, node);
@@ -117,8 +94,8 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
     fn add_space_data(
         &mut self,
         ctx: &mut LangCtx<'a, '_, Self>,
-        space: usize,
-        align: usize,
+        space: Self::Uptr,
+        align: Self::Uptr,
         node: NodeRef<'a>,
     ) {
         let section = self.state_mut().expect_section(ctx.context, node);
@@ -129,12 +106,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
             .space(space, align, Some(node));
     }
 
-    fn set_section(
-        &mut self,
-        ctx: &mut LangCtx<'a, '_, Self>,
-        section: &'a str,
-        node: NodeRef<'a>,
-    ) {
+    fn set_section(&mut self, _: &mut LangCtx<'a, '_, Self>, section: &'a str, _: NodeRef<'a>) {
         self.state_mut().current_section = Some(section);
     }
 }

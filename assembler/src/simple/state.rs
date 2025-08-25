@@ -1,8 +1,7 @@
 use crate::context::Context;
+use crate::simple::SimpleAssemblyLanguage;
 use crate::simple::trans::TranslationUnit;
 use crate::{context::NodeRef, logs::LogEntry};
-
-use num_traits::AsPrimitive;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub enum Endianess {
@@ -12,14 +11,14 @@ pub enum Endianess {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct SALState<'a> {
+pub struct SALState<'a, L: SimpleAssemblyLanguage<'a>> {
     pub current_section: Option<&'a str>,
     pub last_non_local_label: Option<&'a str>,
     pub endianess: Endianess,
-    pub trans: TranslationUnit,
+    pub trans: TranslationUnit<L::TranslationUnitMachine>,
 }
 
-impl<'a> SALState<'a> {
+impl<'a, L: SimpleAssemblyLanguage<'a>> SALState<'a, L> {
     pub fn expect_section(&mut self, context: &mut Context<'a>, node: NodeRef<'a>) -> &'a str {
         if self.current_section.is_none() {
             context.report(LogEntry::new()

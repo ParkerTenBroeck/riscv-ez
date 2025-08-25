@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, hash_map::Entry},
-    default,
-};
+use std::collections::{HashMap, hash_map::Entry};
 
 use crate::{
     node::NodeOwned,

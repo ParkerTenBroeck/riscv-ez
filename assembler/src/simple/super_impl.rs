@@ -1,22 +1,18 @@
-use crate::context::Context;
 use crate::expression::args::{AsmStrArg, UptrArg, UptrPow2Arg};
-use crate::expression::conversion::AsmNum;
 use crate::simple::trans::TranslationUnit;
 use crate::{
     assembler::LangCtx,
     context::{Node, NodeRef},
     expression::{
         ArgumentsTypeHint, AsmStr, Constant, ExprCtx, FuncParamParser, NodeVal, Value, ValueType,
-        args::{StrArg, U32Arg},
-        binop::BinOp,
-        unop::UnOp,
+        args::StrArg, binop::BinOp, unop::UnOp,
     },
     lex::Number,
     util::IntoStrDelimable,
 };
 
-use std::os::unix::ffi::OsStrExt;
 use num_traits::AsPrimitive;
+use std::os::unix::ffi::OsStrExt;
 
 use super::*;
 
@@ -25,7 +21,8 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
     type Indexed = T::Indexed;
     type CustomValue = T::CustomValue;
     type Label = T::Label;
-    type AssembledResult = TranslationUnit;
+    type AssembledResult =
+        TranslationUnit<<Self as SimpleAssemblyLanguage<'a>>::TranslationUnitMachine>;
 
     type Usize = T::Usize;
     type Isize = T::Isize;
@@ -300,8 +297,8 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
             }
 
             ".space" => {
-                if let U32Arg::Val(Some(size)) = ctx.eval(self).coerced(n).0 {
-                    self.add_space_data(ctx, size as usize, 1, n);
+                if let UptrArg::Val(Some(size)) = ctx.eval(self).coerced(n).0 {
+                    self.add_space_data(ctx, size, num_traits::one(), n);
                 }
             }
             ".values" => {
@@ -343,7 +340,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
             ".iptr" => constant!(IptrArg, Iptr),
             ".isize" => constant!(IsizeArg, Isize),
             ".uptr" => constant!(UptrArg, Uptr),
-            ".iptr" => constant!(UsizeArg, Usize),
+            ".usize" => constant!(UsizeArg, Usize),
 
             _ => self.assemble_mnemonic(ctx, mnemonic, n),
         }
@@ -393,5 +390,11 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
         comment: &'a str,
         n: NodeRef<'a>,
     ) {
+        let section = self.state_mut().expect_section(ctx.context, n);
+        let node = ctx.context.node_to_owned(n);
+        self.state_mut()
+            .trans
+            .get_mut(section)
+            .emit_comment_dbg(comment, node);
     }
 }

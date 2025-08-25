@@ -3,16 +3,10 @@ use std::{collections::HashMap, num::NonZeroUsize, ops::Index};
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct StrIdx(NonZeroUsize);
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct StringTable {
     data: String,
     map: HashMap<String, StrIdx>,
-}
-
-impl std::fmt::Debug for StringTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
 }
 
 impl StringTable {

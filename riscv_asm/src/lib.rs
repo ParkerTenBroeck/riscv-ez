@@ -3,6 +3,7 @@
 pub mod args;
 pub mod indexed;
 pub mod label;
+pub mod machine;
 pub mod opcodes;
 pub mod reg;
 pub mod reloc;
@@ -11,6 +12,7 @@ use assembler::assembler::LangCtx;
 use assembler::expression::binop::BinOp;
 use assembler::simple::{SALState, SimpleAssemblyLanguage, SimpleAssemblyLanguageBase};
 use indexed::*;
+use machine::*;
 use opcodes::*;
 use reg::*;
 
@@ -34,13 +36,15 @@ pub type V<'a> = Value<'a, RiscvAssembler<'a>>;
 
 #[derive(Default, Clone)]
 pub struct RiscvAssembler<'a> {
-    base_state: SALState<'a>,
+    base_state: SALState<'a, Self>,
 }
+
 impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     type Reg = Register;
     type Indexed = MemoryIndex<'a>;
     type CustomValue = EmptyCustomValue<Self>;
     type Label = LabelExpr<'a>;
+    type TranslationUnitMachine = RiscvMachine;
 
     type Usize = u32;
     type Isize = i32;
@@ -533,11 +537,11 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
         }
     }
 
-    fn state_mut(&mut self) -> &mut assembler::simple::SALState<'a> {
+    fn state_mut(&mut self) -> &mut SALState<'a, Self> {
         &mut self.base_state
     }
 
-    fn state(&self) -> &assembler::simple::SALState<'a> {
+    fn state(&self) -> &SALState<'a, Self> {
         &self.base_state
     }
 }

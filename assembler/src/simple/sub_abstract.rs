@@ -1,31 +1,23 @@
-use crate::context::Context;
-use crate::expression::args::{AsmStrArg, UptrArg, UptrPow2Arg};
 use crate::expression::conversion::AsmNum;
-use crate::simple::trans::TranslationUnit;
+use crate::simple::trans::TranslationUnitMachine;
 use crate::{
     assembler::LangCtx,
     context::{Node, NodeRef},
     expression::{
-        ArgumentsTypeHint, AsmStr, AssemblyLabel, AssemblyRegister, Constant, CustomValue, ExprCtx,
-        FuncParamParser, Indexed, NodeVal, Value, ValueType,
-        args::{StrArg, U32Arg, U32Pow2Arg},
-        binop::BinOp,
-        unop::UnOp,
+        AssemblyLabel, AssemblyRegister, CustomValue, ExprCtx, FuncParamParser, Indexed, NodeVal,
+        Value, ValueType, binop::BinOp, unop::UnOp,
     },
     lex::Number,
-    logs::LogEntry,
-    util::IntoStrDelimable,
 };
 
 use super::*;
-
-use num_traits::AsPrimitive;
 
 pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
     type Reg: AssemblyRegister<'a, Lang = Self>;
     type Indexed: Indexed<'a, Lang = Self>;
     type CustomValue: CustomValue<'a, Lang = Self>;
     type Label: AssemblyLabel<'a, Lang = Self>;
+    type TranslationUnitMachine: TranslationUnitMachine<PtrSizeType = Self::Uptr>;
 
     type Usize: AsmNum<'a, Self>;
     type Isize: AsmNum<'a, Self>;
@@ -133,7 +125,8 @@ pub trait SimpleAssemblyLanguage<'a>: Sized + 'a {
         value: Value<'a, Self>,
         n: NodeRef<'a>,
     );
+    #[allow(unused)]
     fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) {}
-    fn state_mut(&mut self) -> &mut SALState<'a>;
-    fn state(&self) -> &SALState<'a>;
+    fn state_mut(&mut self) -> &mut SALState<'a, Self>;
+    fn state(&self) -> &SALState<'a, Self>;
 }

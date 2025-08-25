@@ -1,8 +1,7 @@
+use num_traits::PrimInt;
 use std::{
     collections::{HashMap, hash_map::Entry},
     num::NonZeroUsize,
-    ops::Index,
-    sync::Arc,
 };
 
 pub mod data;
@@ -12,7 +11,6 @@ pub mod section;
 pub mod str;
 pub mod sym;
 
-use data::*;
 use dbg::*;
 use reloc::*;
 use section::*;
@@ -24,27 +22,61 @@ use crate::node::NodeOwned;
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SectionIdx(NonZeroUsize);
 
-#[derive(Clone)]
-pub struct TranslationUnit {
-    sections: Vec<Section>,
+pub trait TranslationUnitMachine {
+    type Reloc: Reloc;
+    type PtrSizeType: PrimInt + std::fmt::Debug;
+}
+
+pub struct TranslationUnit<T: TranslationUnitMachine> {
+    sections: Vec<Section<T>>,
     section_map: HashMap<StrIdx, SectionIdx>,
-    symbols: Symbols,
+    symbols: Symbols<T::PtrSizeType>,
     str_table: StringTable,
 }
 
-impl Default for TranslationUnit {
+impl<T: TranslationUnitMachine> Clone for TranslationUnit<T> {
+    fn clone(&self) -> Self {
+        let TranslationUnit {
+            sections: sections,
+            section_map: section_map,
+            symbols: symbols,
+            str_table: str_table,
+        } = self;
+        TranslationUnit {
+            sections: sections.clone(),
+            section_map: section_map.clone(),
+            symbols: symbols.clone(),
+            str_table: str_table.clone(),
+        }
+    }
+}
+
+impl<T: TranslationUnitMachine> core::fmt::Debug for TranslationUnit<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            TranslationUnit {
+                sections: sections,
+                section_map: section_map,
+                symbols: symbols,
+                str_table: str_table,
+            } => f
+                .debug_struct("TranslationUnit")
+                .field("sections", &sections)
+                .field("section_map", &section_map)
+                .field("symbols", &symbols)
+                .field("str_table", &str_table)
+                .finish(),
+        }
+    }
+}
+
+impl<T: TranslationUnitMachine> Default for TranslationUnit<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl std::fmt::Debug for TranslationUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
-impl TranslationUnit {
+impl<T: TranslationUnitMachine> TranslationUnit<T> {
     pub fn new() -> Self {
         Self {
             sections: Vec::new(),
@@ -67,7 +99,7 @@ impl TranslationUnit {
         idx
     }
 
-    pub fn get_mut(&mut self, name: &str) -> SectionMut<'_> {
+    pub fn get_mut(&mut self, name: &str) -> SectionMut<'_, T> {
         let section_idx = self.resolve_or_make(name);
         let section = &mut self.sections[section_idx.0.get() - 1];
         SectionMut {
@@ -79,21 +111,21 @@ impl TranslationUnit {
     }
 }
 
-pub struct SectionMut<'a> {
-    section: &'a mut Section,
+pub struct SectionMut<'a, T: TranslationUnitMachine> {
+    section: &'a mut Section<T>,
     section_idx: SectionIdx,
-    symbols: &'a mut Symbols,
+    symbols: &'a mut Symbols<T::PtrSizeType>,
     str_table: &'a mut StringTable,
 }
 
-impl<'a> SectionMut<'a> {
+impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
     fn sym_checked(
         &mut self,
         name: &str,
         node: Option<NodeOwned>,
         node_kind: impl Fn(&mut SymbolDbg) -> &mut Option<NodeOwned>,
         err: impl FnOnce(Option<NodeOwned>) -> SymbolError,
-    ) -> Result<&mut Symbol, SymbolError> {
+    ) -> Result<&mut Symbol<T::PtrSizeType>, SymbolError> {
         let symbol_idx = self.symbols.resolve(self.str_table.resolve(name));
         let symbol = self.symbols.symbol(symbol_idx);
 
@@ -132,7 +164,7 @@ impl<'a> SectionMut<'a> {
     pub fn set_symbol_size(
         &mut self,
         name: &str,
-        size: u32,
+        size: T::PtrSizeType,
         node: Option<NodeOwned>,
     ) -> Result<(), SymbolError> {
         let symbol = self.sym_checked(
@@ -178,19 +210,23 @@ impl<'a> SectionMut<'a> {
         Ok(())
     }
 
-    pub fn reloc(&mut self) {}
+    pub fn reloc(&mut self, reloc: T::Reloc, node: Option<NodeOwned>) {}
 
-    pub fn data(&mut self, data: &[u8], align: usize, node: Option<NodeOwned>) {
+    pub fn data(&mut self, data: &[u8], align: T::PtrSizeType, node: Option<NodeOwned>) {
         let range = self.section.data.push_data(data, align);
         if let Some(node) = node {
             self.section.debug_info.emit_data_dbg(range, node)
         }
     }
 
-    pub fn space(&mut self, space: usize, align: usize, node: Option<NodeOwned>) {
+    pub fn space(&mut self, space: T::PtrSizeType, align: T::PtrSizeType, node: Option<NodeOwned>) {
         let range = self.section.data.push_space(space, align);
         if let Some(node) = node {
             self.section.debug_info.emit_data_dbg(range, node)
         }
+    }
+
+    pub fn emit_comment_dbg(&mut self, comment: &str, node: NodeOwned) {
+        todo!()
     }
 }

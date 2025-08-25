@@ -1,22 +1,30 @@
-#[derive(Clone)]
-pub struct Data {
+use num_traits::{NumCast, PrimInt};
+
+#[derive(Clone, Debug)]
+pub struct Data<T: PrimInt> {
     data: Vec<u8>,
-    align: usize,
+    align: T,
 }
 
-impl Data {
+impl<T: PrimInt> Default for Data<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: PrimInt> Data<T> {
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
-            align: 1,
+            align: num_traits::one(),
         }
     }
 
-    pub fn current_offset(&self) -> u32 {
-        self.data.len() as u32
+    pub fn current_offset(&self) -> T {
+        NumCast::from(self.data.len()).unwrap()
     }
 
-    pub fn push_data(&mut self, data: &[u8], align: usize) -> std::ops::Range<usize> {
+    pub fn push_data(&mut self, data: &[u8], align: T) -> std::ops::Range<usize> {
         let start = self.data.len();
 
         self.align = self.align.max(align);
@@ -27,7 +35,7 @@ impl Data {
         start..end
     }
 
-    pub fn push_space(&mut self, space: usize, align: usize) -> std::ops::Range<usize> {
+    pub fn push_space(&mut self, space: T, align: T) -> std::ops::Range<usize> {
         let start = self.data.len();
 
         self.align = self.align.max(align);
