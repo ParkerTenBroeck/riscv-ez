@@ -37,10 +37,10 @@ pub struct TranslationUnit<T: TranslationUnitMachine> {
 impl<T: TranslationUnitMachine> Clone for TranslationUnit<T> {
     fn clone(&self) -> Self {
         let TranslationUnit {
-            sections: sections,
-            section_map: section_map,
-            symbols: symbols,
-            str_table: str_table,
+            sections,
+            section_map,
+            symbols,
+            str_table,
         } = self;
         TranslationUnit {
             sections: sections.clone(),
@@ -53,20 +53,19 @@ impl<T: TranslationUnitMachine> Clone for TranslationUnit<T> {
 
 impl<T: TranslationUnitMachine> core::fmt::Debug for TranslationUnit<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self {
-            TranslationUnit {
-                sections: sections,
-                section_map: section_map,
-                symbols: symbols,
-                str_table: str_table,
-            } => f
-                .debug_struct("TranslationUnit")
-                .field("sections", &sections)
-                .field("section_map", &section_map)
-                .field("symbols", &symbols)
-                .field("str_table", &str_table)
-                .finish(),
-        }
+        let TranslationUnit {
+                sections,
+                section_map,
+                symbols,
+                str_table,
+            } = self;
+        f
+        .debug_struct("TranslationUnit")
+        .field("sections", &sections)
+        .field("section_map", &section_map)
+        .field("symbols", &symbols)
+        .field("str_table", &str_table)
+        .finish()
     }
 }
 
@@ -210,7 +209,13 @@ impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
         Ok(())
     }
 
-    pub fn reloc(&mut self, reloc: T::Reloc, node: Option<NodeOwned>) {}
+    pub fn reloc(&mut self, reloc: T::Reloc, node: Option<NodeOwned>) -> RelocIdx {
+        let reloc = self.section.relocations.emit(reloc);
+        if let Some(node) = node {
+            self.section.debug_info.emit_reloc_dbg(reloc, node)
+        }
+        reloc
+    }
 
     pub fn data(&mut self, data: &[u8], align: T::PtrSizeType, node: Option<NodeOwned>) {
         let range = self.section.data.push_data(data, align);
@@ -226,7 +231,7 @@ impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
         }
     }
 
-    pub fn emit_comment_dbg(&mut self, comment: &str, node: NodeOwned) {
-        todo!()
+    pub fn emit_comment_dbg(&mut self, _comment: &str, _node: NodeOwned) {
+        // self.section.debug_info.emit_comment_dbg()
     }
 }

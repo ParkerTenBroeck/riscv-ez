@@ -163,7 +163,9 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                     self.set_section(ctx, sec, n);
                 }
             }
-            ".align" => if let UptrPow2Arg::Val(Some(align)) = ctx.eval(self).coerced(n).0 {},
+            ".align" => if let UptrPow2Arg::Val(Some(align)) = ctx.eval(self).coerced(n).0 {
+                todo!("align: {align}")
+            },
 
             ".label" => {
                 if let Node(StrArg::Val(Some(label)), n) = ctx.eval(self).coerced(n) {
