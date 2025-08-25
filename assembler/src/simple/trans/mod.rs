@@ -54,18 +54,17 @@ impl<T: TranslationUnitMachine> Clone for TranslationUnit<T> {
 impl<T: TranslationUnitMachine> core::fmt::Debug for TranslationUnit<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let TranslationUnit {
-                sections,
-                section_map,
-                symbols,
-                str_table,
-            } = self;
-        f
-        .debug_struct("TranslationUnit")
-        .field("sections", &sections)
-        .field("section_map", &section_map)
-        .field("symbols", &symbols)
-        .field("str_table", &str_table)
-        .finish()
+            sections,
+            section_map,
+            symbols,
+            str_table,
+        } = self;
+        f.debug_struct("TranslationUnit")
+            .field("sections", &sections)
+            .field("section_map", &section_map)
+            .field("symbols", &symbols)
+            .field("str_table", &str_table)
+            .finish()
     }
 }
 
