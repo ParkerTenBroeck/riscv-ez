@@ -6,11 +6,11 @@ use crate::simple::trans::{
     sym::Symbols,
 };
 
+#[derive(Clone)]
 pub struct Section {
     name: StrIdx,
     pub(crate) data: Data,
     pub(crate) relocations: Relocations,
-    pub(crate) symbols: Symbols,
     pub(crate) debug_info: DebugInfo,
 }
 
@@ -20,7 +20,6 @@ impl Section {
             name,
             data: Data::new(),
             relocations: Relocations::new(),
-            symbols: Symbols::new(),
             debug_info: DebugInfo::new(),
         }
     }

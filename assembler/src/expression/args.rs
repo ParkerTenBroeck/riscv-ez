@@ -56,10 +56,12 @@ macro_rules! integer {
                     node: NodeRef<'a>,
                     value: Value<'a, L>,
                 ) -> Result<Self, Option<String>> {
+                    #[allow(unused)]
+                    use num_traits::PrimInt;
                     match value {
                         Value::Constant(c) => {
                             let value: $ty = c.$func(node, context).ok_or(None)?;
-                            Ok(Self::Val(if value.is_power_of_two() {
+                            Ok(Self::Val(if value.count_ones() == 1 {
                                     Some(value)
                                 } else {
                                     context.report_error(node, "value is not a power of two");
@@ -93,8 +95,22 @@ integer!(
     (u32, "u32", checked_cast_u32, U32, U32Arg, U32Pow2Arg),
     (u64, "u64", checked_cast_u64, U64, U64Arg, U64Pow2Arg),
     (u128, "u128", checked_cast_u128, U128, U128Arg, U128Pow2Arg),
-    (L::Usize, "usize", checked_cast_usize, Usize, UsizeArg,),
-    (L::Uptr, "uptr", checked_cast_uptr, Uptr, UptrArg,),
+    (
+        L::Usize,
+        "usize",
+        checked_cast_usize,
+        Usize,
+        UsizeArg,
+        UsizePow2Arg
+    ),
+    (
+        L::Uptr,
+        "uptr",
+        checked_cast_uptr,
+        Uptr,
+        UptrArg,
+        UptrPow2Arg
+    ),
     (f32, "f32", checked_cast_f32, F32, F32Arg,),
     (f64, "f64", checked_cast_f64, F64, F64Arg,),
     (char, "char", checked_cast_char, Char, CharArg,),

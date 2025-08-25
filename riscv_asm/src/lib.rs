@@ -41,7 +41,6 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     type Indexed = MemoryIndex<'a>;
     type CustomValue = EmptyCustomValue<Self>;
     type Label = LabelExpr<'a>;
-    type AssembledResult = ();
 
     type Usize = u32;
     type Isize = i32;
@@ -518,14 +517,6 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
 
             _ => ctx.eval(self).binop_base(node, lhs, op, rhs, hint),
         }
-    }
-
-    fn finish(&mut self, ctx: LangCtx<'a, '_, Self>) -> Self::AssembledResult {
-        // todo!()
-    }
-
-    fn encounter_label(&mut self, ctx: &mut LangCtx<'a, '_, Self>, label: &'a str, n: NodeRef<'a>) {
-        // todo!()
     }
 
     fn add_value_data(

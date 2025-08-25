@@ -187,6 +187,10 @@ impl<'a> Context<'a> {
         owned
     }
 
+    pub fn report_owned(&mut self, entry: LogEntry<NodeOwned>) {
+        self.log.push(entry);
+    }
+
     pub fn report(&mut self, entry: LogEntry<NodeRef<'a>>) {
         let parts = entry
             .parts
