@@ -87,7 +87,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         let node = ctx.context.node_to_owned(node);
         self.state_mut()
             .trans
-            .get_mut(section)
+            .resolve_mut(section)
             .data(data, align, Some(node));
     }
 
@@ -102,7 +102,7 @@ pub trait SimpleAssemblyLanguageBase<'a>: SimpleAssemblyLanguage<'a> {
         let node = ctx.context.node_to_owned(node);
         self.state_mut()
             .trans
-            .get_mut(section)
+            .resolve_mut(section)
             .space(space, align, Some(node));
     }
 

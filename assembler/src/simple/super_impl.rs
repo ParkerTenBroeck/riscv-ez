@@ -1,4 +1,5 @@
 use crate::expression::args::{AsmStrArg, UptrArg, UptrPow2Arg};
+use crate::node::NodeTrait;
 use crate::simple::trans::TranslationUnit;
 use crate::{
     assembler::LangCtx,
@@ -181,7 +182,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                     let result = self
                         .state_mut()
                         .trans
-                        .get_mut(section)
+                        .resolve_mut(section)
                         .set_symbol_visibility(
                             label,
                             trans::sym::SymbolVisibility::Global,
@@ -199,7 +200,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                     let result = self
                         .state_mut()
                         .trans
-                        .get_mut(section)
+                        .resolve_mut(section)
                         .set_symbol_visibility(
                             label,
                             trans::sym::SymbolVisibility::Weak,
@@ -217,7 +218,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                     let result = self
                         .state_mut()
                         .trans
-                        .get_mut(section)
+                        .resolve_mut(section)
                         .set_symbol_visibility(
                             label,
                             trans::sym::SymbolVisibility::Local,
@@ -234,26 +235,26 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                 {
                     let section = self.state_mut().expect_section(ctx.context, n);
                     let node = ctx.context.node_to_owned(n);
-                    let mut section = self.state_mut().trans.get_mut(section);
+                    let mut section = self.state_mut().trans.resolve_mut(section);
                     let result = match ty.as_bytes() {
-                        b"func" => section.set_symbol_kind(
+                        b"func" => section.set_symbol_ty(
                             label,
-                            trans::sym::SymbolKind::Function,
+                            trans::sym::SymbolType::Function,
                             Some(node.clone()),
                         ),
-                        b"obj" => section.set_symbol_kind(
+                        b"obj" => section.set_symbol_ty(
                             label,
-                            trans::sym::SymbolKind::Object,
+                            trans::sym::SymbolType::Object,
                             Some(node.clone()),
                         ),
-                        b"data" => section.set_symbol_kind(
+                        b"data" => section.set_symbol_ty(
                             label,
-                            trans::sym::SymbolKind::Data,
+                            trans::sym::SymbolType::Data,
                             Some(node.clone()),
                         ),
-                        b"common" => section.set_symbol_kind(
+                        b"common" => section.set_symbol_ty(
                             label,
-                            trans::sym::SymbolKind::Common,
+                            trans::sym::SymbolType::Common,
                             Some(node.clone()),
                         ),
                         _ => {
@@ -273,7 +274,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
                 {
                     let section = self.state_mut().expect_section(ctx.context, n);
                     let node = ctx.context.node_to_owned(n);
-                    let result = self.state_mut().trans.get_mut(section).set_symbol_size(
+                    let result = self.state_mut().trans.resolve_mut(section).set_symbol_size(
                         label,
                         size.as_(),
                         Some(node.clone()),
@@ -370,7 +371,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
             let result = self
                 .state_mut()
                 .trans
-                .get_mut(section)
+                .resolve_mut(section)
                 .bind_symbol(label, Some(node.clone()));
 
             if let Err(err) = result {
@@ -398,7 +399,7 @@ impl<'a, T: SimpleAssemblyLanguage<'a>> crate::assembler::lang::AssemblyLanguage
         let node = ctx.context.node_to_owned(n);
         self.state_mut()
             .trans
-            .get_mut(section)
+            .resolve_mut(section)
             .emit_comment_dbg(comment, node);
     }
 }

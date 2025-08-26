@@ -40,4 +40,8 @@ impl<T: TranslationUnitMachine> Section<T> {
             debug_info: DebugInfo::new(),
         }
     }
+
+    pub fn name(&self) -> StrIdx{
+        self.name
+    }
 }

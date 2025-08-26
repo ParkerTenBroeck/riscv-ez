@@ -11,6 +11,26 @@ pub trait NodeTrait: Sized {
     fn span(&self) -> Span;
     fn source(&self) -> &impl Source;
     fn parent(&self) -> &Parent<Self>;
+    fn top(mut self: &Self) -> &Self{
+        while let Some(next) = self.parent().parent() {
+            self = next;
+        }
+        self
+    }
+}
+
+impl<'a> std::fmt::Display for NodeInfoRef<'a>{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let top = self.top();
+        write!(f, "{}:{}:{}", top.source().path().display(), top.span().col as usize+1, top.span().line as usize+1)
+    }
+}
+
+impl std::fmt::Display for NodeInfoOwned{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let top = self.parent.parent().map(|p|&**p.top()).unwrap_or(self);
+        write!(f, "{}:{}:{}", top.source.path().display(), top.span.col as usize+1, top.span.line as usize+1)
+    }
 }
 
 impl<'a> NodeTrait for NodeRef<'a> {
@@ -145,12 +165,6 @@ pub struct NodeInfoRef<'a> {
     pub parent: Parent<NodeRef<'a>>,
 }
 impl<'a> NodeInfoRef<'a> {
-    pub fn top(mut self: &'a Self) -> NodeRef<'a> {
-        while let Some(next) = self.parent.parent() {
-            self = next;
-        }
-        self
-    }
 
     pub fn src_slice(&self) -> &'a str {
         &self.source.contents
@@ -186,14 +200,8 @@ pub struct NodeInfoOwned {
     pub source: SourceOwned,
     pub parent: Parent<NodeOwned>,
 }
-impl NodeInfoOwned {
-    pub fn top(mut self: &Self) -> &NodeInfoOwned {
-        while let Some(next) = self.parent.parent() {
-            self = next;
-        }
-        self
-    }
 
+impl NodeInfoOwned {
     pub fn src_slice(&self) -> &str {
         &self.source.contents
             [self.span.offset as usize..self.span.offset as usize + self.span.len as usize]

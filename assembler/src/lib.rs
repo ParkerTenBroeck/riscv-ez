@@ -7,6 +7,7 @@ use crate::node::NodeOwned;
 use crate::preprocess::PreProcessor;
 use bumpalo::Bump;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -79,7 +80,7 @@ pub fn assemble_and_link<'a>(
     sources: &'a HashMap<PathBuf, String>,
     files: Vec<&'a Path>,
     bump: &'a Bump,
-    mut lang: impl AssemblyLanguage<'a>,
+    mut lang: impl AssemblyLanguage<'a, AssembledResult: Display>,
 ) -> AssemblerResult {
     let now = Instant::now();
     let mut context = Context::new(bump, AssemblerConfig::new(), move |path, _ctx| {
@@ -94,7 +95,8 @@ pub fn assemble_and_link<'a>(
     let mut assember = Assembler::new(&mut context, &mut lang, &mut preprocessor);
 
     for file in files {
-        assember.assemble(file);
+        let res = assember.assemble(file);
+        println!("{res}");
     }
 
     let elapsed = now.elapsed().as_secs_f64();

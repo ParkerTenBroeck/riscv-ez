@@ -39,7 +39,8 @@ impl<T: PrimInt> Data<T> {
         let start = self.data.len();
 
         self.align = self.align.max(align);
-        self.data.resize(start, 0);
+        let size: usize = NumCast::from(space).unwrap();
+        self.data.resize(start + size, 0);
 
         let end = self.data.len();
 

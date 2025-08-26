@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::{Display}};
 
 use num_traits::PrimInt;
 
@@ -11,8 +11,14 @@ use crate::{
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SymbolIdx(usize);
 
+impl std::fmt::Display for SymbolIdx{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (self.0+1).fmt(f)
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub enum SymbolKind {
+pub enum SymbolType {
     #[default]
     Unresolved,
     Notype,
@@ -24,6 +30,22 @@ pub enum SymbolKind {
     Data,
 }
 
+impl Display for SymbolType{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ident = match self{
+            SymbolType::Unresolved => "unresolved",
+            SymbolType::Notype => "notype",
+            SymbolType::Section => "section",
+            SymbolType::Object => "object",
+            SymbolType::File => "file",
+            SymbolType::Common => "common",
+            SymbolType::Function => "function",
+            SymbolType::Data => "data",
+        };
+        ident.fmt(f)
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub enum SymbolVisibility {
     #[default]
@@ -32,11 +54,22 @@ pub enum SymbolVisibility {
     Weak,
 }
 
+impl Display for SymbolVisibility{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ident = match self{
+            SymbolVisibility::Local => "local",
+            SymbolVisibility::Global => "global",
+            SymbolVisibility::Weak => "weak",
+        };
+        ident.fmt(f)
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct Symbol<T: PrimInt> {
     name: StrIdx,
     pub section: Option<SectionIdx>,
-    pub kind: SymbolKind,
+    pub ty: SymbolType,
     pub visibility: SymbolVisibility,
     pub size: T,
     pub offset: T,
@@ -47,11 +80,15 @@ impl<T: PrimInt> Symbol<T> {
         Self {
             name,
             section: None,
-            kind: Default::default(),
+            ty: Default::default(),
             visibility: Default::default(),
             size: num_traits::zero(),
             offset: num_traits::zero(),
         }
+    }
+    
+    pub fn name(&self) -> StrIdx {
+        self.name
     }
 }
 
@@ -59,6 +96,8 @@ impl<T: PrimInt> Symbol<T> {
 pub struct Symbols<T: PrimInt> {
     symbols: Vec<Symbol<T>>,
     symbol_map: HashMap<StrIdx, SymbolIdx>,
+
+    symbol_dbg_map: HashMap<SymbolIdx, SymbolDbg>,
 }
 
 pub enum SymbolError {
@@ -96,11 +135,20 @@ impl SymbolError {
     }
 }
 
+#[derive(Default, Clone, Debug)]
+pub struct SymbolDbg {
+    pub definition: Option<NodeOwned>,
+    pub visibility: Option<NodeOwned>,
+    pub ty: Option<NodeOwned>,
+    pub size: Option<NodeOwned>,
+}
+
 impl<T: PrimInt> Symbols<T> {
     pub fn new() -> Self {
         Self {
             symbols: Vec::new(),
             symbol_map: HashMap::new(),
+            symbol_dbg_map: HashMap::new(),
         }
     }
 
@@ -117,5 +165,33 @@ impl<T: PrimInt> Symbols<T> {
 
     pub fn symbol(&mut self, symbol_idx: SymbolIdx) -> &mut Symbol<T> {
         self.symbols.get_mut(symbol_idx.0).unwrap()
+    }
+
+    pub fn reset_locals(&mut self) {
+        self.symbol_map.retain(|_, e| {
+            self.symbols.get_mut(e.0).unwrap().visibility != SymbolVisibility::Local
+        });
+    }
+
+    pub fn symbols(&self) -> impl Iterator<Item = (SymbolIdx, &Symbol<T>)>{
+        self.symbols.iter().enumerate().map(|(i, s)|(SymbolIdx(i), s))
+    }
+    
+    pub fn len(&self) -> usize {
+        self.symbols.len()+1
+    }
+
+    pub(super) fn symbol_dbg_entry(
+        &mut self,
+        symbol_idx: SymbolIdx,
+    ) -> std::collections::hash_map::Entry<'_, SymbolIdx, SymbolDbg> {
+        self.symbol_dbg_map.entry(symbol_idx)
+    }
+
+    pub fn get_symbol_dbg(
+        &self,
+        symbol_idx: SymbolIdx,
+    ) -> Option<&SymbolDbg> {
+        self.symbol_dbg_map.get(&symbol_idx)
     }
 }

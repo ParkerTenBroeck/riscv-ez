@@ -549,7 +549,6 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
 impl<'a> RiscvAssembler<'a> {
     fn instruction(&mut self, ctx: &mut LangCtx<'a, '_, Self>, ins: u32, node: NodeRef<'a>) {
         self.add_data(ctx, &ins.to_le_bytes(), 4, node);
-        // *asm.state.add_data_const::<4>(4) = ins.to_le_bytes();
     }
 
     fn three_int_reg(

@@ -1,7 +1,6 @@
 use num_traits::PrimInt;
 use std::{
-    collections::{HashMap, hash_map::Entry},
-    num::NonZeroUsize,
+    collections::{hash_map::Entry, HashMap}, num::NonZeroUsize
 };
 
 pub mod data;
@@ -10,8 +9,8 @@ pub mod reloc;
 pub mod section;
 pub mod str;
 pub mod sym;
+pub mod display;
 
-use dbg::*;
 use reloc::*;
 use section::*;
 use str::*;
@@ -24,7 +23,7 @@ pub struct SectionIdx(NonZeroUsize);
 
 pub trait TranslationUnitMachine {
     type Reloc: Reloc;
-    type PtrSizeType: PrimInt + std::fmt::Debug;
+    type PtrSizeType: PrimInt + std::fmt::Debug + std::fmt::LowerHex;
 }
 
 pub struct TranslationUnit<T: TranslationUnitMachine> {
@@ -36,34 +35,22 @@ pub struct TranslationUnit<T: TranslationUnitMachine> {
 
 impl<T: TranslationUnitMachine> Clone for TranslationUnit<T> {
     fn clone(&self) -> Self {
-        let TranslationUnit {
-            sections,
-            section_map,
-            symbols,
-            str_table,
-        } = self;
         TranslationUnit {
-            sections: sections.clone(),
-            section_map: section_map.clone(),
-            symbols: symbols.clone(),
-            str_table: str_table.clone(),
+            sections: self.sections.clone(),
+            section_map: self.section_map.clone(),
+            symbols: self.symbols.clone(),
+            str_table: self.str_table.clone(),
         }
     }
 }
 
 impl<T: TranslationUnitMachine> core::fmt::Debug for TranslationUnit<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        let TranslationUnit {
-            sections,
-            section_map,
-            symbols,
-            str_table,
-        } = self;
         f.debug_struct("TranslationUnit")
-            .field("sections", &sections)
-            .field("section_map", &section_map)
-            .field("symbols", &symbols)
-            .field("str_table", &str_table)
+            .field("sections", &self.sections)
+            .field("section_map", &self.section_map)
+            .field("symbols", &self.symbols)
+            .field("str_table", &self.str_table)
             .finish()
     }
 }
@@ -84,7 +71,9 @@ impl<T: TranslationUnitMachine> TranslationUnit<T> {
         }
     }
 
-    pub fn reset_locals(&mut self) {}
+    pub fn reset_locals(&mut self) {
+        self.symbols.reset_locals();
+    }
 
     pub fn resolve_or_make(&mut self, name: &str) -> SectionIdx {
         let name = self.str_table.resolve(name);
@@ -97,8 +86,8 @@ impl<T: TranslationUnitMachine> TranslationUnit<T> {
         idx
     }
 
-    pub fn get_mut(&mut self, name: &str) -> SectionMut<'_, T> {
-        let section_idx = self.resolve_or_make(name);
+    
+    pub fn get_mut(&mut self, section_idx: SectionIdx) -> SectionMut<'_, T> {
         let section = &mut self.sections[section_idx.0.get() - 1];
         SectionMut {
             section,
@@ -106,6 +95,15 @@ impl<T: TranslationUnitMachine> TranslationUnit<T> {
             symbols: &mut self.symbols,
             str_table: &mut self.str_table,
         }
+    }
+
+    pub fn get(&self, section_idx: SectionIdx) -> &Section<T> {
+        &self.sections[section_idx.0.get() - 1]
+    }
+    
+    pub fn resolve_mut(&mut self, name: &str) -> SectionMut<'_, T> {
+        let section = self.resolve_or_make(name);
+        self.get_mut(section)
     }
 }
 
@@ -125,9 +123,8 @@ impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
         err: impl FnOnce(Option<NodeOwned>) -> SymbolError,
     ) -> Result<&mut Symbol<T::PtrSizeType>, SymbolError> {
         let symbol_idx = self.symbols.resolve(self.str_table.resolve(name));
-        let symbol = self.symbols.symbol(symbol_idx);
 
-        let mut dbg = self.section.debug_info.symbol_dbg_entry(symbol_idx);
+        let mut dbg = self.symbols.symbol_dbg_entry(symbol_idx);
         if let Entry::Occupied(entry) = &mut dbg
             && let Some(declaration) = node_kind(entry.get_mut())
         {
@@ -136,26 +133,26 @@ impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
         if let Some(node) = node {
             *node_kind(dbg.or_default()) = Some(node);
         }
-        Ok(symbol)
+        Ok(self.symbols.symbol(symbol_idx))
     }
 
     pub fn symbol(&mut self, name: &str) -> SymbolIdx {
         self.symbols.resolve(self.str_table.resolve(name))
     }
 
-    pub fn set_symbol_kind(
+    pub fn set_symbol_ty(
         &mut self,
         name: &str,
-        kind: SymbolKind,
+        ty: SymbolType,
         node: Option<NodeOwned>,
     ) -> Result<(), SymbolError> {
         let symbol = self.sym_checked(
             name,
             node,
-            |sym| &mut sym.kind,
+            |sym| &mut sym.ty,
             SymbolError::KindPreviouslyDeclared,
         )?;
-        symbol.kind = kind;
+        symbol.ty = ty;
         Ok(())
     }
 
@@ -205,6 +202,9 @@ impl<'a, T: TranslationUnitMachine> SectionMut<'a, T> {
         }
         symbol.section = Some(section_idx);
         symbol.offset = current_offset;
+        if symbol.ty == SymbolType::Unresolved{
+            symbol.ty = SymbolType::Notype;
+        }
         Ok(())
     }
 

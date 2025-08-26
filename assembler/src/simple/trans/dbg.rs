@@ -1,8 +1,8 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap};
 
 use crate::{
     node::NodeOwned,
-    simple::trans::{reloc::RelocIdx, sym::SymbolIdx},
+    simple::trans::{reloc::RelocIdx},
 };
 
 #[derive(Clone, Debug)]
@@ -11,19 +11,10 @@ pub struct DataDbg {
     node: NodeOwned,
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct SymbolDbg {
-    pub definition: Option<NodeOwned>,
-    pub visibility: Option<NodeOwned>,
-    pub kind: Option<NodeOwned>,
-    pub size: Option<NodeOwned>,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct DebugInfo {
     data: Vec<DataDbg>,
     relocs: HashMap<RelocIdx, NodeOwned>,
-    symbols: HashMap<SymbolIdx, SymbolDbg>,
 }
 
 impl DebugInfo {
@@ -31,19 +22,11 @@ impl DebugInfo {
         Self {
             data: Vec::new(),
             relocs: HashMap::new(),
-            symbols: HashMap::new(),
         }
     }
 
     pub(super) fn emit_reloc_dbg(&mut self, reloc_idx: RelocIdx, node: NodeOwned) {
         self.relocs.insert(reloc_idx, node);
-    }
-
-    pub(super) fn symbol_dbg_entry(
-        &mut self,
-        symbol_idx: SymbolIdx,
-    ) -> Entry<'_, SymbolIdx, SymbolDbg> {
-        self.symbols.entry(symbol_idx)
     }
 
     /// range must start at greater address than all ranges currently present
