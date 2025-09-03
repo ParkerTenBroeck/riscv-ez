@@ -8,6 +8,7 @@ pub mod opcodes;
 pub mod reg;
 pub mod reloc;
 
+pub use assembler;
 use assembler::assembler::LangCtx;
 use assembler::expression::binop::BinOp;
 use assembler::simple::{SALState, SimpleAssemblyLanguage, SimpleAssemblyLanguageBase};

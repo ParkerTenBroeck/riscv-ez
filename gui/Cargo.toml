@@ -11,7 +11,7 @@ eframe = { version = "*", default-features = false, features = [
     "glow",
 ] }
 egui_dock = "*"
-assembler = {path = "../assembler"}
 riscv_asm = {path = "../riscv_asm"}
 poll-promise = "*"
 egui_ltreeview = "*"
+egui-ansi = { git = "https://github.com/ParkerTenBroeck/egui-ansi.git" }

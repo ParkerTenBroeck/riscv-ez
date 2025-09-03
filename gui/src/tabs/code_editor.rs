@@ -1,9 +1,9 @@
-use assembler::lex::Token;
 use eframe::emath::Align;
 use eframe::epaint::text::{LayoutJob, LayoutSection, TextFormat};
 use eframe::epaint::{Color32, Stroke};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{ScrollArea, Ui};
+use riscv_asm::assembler::lex::Token;
 use std::fmt::Write;
 
 pub fn show(ui: &mut Ui, text: &mut String) {
@@ -28,7 +28,10 @@ pub fn show(ui: &mut Ui, text: &mut String) {
                     .desired_width(width as f32 * 14.0 * 0.5)
                     .layouter(&mut |ui: &egui::Ui, str, _w| {
                         ui.fonts(|f| {
-                            f.layout_job(LayoutJob::single_section(str.to_string(), COMMENT))
+                            f.layout_job(LayoutJob::single_section(
+                                str.as_str().to_string(),
+                                COMMENT,
+                            ))
                         })
                     })
                     .show(ui);
@@ -38,7 +41,7 @@ pub fn show(ui: &mut Ui, text: &mut String) {
                     .code_editor()
                     .desired_rows(rows)
                     .layouter(&mut |ui: &egui::Ui, str, _w| {
-                        ui.fonts(|f| f.layout_job(highlight(ui, str)))
+                        ui.fonts(|f| f.layout_job(highlight(ui, str.as_str())))
                     })
                     .show(ui);
             })
@@ -48,11 +51,9 @@ pub fn show(ui: &mut Ui, text: &mut String) {
 const fn simple_format(color: Color32, underline: bool) -> TextFormat {
     TextFormat {
         font_id: egui::FontId::monospace(14.0),
-        extra_letter_spacing: 0.0,
-        line_height: None,
         color,
         background: Color32::TRANSPARENT,
-        italics: false,
+
         underline: if underline {
             Stroke {
                 width: 1.0,
@@ -61,8 +62,12 @@ const fn simple_format(color: Color32, underline: bool) -> TextFormat {
         } else {
             Stroke::NONE
         },
+        italics: false,
+        extra_letter_spacing: 0.0,
+        line_height: None,
         strikethrough: Stroke::NONE,
         valign: Align::Min,
+        expand_bg: 1.0,
     }
 }
 const PUNC: TextFormat = simple_format(Color32::LIGHT_GRAY, false);
@@ -83,7 +88,7 @@ fn highlight(_: &Ui, str: &str) -> LayoutJob {
     };
 
     let mut start = 0;
-    for tok in assembler::lex::Lexer::new(str).include_comments() {
+    for tok in riscv_asm::assembler::lex::Lexer::new(str).include_comments() {
         let (byte_range, format) = match tok {
             Ok(ok) => {
                 let format = match ok.val {

@@ -3,16 +3,17 @@
 pub mod context;
 pub mod log;
 pub mod tabs;
+pub mod files;
 
 use crate::context::{Context, ProjectFilePath};
 use crate::tabs::Tab;
-use assembler::with_bump;
 use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{RichText, ScrollArea};
 use egui_dock::{DockArea, DockState};
 use egui_ltreeview::{Action, TreeView, TreeViewState};
 use riscv_asm::RiscvAssembler;
+use riscv_asm::assembler::source::Sources;
 
 fn main() -> eframe::Result<()> {
     let options = NativeOptions::default();
@@ -32,9 +33,9 @@ struct MyApp {
 impl Default for MyApp {
     fn default() -> Self {
         Self {
-            context: Context::new(),
+            context: Context::new("./test_files"),
             tree_view_state: Default::default(),
-            tree: DockState::new(vec![]),
+            tree: DockState::new(vec![Tab::Log]),
         }
     }
 }
@@ -42,7 +43,7 @@ impl Default for MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
                         todo!()
@@ -74,31 +75,51 @@ impl eframe::App for MyApp {
 
                     if ui.button("assemble").clicked() {
                         let sources = self.context.source_map();
-                        _ = self.context.spawn(move || {
-                            with_bump(|bump| {
-                                let res = assembler::assemble_and_link(
-                                    &sources,
-                                    vec!["test.asm".as_ref()],
-                                    bump,
-                                    RiscvAssembler::default(),
-                                );
+                        println!("{sources:#?}");
+                        _ = Context::spawn(move || {});
+                        let res = riscv_asm::assembler::assemble(
+                            &Default::default(),
+                            RiscvAssembler::default(),
+                            Default::default(),
+                            Default::default(),
+                            "test.asm".as_ref(),
+                            Sources::new(Box::new(|path, _| {
+                                if let Some(src) = sources.get(path) {
+                                    match src {
+                                        context::FileContents::String(str) => Ok(
+                                            riscv_asm::assembler::source::SourceContents::Text(str),
+                                        ),
+                                        context::FileContents::Bytes(items) => {
+                                            Ok(riscv_asm::assembler::source::SourceContents::Bin(
+                                                items,
+                                            ))
+                                        }
 
-                                println!("{res}");
-                            });
-                        });
+                                        context::FileContents::Unread => Err("hrrrmk".into()),
+                                        context::FileContents::Unreadable => {
+                                            Err("file does not exist or cannot be read".into())
+                                        }
+                                    }
+                                } else {
+                                    Err("file does not exist".into())
+                                }
+                            })),
+                        );
+
+                        use std::fmt::Write;
+                        writeln!(&mut self.context.terminal, "{res}").unwrap();
+                        writeln!(&mut self.context.terminal, "\n{}", res.output).unwrap();
                     }
 
                     ui.separator();
                     ui.label(RichText::new("Project Files").strong());
 
-                    let mut context = Context::new();
-                    let context = &mut context;
                     let state = TreeView::new(ui.make_persistent_id("nya")).show_state(
                         ui,
                         &mut self.tree_view_state,
                         |builder| {
                             let mut count = 0;
-                            for path in context.project_paths() {
+                            for path in self.context.project_paths() {
                                 let now = path
                                     .path()
                                     .iter()

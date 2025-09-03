@@ -1,4 +1,6 @@
 use crate::tabs::{Tab, code_editor};
+use egui::{Color32, RichText, TextBuffer};
+use egui_ansi::{Config, Terminal};
 use egui_dock::TabViewer;
 use poll_promise::Promise;
 use std::collections::{BTreeMap, HashMap};
@@ -20,44 +22,78 @@ impl ProjectFilePath {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum FileContents {
+    String(String),
+    Bytes(Vec<u8>),
+    #[default]
+    Unread,
+    Unreadable,
+}
+
+impl FileContents {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        match String::from_utf8(bytes) {
+            Ok(str) => Self::String(str),
+            Err(err) => Self::Bytes(err.into_bytes()),
+        }
+    }
+
+    pub fn as_str(&mut self) -> Option<&str> {
+        match self {
+            FileContents::String(str) => Some(str),
+            _ => None,
+        }
+    }
+
+    pub fn as_string_mut(&mut self) -> Option<&mut String> {
+        match self {
+            FileContents::String(str) => Some(str),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            FileContents::Bytes(items) => Some(items),
+            FileContents::String(str) => Some(str.as_bytes()),
+            FileContents::Unread => None,
+            FileContents::Unreadable => None,
+        }
+    }
+}
+
 pub struct Context {
     pub project: PathBuf,
-    files: BTreeMap<ProjectFilePath, Option<Vec<u8>>>,
+    files: BTreeMap<ProjectFilePath, FileContents>,
+    pub terminal: Box<Terminal>,
 }
 
 impl Context {
-    pub fn source_map(&self) -> HashMap<PathBuf, String> {
+    pub fn source_map(&self) -> HashMap<PathBuf, FileContents> {
         self.files
             .iter()
             .filter_map(|(k, e)| {
                 if k.file {
                     return None;
                 }
-                let e: String = String::from_utf8(e.as_ref()?.clone()).ok()?;
-                Some((k.path.clone(), e))
+                Some((k.path.clone(), e.clone()))
             })
             .collect()
     }
 }
 
-impl Default for Context {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Context {
-    pub fn new() -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
         Self {
-            project: "./test_files/".into(),
+            project: path,
             files: BTreeMap::new(),
+            terminal: Terminal::new_box::<256>(Config::DARK),
         }
     }
 
-    pub fn spawn<T: Send + 'static>(
-        &mut self,
-        task: impl Send + 'static + FnOnce() -> T,
-    ) -> Promise<T> {
+    pub fn spawn<T: Send + 'static>(task: impl Send + 'static + FnOnce() -> T) -> Promise<T> {
         let (sender, receiver) = Promise::new();
         _ = std::thread::Builder::new()
             .name("asldkjas".into())
@@ -77,32 +113,33 @@ impl Context {
             match entry.file_type() {
                 Ok(ft) if ft.is_dir() => {
                     self.files
-                        .insert(ProjectFilePath { path, file: false }, None);
+                        .insert(ProjectFilePath { path, file: false }, FileContents::Unread);
                     self.add_dir_rec(entry.path());
                 }
                 Ok(ft) if ft.is_file() => {
                     self.files
-                        .insert(ProjectFilePath { path, file: true }, None);
+                        .insert(ProjectFilePath { path, file: true }, FileContents::Unread);
                 }
                 _ => continue,
             }
         }
     }
 
-    fn get_file(&mut self, path: &Path) -> Option<&mut Vec<u8>> {
-        let nya = self
-            .files
-            .entry(ProjectFilePath {
-                path: path.to_path_buf(),
-                file: false,
-            })
-            .or_default();
-        if nya.is_none() {
+    fn get_file(&mut self, path: &Path) -> &mut FileContents {
+        let pfp = ProjectFilePath {
+            path: path.to_path_buf(),
+            file: true,
+        };
+        let entry = self.files.entry(pfp).or_default();
+        if matches!(entry, FileContents::Unread) {
             let mut p = self.project.clone();
             p.push(path);
-            *nya = std::fs::read(p).ok();
+            *entry = match std::fs::read(p).map(FileContents::new) {
+                Ok(contents) => contents,
+                Err(_) => FileContents::Unreadable,
+            }
         }
-        nya.as_mut()
+        entry
     }
 }
 
@@ -117,22 +154,16 @@ impl TabViewer for Context {
         match title {
             Tab::CodeEditor(path) => {
                 let text = self.get_file(path);
-                if let Some(text) = text {
-                    let mut str = Vec::new();
-                    std::mem::swap(text, &mut str);
-                    match String::from_utf8(str) {
-                        Ok(mut str) => {
-                            code_editor::show(ui, &mut str);
-                            *text = str.into_bytes();
-                        }
-                        Err(error) => {
-                            *text = error.into_bytes();
-                        }
-                    }
+                if let Some(text) = text.as_string_mut() {
+                    code_editor::show(ui, text);
+                } else {
+                    ui.label(RichText::new("file cannot be display as text").color(Color32::RED));
                 }
             }
             Tab::MemoryEditor => {}
-            Tab::Log => {}
+            Tab::Log => {
+                self.terminal.show_framed(ui);
+            }
             Tab::Terminal => {}
             Tab::Display => {}
             Tab::CPU => {}
