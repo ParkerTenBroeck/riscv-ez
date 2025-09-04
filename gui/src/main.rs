@@ -5,7 +5,10 @@ pub mod files;
 pub mod log;
 pub mod tabs;
 
-use crate::context::{Context, ProjectFilePath};
+use std::path::PathBuf;
+
+use crate::context::Context;
+use crate::files::Contents;
 use crate::tabs::Tab;
 use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
@@ -26,7 +29,7 @@ fn main() -> eframe::Result<()> {
 
 struct MyApp {
     context: Context,
-    tree_view_state: TreeViewState<ProjectFilePath>,
+    tree_view_state: TreeViewState<PathBuf>,
     tree: DockState<Tab>,
 }
 
@@ -42,6 +45,10 @@ impl Default for MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.context.files.sync();
+        self.context.files.error_ui(ctx);
+
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -85,20 +92,19 @@ impl eframe::App for MyApp {
                             "test.asm".as_ref(),
                             Sources::new(Box::new(|path, _| {
                                 if let Some(src) = sources.get(path) {
-                                    match src {
-                                        context::FileContents::String(str) => Ok(
+                                    match &src.contents {
+                                        Contents::String(str) => Ok(
                                             riscv_asm::assembler::source::SourceContents::Text(str),
                                         ),
-                                        context::FileContents::Bytes(items) => {
+                                        Contents::Bytes(items) => {
                                             Ok(riscv_asm::assembler::source::SourceContents::Bin(
                                                 items,
                                             ))
                                         }
 
-                                        context::FileContents::Unread => Err("hrrrmk".into()),
-                                        context::FileContents::Unreadable => {
-                                            Err("file does not exist or cannot be read".into())
-                                        }
+                                        Contents::Unread => Err("hrrrmk".into()),
+                                        Contents::Unreadable => Err("file cannot be read".into()),
+                                        Contents::Directory => Err("directory not a file".into()),
                                     }
                                 } else {
                                     Err("file does not exist".into())
@@ -114,34 +120,33 @@ impl eframe::App for MyApp {
                     ui.separator();
                     ui.label(RichText::new("Project Files").strong());
 
-                    let state = TreeView::new(ui.make_persistent_id("nya")).show_state(
+                    let state = TreeView::new(ui.make_persistent_id("file_tree")).show_state(
                         ui,
                         &mut self.tree_view_state,
                         |builder| {
                             let mut count = 0;
-                            for path in self.context.project_paths() {
-                                let now = path
-                                    .path()
-                                    .iter()
-                                    .count()
-                                    .saturating_sub(path.is_file() as usize);
+                            for (path, file) in self.context.files.files() {
+                                let is_file = !matches!(file.contents, Contents::Directory);
+                                let now = path.components().count() + 1 - is_file as usize;
                                 for _ in now..count {
                                     builder.close_dir();
                                 }
                                 count = now;
+
                                 let disp = path
-                                    .path()
                                     .file_name()
                                     .and_then(|v| v.to_str())
                                     .unwrap_or("INVALID NAME")
                                     .to_owned();
-                                if path.is_file() {
-                                    builder.leaf(path, disp);
+                                if is_file {
+                                    builder.leaf(path.clone(), disp);
                                 } else {
-                                    builder.dir(path, disp);
+                                    builder.dir(path.clone(), disp);
                                 }
                             }
-                            builder.close_dir();
+                            for _ in 0..count {
+                                builder.close_dir();
+                            }
                         },
                     );
 
@@ -152,10 +157,10 @@ impl eframe::App for MyApp {
                             Action::Drag(_) => {}
                             Action::Activate(s) => {
                                 for tab in s.selected {
-                                    if !tab.is_file() {
+                                    if matches!(self.context.files.file(&tab), Some(Contents::Directory)) {
                                         continue;
                                     }
-                                    let tab = Tab::CodeEditor(tab.path().to_path_buf());
+                                    let tab = Tab::CodeEditor(tab.to_path_buf());
                                     let tab_location = self.tree.find_tab(&tab);
                                     if let Some(tab_location) = tab_location {
                                         self.tree.set_active_tab(tab_location);
@@ -171,11 +176,15 @@ impl eframe::App for MyApp {
                 });
         });
 
-        egui::TopBottomPanel::bottom("logger").resizable(true).show(ctx, |ui|{
-            CollapsingHeader::new("logs").default_open(true).show_unindented(ui, |ui|{
-                self.context.terminal.show_framed(ui);
-            })
-        });
+        egui::TopBottomPanel::bottom("logger")
+            .resizable(true)
+            .show(ctx, |ui| {
+                CollapsingHeader::new("logs")
+                    .default_open(true)
+                    .show_unindented(ui, |ui| {
+                        self.context.show_terminal(ui);
+                    })
+            });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(0.))
