@@ -1,15 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 pub mod context;
+pub mod files;
 pub mod log;
 pub mod tabs;
-pub mod files;
 
 use crate::context::{Context, ProjectFilePath};
 use crate::tabs::Tab;
 use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{RichText, ScrollArea};
+use egui::{CollapsingHeader, RichText, ScrollArea};
 use egui_dock::{DockArea, DockState};
 use egui_ltreeview::{Action, TreeView, TreeViewState};
 use riscv_asm::RiscvAssembler;
@@ -35,7 +35,7 @@ impl Default for MyApp {
         Self {
             context: Context::new("./test_files"),
             tree_view_state: Default::default(),
-            tree: DockState::new(vec![Tab::Log]),
+            tree: DockState::new(vec![]),
         }
     }
 }
@@ -169,6 +169,12 @@ impl eframe::App for MyApp {
                         }
                     }
                 });
+        });
+
+        egui::TopBottomPanel::bottom("logger").resizable(true).show(ctx, |ui|{
+            CollapsingHeader::new("logs").default_open(true).show_unindented(ui, |ui|{
+                self.context.terminal.show_framed(ui);
+            })
         });
 
         egui::CentralPanel::default()

@@ -44,14 +44,14 @@ values:
     "#
         .to_owned(),
     );
-    assembler::with_bump(|bump| {
-        let res = assembler::assemble_and_link(
-            &sources,
-            vec!["test.asm".as_ref()],
-            bump,
-            riscv_asm::RiscvAssembler::default(),
-        );
+    // assembler::with_bump(|bump| {
+    //     let res = assembler::assemble_and_link(
+    //         &sources,
+    //         vec!["test.asm".as_ref()],
+    //         bump,
+    //         riscv_asm::RiscvAssembler::default(),
+    //     );
 
-        println!("{res}");
-    });
+    //     println!("{res}");
+    // });
 }

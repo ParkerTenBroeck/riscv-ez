@@ -16,9 +16,6 @@ let
   riscv = riscv-cross.stdenv.cc;
 
 in
-#let
-#  mkShell = pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; };
-#in mkShell
 
  pkgs.mkShell  rec {
 
