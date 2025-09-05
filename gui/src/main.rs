@@ -84,7 +84,6 @@ impl eframe::App for MyApp {
 
                     if ui.button("assemble").clicked() {
                         let sources = self.context.source_map();
-                        println!("{sources:#?}");
                         _ = Context::spawn(move || {});
                         let res = riscv_asm::assembler::assemble(
                             &Default::default(),

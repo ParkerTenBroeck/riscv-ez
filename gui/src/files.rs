@@ -26,11 +26,11 @@ impl Contents {
         }
     }
 
-    pub fn as_vec(self) -> Option<Vec<u8>>{
-        match self{
+    pub fn as_vec(self) -> Option<Vec<u8>> {
+        match self {
             Contents::String(str) => Some(str.into()),
             Contents::Bytes(items) => Some(items),
-            _ => None
+            _ => None,
         }
     }
 
@@ -194,7 +194,12 @@ impl ProjectFiles {
                 ErrorKind::FileContentsNewer => {
                     ui.label("File contents differ");
                     if ui.button("Overrite").clicked() {
-                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        let contents = self
+                            .files_working
+                            .get(&path)
+                            .cloned()
+                            .and_then(Contents::as_vec)
+                            .unwrap_or_default();
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.create_file_(&path, &contents);
@@ -205,7 +210,7 @@ impl ProjectFiles {
                         self.files_working.remove(&path);
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
-                        if let Some(mut root) = self.project.to_owned(){
+                        if let Some(mut root) = self.project.to_owned() {
                             root.extend(&path);
                             self.explore(root);
                         }
@@ -224,7 +229,12 @@ impl ProjectFiles {
                         return;
                     }
                     if ui.button("Create file").clicked() {
-                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        let contents = self
+                            .files_working
+                            .get(&path)
+                            .cloned()
+                            .and_then(Contents::as_vec)
+                            .unwrap_or_default();
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.create_file_(&path, &contents);
@@ -243,7 +253,12 @@ impl ProjectFiles {
                         return;
                     }
                     if ui.button("Create file").clicked() {
-                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        let contents = self
+                            .files_working
+                            .get(&path)
+                            .cloned()
+                            .and_then(Contents::as_vec)
+                            .unwrap_or_default();
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.create_file_(&path, &contents);
@@ -262,7 +277,12 @@ impl ProjectFiles {
                         return;
                     }
                     if ui.button("Create file").clicked() {
-                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        let contents = self
+                            .files_working
+                            .get(&path)
+                            .cloned()
+                            .and_then(Contents::as_vec)
+                            .unwrap_or_default();
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.create_file_(&path, &contents);
@@ -270,7 +290,7 @@ impl ProjectFiles {
                         return;
                     }
                     remainder.insert(path, error);
-                },
+                }
                 ErrorKind::CannotCreateDirectory(err) => {
                     ui.label(format!("Cannot create directory: {err}"));
                     if ui.button("Discard").clicked() {
@@ -281,7 +301,12 @@ impl ProjectFiles {
                         return;
                     }
                     if ui.button("Create file").clicked() {
-                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        let contents = self
+                            .files_working
+                            .get(&path)
+                            .cloned()
+                            .and_then(Contents::as_vec)
+                            .unwrap_or_default();
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.create_file_(&path, &contents);
@@ -289,7 +314,7 @@ impl ProjectFiles {
                         return;
                     }
                     remainder.insert(path, error);
-                },
+                }
             });
         }
         self.errors = remainder;
@@ -319,7 +344,8 @@ impl ProjectFiles {
             let real_time = real_path
                 .metadata()
                 .ok()
-                .and_then(|v| v.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+                .and_then(|v| v.modified().ok())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
             let cached_time = cached.modified;
             if real_time > cached_time {
                 self.errors
@@ -387,7 +413,7 @@ impl ProjectFiles {
             {
                 return;
             }
-            if self.dirty.contains(stripped){
+            if self.dirty.contains(stripped) {
                 self.errors
                     .insert(stripped.to_path_buf(), ErrorKind::FileContentsNewer);
                 return;
