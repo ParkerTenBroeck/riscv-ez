@@ -144,7 +144,7 @@ impl ProjectFiles {
             );
         }
 
-        self.explore(full_path);
+        self.explore(path);
     }
 
     fn create_dir_(&mut self, path: impl AsRef<Path>) {
@@ -166,7 +166,38 @@ impl ProjectFiles {
             );
         }
 
-        self.explore(full_path);
+        self.explore(path);
+    }
+
+    pub fn delete(&mut self, path: impl AsRef<Path>) {
+        let path = path.as_ref();
+        let Some(mut full_path) = self.project.clone() else {
+            return;
+        };
+        full_path.extend(path);
+        if full_path.is_file() {
+            if let Err(err) = std::fs::remove_file(full_path) {
+                todo!("{err}");
+                // return;
+            }
+            self.dirty.remove(path);
+            self.errors.remove(path);
+            self.files_working.remove(path);
+            self.files_cached.remove(path);
+        } else if full_path.is_dir() {
+            if let Err(err) = std::fs::remove_dir_all(full_path) {
+                todo!("{err}");
+                // return;
+            }
+
+            self.dirty.retain(|p| !p.starts_with(path));
+            self.errors.retain(|p, _| !p.starts_with(path));
+            self.files_working.retain(|p, _| !p.starts_with(path));
+            self.files_cached.retain(|p, _| !p.starts_with(path));
+        } else {
+            todo!();
+            // return;
+        }
     }
 
     pub fn create_file(&mut self, path: impl AsRef<Path>) {
@@ -187,9 +218,21 @@ impl ProjectFiles {
         })
     }
 
+    pub fn paths(&self) -> impl Iterator<Item = (&PathBuf, bool)> {
+        self.files_cached
+            .iter()
+            .map(|(path, contents)| {
+                (
+                    path,
+                    matches!(contents.contents, Contents::Directory),
+                )
+            })
+    }
+
     pub fn error_ui(&mut self, ctx: &egui::Context) {
         let mut remainder: BTreeMap<PathBuf, ErrorKind> = Default::default();
-        while let Some((path, error)) = self.errors.pop_first() {
+        std::mem::swap(&mut remainder, &mut self.errors);
+        while let Some((path, error)) = remainder.pop_first() {
             Modal::new(format!("error {}", path.display()).into()).show(ctx, |ui| match &error {
                 ErrorKind::FileContentsNewer => {
                     ui.label("File contents differ");
@@ -210,14 +253,12 @@ impl ProjectFiles {
                         self.files_working.remove(&path);
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
-                        if let Some(mut root) = self.project.to_owned() {
-                            root.extend(&path);
-                            self.explore(root);
-                        }
+                        self.explore(path);
+                        
                         ui.close();
                         return;
                     }
-                    remainder.insert(path, error);
+                    self.errors.insert(path, error);
                 }
                 ErrorKind::CannotOpenFile(err) => {
                     ui.label(format!("Cannot open file: {err}"));
@@ -225,6 +266,7 @@ impl ProjectFiles {
                         self.files_working.remove(&path);
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
+                        self.explore(&path);
                         ui.close();
                         return;
                     }
@@ -241,7 +283,7 @@ impl ProjectFiles {
                         ui.close();
                         return;
                     }
-                    remainder.insert(path, error);
+                    self.errors.insert(path, error);
                 }
                 ErrorKind::CannotSaveFile(err) => {
                     ui.label(format!("Cannot save file: {err}"));
@@ -265,7 +307,7 @@ impl ProjectFiles {
                         ui.close();
                         return;
                     }
-                    remainder.insert(path, error);
+                    self.errors.insert(path, error);
                 }
                 ErrorKind::CannotCreateFile(err) => {
                     ui.label(format!("Cannot create file: {err}"));
@@ -273,6 +315,7 @@ impl ProjectFiles {
                         self.files_working.remove(&path);
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
+                        self.explore(&path);
                         ui.close();
                         return;
                     }
@@ -289,7 +332,7 @@ impl ProjectFiles {
                         ui.close();
                         return;
                     }
-                    remainder.insert(path, error);
+                    self.errors.insert(path, error);
                 }
                 ErrorKind::CannotCreateDirectory(err) => {
                     ui.label(format!("Cannot create directory: {err}"));
@@ -297,6 +340,7 @@ impl ProjectFiles {
                         self.files_working.remove(&path);
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
+                        self.explore(&path);
                         ui.close();
                         return;
                     }
@@ -313,11 +357,10 @@ impl ProjectFiles {
                         ui.close();
                         return;
                     }
-                    remainder.insert(path, error);
+                    self.errors.insert(path, error);
                 }
             });
         }
-        self.errors = remainder;
     }
 
     pub fn sync(&mut self) {
@@ -376,53 +419,58 @@ impl ProjectFiles {
             }
         }
         self.dirty.clear();
-        self.explore(project);
+        self.explore("");
     }
 
-    fn explore(&mut self, path: PathBuf) {
+    fn explore(&mut self, path: impl AsRef<Path>) {
+        let path = path.as_ref();
         let Some(project) = &self.project else {
             return;
         };
-        let Ok(meta) = path.metadata() else {
+        let full_path = project.join(path);
+        let Ok(meta) = full_path.metadata() else {
             return;
         };
-        let Ok(stripped) = path.strip_prefix(project) else {
-            return;
-        };
+        
         if meta.is_dir() {
             self.files_cached.insert(
-                stripped.to_path_buf(),
+                path.to_path_buf(),
                 FileOwned {
                     contents: Contents::Directory,
                     modified: meta.modified().unwrap_or(SystemTime::now()),
                 },
             );
-            for entry in path.read_dir().into_iter().flatten().flatten() {
-                self.explore(entry.path());
+            for entry in full_path.read_dir().into_iter().flatten().flatten() {
+                let Some(project) = &self.project else {
+                    return;
+                };
+                if let Ok(path) = entry.path().strip_prefix(project){
+                    self.explore(path);
+                }
             }
-        } else if path.is_file() {
-            if self.errors.contains_key(stripped) {
+        } else if full_path.is_file() {
+            if self.errors.contains_key(path) {
                 return;
             }
             if meta.modified().unwrap_or(SystemTime::UNIX_EPOCH)
                 <= self
                     .files_cached
-                    .get(stripped)
+                    .get(path)
                     .map(|v| v.modified)
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             {
                 return;
             }
-            if self.dirty.contains(stripped) {
+            if self.dirty.contains(path) {
                 self.errors
-                    .insert(stripped.to_path_buf(), ErrorKind::FileContentsNewer);
+                    .insert(path.to_path_buf(), ErrorKind::FileContentsNewer);
                 return;
             }
-            self.files_working.remove(stripped);
-            match std::fs::read(&path) {
+            self.files_working.remove(path);
+            match std::fs::read(&full_path) {
                 Ok(contents) => {
                     self.files_cached.insert(
-                        stripped.to_path_buf(),
+                        path.to_path_buf(),
                         FileOwned {
                             contents: Contents::new(contents),
                             modified: meta.modified().unwrap_or(SystemTime::now()),
@@ -431,7 +479,7 @@ impl ProjectFiles {
                 }
                 Err(_) => {
                     self.files_cached.insert(
-                        stripped.to_path_buf(),
+                        path.to_path_buf(),
                         FileOwned {
                             contents: Contents::Unreadable,
                             modified: meta.modified().unwrap_or(SystemTime::now()),
@@ -439,6 +487,9 @@ impl ProjectFiles {
                     );
                 }
             }
+        }
+        if let Some(parent) = path.parent() && !self.files_cached.contains_key(parent){
+            self.explore(parent);
         }
     }
 
