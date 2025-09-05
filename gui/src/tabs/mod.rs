@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::OsStr, path::PathBuf};
 
 pub mod code_editor;
 
@@ -16,7 +16,10 @@ pub enum Tab {
 impl Tab {
     pub fn str(&self) -> &str {
         match self {
-            Tab::CodeEditor(title) => title.file_name().and_then(|v| v.to_str()).unwrap_or(""),
+            Tab::CodeEditor(title) => title
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("INVALID"),
             Tab::MemoryEditor => "memory",
             Tab::Log => "log",
             Tab::Terminal => "terminal",

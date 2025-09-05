@@ -5,7 +5,8 @@ pub mod files;
 pub mod log;
 pub mod tabs;
 
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use crate::context::Context;
 use crate::files::Contents;
@@ -45,9 +46,10 @@ impl Default for MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.context.files.sync();
+        if ctx.cumulative_frame_nr() % 128 == 0 {
+            self.context.files.sync();
+        }
         self.context.files.error_ui(ctx);
-
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
@@ -92,7 +94,7 @@ impl eframe::App for MyApp {
                             "test.asm".as_ref(),
                             Sources::new(Box::new(|path, _| {
                                 if let Some(src) = sources.get(path) {
-                                    match &src.contents {
+                                    match src {
                                         Contents::String(str) => Ok(
                                             riscv_asm::assembler::source::SourceContents::Text(str),
                                         ),
@@ -126,18 +128,39 @@ impl eframe::App for MyApp {
                         |builder| {
                             let mut count = 0;
                             for (path, file) in self.context.files.files() {
-                                let is_file = !matches!(file.contents, Contents::Directory);
+                                let is_file = !matches!(file, Contents::Directory);
                                 let now = path.components().count() + 1 - is_file as usize;
                                 for _ in now..count {
                                     builder.close_dir();
                                 }
                                 count = now;
 
-                                let disp = path
-                                    .file_name()
-                                    .and_then(|v| v.to_str())
-                                    .unwrap_or("INVALID NAME")
-                                    .to_owned();
+                                let status = self.context.files.status(path);
+                                let color = match status {
+                                    files::FileStatus::Error => ctx.style().visuals.error_fg_color,
+                                    files::FileStatus::Dirty => ctx.style().visuals.warn_fg_color,
+                                    files::FileStatus::Saved => ctx.style().visuals.text_color(),
+                                };
+
+                                let disp = if path.components().count() == 0 {
+                                    RichText::new(
+                                        self.context
+                                            .files
+                                            .project_path()
+                                            .and_then(Path::file_name)
+                                            .and_then(OsStr::to_str)
+                                            .unwrap_or("INVALID NAME"),
+                                    )
+                                    .color(ctx.style().visuals.strong_text_color())
+                                } else {
+                                    RichText::new(
+                                        path.file_name()
+                                            .and_then(|v| v.to_str())
+                                            .unwrap_or("INVALID NAME"),
+                                    )
+                                    .color(color)
+                                };
+
                                 if is_file {
                                     builder.leaf(path.clone(), disp);
                                 } else {
@@ -157,7 +180,10 @@ impl eframe::App for MyApp {
                             Action::Drag(_) => {}
                             Action::Activate(s) => {
                                 for tab in s.selected {
-                                    if matches!(self.context.files.file(&tab), Some(Contents::Directory)) {
+                                    if matches!(
+                                        self.context.files.file(&tab),
+                                        Some(Contents::Directory)
+                                    ) {
                                         continue;
                                     }
                                     let tab = Tab::CodeEditor(tab.to_path_buf());

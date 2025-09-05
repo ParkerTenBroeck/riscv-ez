@@ -1,4 +1,4 @@
-use crate::files::{Contents, FileOwned, ProjectFiles};
+use crate::files::{Contents, ProjectFiles};
 use crate::tabs::{Tab, code_editor};
 use egui::{Color32, RichText, Sense};
 use egui_ansi::{Config, Terminal};
@@ -13,7 +13,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn source_map(&self) -> HashMap<PathBuf, FileOwned> {
+    pub fn source_map(&self) -> HashMap<PathBuf, Contents> {
         self.files
             .files()
             .map(|(k, e)| (k.clone(), e.clone()))
@@ -66,13 +66,24 @@ impl TabViewer for Context {
     type Tab = Tab;
 
     fn title(&mut self, title: &mut Tab) -> egui::WidgetText {
-        egui::WidgetText::from(title.str())
+        match title {
+            Tab::CodeEditor(path) => {
+                let status = self.files.status(path);
+                let color = match status {
+                    crate::files::FileStatus::Error => Color32::RED,
+                    crate::files::FileStatus::Dirty => Color32::YELLOW,
+                    crate::files::FileStatus::Saved => Color32::GRAY,
+                };
+                RichText::new(title.str()).color(color).into()
+            }
+            _ => egui::WidgetText::from(title.str()),
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, title: &mut Tab) {
         match title {
             Tab::CodeEditor(path) => {
-                match self.files.file_mut(path) {
+                match self.files.file_mut(path).as_deref_mut() {
                     Some(Contents::Directory) => {
                         ui.label(RichText::new("directory not a file").color(Color32::RED));
                     }

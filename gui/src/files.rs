@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -16,11 +17,20 @@ pub enum Contents {
     String(String),
     Bytes(Vec<u8>),
 }
+
 impl Contents {
     pub fn new(bytes: Vec<u8>) -> Self {
         match String::from_utf8(bytes) {
             Ok(str) => Self::String(str),
             Err(err) => Self::Bytes(err.into_bytes()),
+        }
+    }
+
+    pub fn as_vec(self) -> Option<Vec<u8>>{
+        match self{
+            Contents::String(str) => Some(str.into()),
+            Contents::Bytes(items) => Some(items),
+            _ => None
         }
     }
 
@@ -52,13 +62,14 @@ impl Contents {
 #[derive(Clone, Debug)]
 pub struct FileOwned {
     pub contents: Contents,
-    pub last_modified: SystemTime,
+    pub modified: SystemTime,
 }
 
 #[derive(Debug, Default)]
 pub struct ProjectFiles {
     project: Option<PathBuf>,
-    files: BTreeMap<PathBuf, FileOwned>,
+    files_working: BTreeMap<PathBuf, Contents>,
+    files_cached: BTreeMap<PathBuf, FileOwned>,
     dirty: BTreeSet<PathBuf>,
     errors: BTreeMap<PathBuf, ErrorKind>,
 }
@@ -66,8 +77,10 @@ pub struct ProjectFiles {
 #[derive(Debug)]
 pub enum ErrorKind {
     FileContentsNewer,
-    CannotOpenFile,
-    CannotSaveFile,
+    CannotOpenFile(std::io::Error),
+    CannotSaveFile(std::io::Error),
+    CannotCreateFile(std::io::Error),
+    CannotCreateDirectory(std::io::Error),
 }
 
 impl ProjectFiles {
@@ -87,7 +100,7 @@ impl ProjectFiles {
 
     pub fn close_project(&mut self) {
         self.project = None;
-        self.files.clear();
+        self.files_working.clear();
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -98,46 +111,188 @@ impl ProjectFiles {
         self.dirty.contains(path.as_ref())
     }
 
-    pub fn create_file(&mut self, path: impl Into<PathBuf>) {}
+    fn create_file_(&mut self, path: impl AsRef<Path>, contents: &[u8]) {
+        let Some(mut full_path) = self.project.clone() else {
+            return;
+        };
+        if matches!(
+            self.files_cached.get(path.as_ref()).map(|f| &f.contents),
+            Some(Contents::Bytes(_) | Contents::String(_))
+        ) {
+            self.files_working.insert(
+                path.as_ref().to_path_buf(),
+                Contents::new(contents.to_owned()),
+            );
+            return;
+        }
+        full_path.extend(path.as_ref());
 
-    pub fn create_dir(&mut self, path: impl Into<PathBuf>) {}
+        if let Some(parent) = full_path.parent()
+            && let Err(err) = std::fs::create_dir_all(parent)
+        {
+            self.errors.insert(
+                path.as_ref().to_path_buf(),
+                ErrorKind::CannotCreateDirectory(err),
+            );
+            return;
+        }
 
-    pub fn files(&self) -> impl Iterator<Item = (&PathBuf, &FileOwned)> {
-        self.files.iter()
+        if let Err(err) = std::fs::write(&full_path, contents) {
+            self.errors.insert(
+                path.as_ref().to_path_buf(),
+                ErrorKind::CannotCreateFile(err),
+            );
+        }
+
+        self.explore(full_path);
+    }
+
+    fn create_dir_(&mut self, path: impl AsRef<Path>) {
+        let Some(mut full_path) = self.project.clone() else {
+            return;
+        };
+        if matches!(
+            self.files_cached.get(path.as_ref()).map(|f| &f.contents),
+            Some(Contents::Directory)
+        ) {
+            return;
+        }
+        full_path.extend(path.as_ref());
+
+        if let Err(err) = std::fs::create_dir_all(&full_path) {
+            self.errors.insert(
+                path.as_ref().to_path_buf(),
+                ErrorKind::CannotCreateDirectory(err),
+            );
+        }
+
+        self.explore(full_path);
+    }
+
+    pub fn create_file(&mut self, path: impl AsRef<Path>) {
+        self.create_file_(path, &[]);
+    }
+
+    pub fn create_dir(&mut self, path: impl AsRef<Path>) {
+        self.create_dir_(path);
+    }
+
+    pub fn files(&self) -> impl Iterator<Item = (&PathBuf, &Contents)> {
+        self.files_cached.iter().map(|(path, contents)| {
+            if let Some(working) = self.files_working.get(path) {
+                (path, working)
+            } else {
+                (path, &contents.contents)
+            }
+        })
     }
 
     pub fn error_ui(&mut self, ctx: &egui::Context) {
-        self.errors.retain(|path, error| {
-            Modal::new(format!("error {}", path.display()).into())
-                .show(ctx, |ui| match error {
-                    ErrorKind::FileContentsNewer => {
-                        ui.label("File contents differ");
-                        if ui.button("Overrite").clicked() {
-                            ui.close();
-                            return false;
-                        }
-                        if ui.button("Reload").clicked() {
-                            ui.close();
-                            return false;
-                        }
-                        true
+        let mut remainder: BTreeMap<PathBuf, ErrorKind> = Default::default();
+        while let Some((path, error)) = self.errors.pop_first() {
+            Modal::new(format!("error {}", path.display()).into()).show(ctx, |ui| match &error {
+                ErrorKind::FileContentsNewer => {
+                    ui.label("File contents differ");
+                    if ui.button("Overrite").clicked() {
+                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        self.create_file_(&path, &contents);
+                        ui.close();
+                        return;
                     }
-                    ErrorKind::CannotOpenFile => {
-                        ui.label("Cannot open file");
-                        if ui.button("Discard").clicked() {
-                            ui.close();
-                            return false;
+                    if ui.button("Reload").clicked() {
+                        self.files_working.remove(&path);
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        if let Some(mut root) = self.project.to_owned(){
+                            root.extend(&path);
+                            self.explore(root);
                         }
-                        if ui.button("Create file").clicked() {
-                            ui.close();
-                            return false;
-                        }
-                        true
+                        ui.close();
+                        return;
                     }
-                    ErrorKind::CannotSaveFile => false,
-                })
-                .inner
-        });
+                    remainder.insert(path, error);
+                }
+                ErrorKind::CannotOpenFile(err) => {
+                    ui.label(format!("Cannot open file: {err}"));
+                    if ui.button("Discard").clicked() {
+                        self.files_working.remove(&path);
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        ui.close();
+                        return;
+                    }
+                    if ui.button("Create file").clicked() {
+                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        self.create_file_(&path, &contents);
+                        ui.close();
+                        return;
+                    }
+                    remainder.insert(path, error);
+                }
+                ErrorKind::CannotSaveFile(err) => {
+                    ui.label(format!("Cannot save file: {err}"));
+                    if ui.button("Discard").clicked() {
+                        self.files_working.remove(&path);
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        ui.close();
+                        return;
+                    }
+                    if ui.button("Create file").clicked() {
+                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        self.create_file_(&path, &contents);
+                        ui.close();
+                        return;
+                    }
+                    remainder.insert(path, error);
+                }
+                ErrorKind::CannotCreateFile(err) => {
+                    ui.label(format!("Cannot create file: {err}"));
+                    if ui.button("Discard").clicked() {
+                        self.files_working.remove(&path);
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        ui.close();
+                        return;
+                    }
+                    if ui.button("Create file").clicked() {
+                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        self.create_file_(&path, &contents);
+                        ui.close();
+                        return;
+                    }
+                    remainder.insert(path, error);
+                },
+                ErrorKind::CannotCreateDirectory(err) => {
+                    ui.label(format!("Cannot create directory: {err}"));
+                    if ui.button("Discard").clicked() {
+                        self.files_working.remove(&path);
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        ui.close();
+                        return;
+                    }
+                    if ui.button("Create file").clicked() {
+                        let contents = self.files_working.get(&path).cloned().and_then(Contents::as_vec).unwrap_or_default();
+                        self.files_cached.remove(&path);
+                        self.dirty.remove(&path);
+                        self.create_file_(&path, &contents);
+                        ui.close();
+                        return;
+                    }
+                    remainder.insert(path, error);
+                },
+            });
+        }
+        self.errors = remainder;
     }
 
     pub fn sync(&mut self) {
@@ -145,15 +300,18 @@ impl ProjectFiles {
             return;
         };
         for path in &self.dirty {
-            if self.errors.contains_key(path){
+            if self.errors.contains_key(path) {
                 continue;
             }
-            let Some(cached) = self.files.get(path) else {
+            let Some(working) = self.files_working.get(path) else {
+                continue;
+            };
+            let Some(cached) = self.files_cached.get(path) else {
                 continue;
             };
             let real_path = project.join(path);
-            
-            let contents = match &cached.contents {
+
+            let contents = match &working {
                 Contents::String(bytes) => bytes.as_bytes(),
                 Contents::Bytes(items) => items,
                 _ => continue,
@@ -161,23 +319,33 @@ impl ProjectFiles {
             let real_time = real_path
                 .metadata()
                 .ok()
-                .and_then(|v| v.modified().ok())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            let cached_time = cached.last_modified;
+                .and_then(|v| v.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+            let cached_time = cached.modified;
             if real_time > cached_time {
-                self.errors.insert(path.to_path_buf(), ErrorKind::FileContentsNewer);
+                self.errors
+                    .insert(path.to_path_buf(), ErrorKind::FileContentsNewer);
                 continue;
             }
-            let Ok(mut file) = std::fs::OpenOptions::new().write(true).read(true).open(&real_path) else {
-                self.errors.insert(path.to_path_buf(), ErrorKind::CannotOpenFile);
-                continue;
+            let mut file = match std::fs::OpenOptions::new()
+                .write(true)
+                .read(true)
+                .open(&real_path)
+            {
+                Ok(file) => file,
+                Err(err) => {
+                    self.errors
+                        .insert(path.to_path_buf(), ErrorKind::CannotOpenFile(err));
+                    continue;
+                }
             };
-            if file.write_all(contents).is_err() {
-                self.errors.insert(path.to_path_buf(), ErrorKind::CannotSaveFile);
+            if let Err(err) = file.write_all(contents) {
+                self.errors
+                    .insert(path.to_path_buf(), ErrorKind::CannotSaveFile(err));
                 continue;
             }
-            if file.set_len(contents.len() as u64).is_err(){
-                self.errors.insert(path.to_path_buf(), ErrorKind::CannotSaveFile);
+            if let Err(err) = file.set_len(contents.len() as u64) {
+                self.errors
+                    .insert(path.to_path_buf(), ErrorKind::CannotSaveFile(err));
                 continue;
             }
         }
@@ -192,15 +360,15 @@ impl ProjectFiles {
         let Ok(meta) = path.metadata() else {
             return;
         };
-        let Ok(stripped) = path.strip_prefix(project) else{
+        let Ok(stripped) = path.strip_prefix(project) else {
             return;
         };
         if meta.is_dir() {
-            self.files.insert(
+            self.files_cached.insert(
                 stripped.to_path_buf(),
                 FileOwned {
                     contents: Contents::Directory,
-                    last_modified: meta.modified().unwrap_or(SystemTime::now()),
+                    modified: meta.modified().unwrap_or(SystemTime::now()),
                 },
             );
             for entry in path.read_dir().into_iter().flatten().flatten() {
@@ -212,29 +380,35 @@ impl ProjectFiles {
             }
             if meta.modified().unwrap_or(SystemTime::UNIX_EPOCH)
                 <= self
-                    .files
+                    .files_cached
                     .get(stripped)
-                    .map(|v| v.last_modified)
+                    .map(|v| v.modified)
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             {
                 return;
             }
+            if self.dirty.contains(stripped){
+                self.errors
+                    .insert(stripped.to_path_buf(), ErrorKind::FileContentsNewer);
+                return;
+            }
+            self.files_working.remove(stripped);
             match std::fs::read(&path) {
                 Ok(contents) => {
-                    self.files.insert(
+                    self.files_cached.insert(
                         stripped.to_path_buf(),
                         FileOwned {
                             contents: Contents::new(contents),
-                            last_modified: meta.modified().unwrap_or(SystemTime::now()),
+                            modified: meta.modified().unwrap_or(SystemTime::now()),
                         },
                     );
                 }
                 Err(_) => {
-                    self.files.insert(
+                    self.files_cached.insert(
                         stripped.to_path_buf(),
                         FileOwned {
                             contents: Contents::Unreadable,
-                            last_modified: meta.modified().unwrap_or(SystemTime::now()),
+                            modified: meta.modified().unwrap_or(SystemTime::now()),
                         },
                     );
                 }
@@ -243,13 +417,72 @@ impl ProjectFiles {
     }
 
     pub fn file(&self, path: impl AsRef<Path>) -> Option<&Contents> {
-        self.files
-            .get(path.as_ref())
-            .map(|v: &FileOwned| &v.contents)
+        if let Some(contents) = self.files_working.get(path.as_ref()) {
+            Some(contents)
+        } else {
+            self.files_cached.get(path.as_ref()).map(|f| &f.contents)
+        }
     }
 
-    pub fn file_mut(&mut self, path: impl AsRef<Path>) -> Option<&mut Contents> {
-        self.dirty.insert(path.as_ref().to_path_buf());
-        self.files.get_mut(path.as_ref()).map(|v| &mut v.contents)
+    pub fn file_mut(&mut self, path: impl AsRef<Path>) -> Option<ContentsMut<'_>> {
+        use std::collections::btree_map::Entry;
+        let cached = &self.files_cached.get(path.as_ref())?.contents;
+
+        let working = match self.files_working.entry(path.as_ref().to_path_buf()) {
+            Entry::Vacant(vacant_entry) => vacant_entry.insert(cached.clone()),
+            Entry::Occupied(occupied_entry) => occupied_entry.into_mut(),
+        };
+        Some(ContentsMut {
+            path: path.as_ref().to_path_buf(),
+            working,
+            cached,
+            dirty: &mut self.dirty,
+        })
     }
+
+    pub(crate) fn status(&self, path: impl AsRef<Path>) -> FileStatus {
+        if self.errors.contains_key(path.as_ref()) {
+            FileStatus::Error
+        } else if self.dirty.contains(path.as_ref()) {
+            FileStatus::Dirty
+        } else {
+            FileStatus::Saved
+        }
+    }
+}
+
+pub struct ContentsMut<'a> {
+    path: PathBuf,
+    working: &'a mut Contents,
+    cached: &'a Contents,
+    dirty: &'a mut BTreeSet<PathBuf>,
+}
+
+impl<'a> Drop for ContentsMut<'a> {
+    fn drop(&mut self) {
+        if self.cached.as_bytes() != self.working.as_bytes() {
+            self.dirty.insert(self.path.to_path_buf());
+        }
+    }
+}
+
+impl<'a> Deref for ContentsMut<'a> {
+    type Target = Contents;
+
+    fn deref(&self) -> &Self::Target {
+        self.working
+    }
+}
+
+impl<'a> DerefMut for ContentsMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.working
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileStatus {
+    Error,
+    Dirty,
+    Saved,
 }
