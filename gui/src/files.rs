@@ -221,12 +221,7 @@ impl ProjectFiles {
     pub fn paths(&self) -> impl Iterator<Item = (&PathBuf, bool)> {
         self.files_cached
             .iter()
-            .map(|(path, contents)| {
-                (
-                    path,
-                    matches!(contents.contents, Contents::Directory),
-                )
-            })
+            .map(|(path, contents)| (path, matches!(contents.contents, Contents::Directory)))
     }
 
     pub fn error_ui(&mut self, ctx: &egui::Context) {
@@ -254,7 +249,7 @@ impl ProjectFiles {
                         self.files_cached.remove(&path);
                         self.dirty.remove(&path);
                         self.explore(path);
-                        
+
                         ui.close();
                         return;
                     }
@@ -431,7 +426,7 @@ impl ProjectFiles {
         let Ok(meta) = full_path.metadata() else {
             return;
         };
-        
+
         if meta.is_dir() {
             self.files_cached.insert(
                 path.to_path_buf(),
@@ -444,7 +439,7 @@ impl ProjectFiles {
                 let Some(project) = &self.project else {
                     return;
                 };
-                if let Ok(path) = entry.path().strip_prefix(project){
+                if let Ok(path) = entry.path().strip_prefix(project) {
                     self.explore(path);
                 }
             }
@@ -488,7 +483,9 @@ impl ProjectFiles {
                 }
             }
         }
-        if let Some(parent) = path.parent() && !self.files_cached.contains_key(parent){
+        if let Some(parent) = path.parent()
+            && !self.files_cached.contains_key(parent)
+        {
             self.explore(parent);
         }
     }

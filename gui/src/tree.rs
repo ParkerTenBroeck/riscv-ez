@@ -7,18 +7,24 @@ use egui_ltreeview::{Action, NodeBuilder, TreeView, TreeViewBuilder, TreeViewSta
 use crate::files;
 use crate::files::*;
 
-enum NewKind{
+enum State {
     None,
-    Editing{
+    Creating {
         creation_path: PathBuf,
         name: String,
         dir: bool,
-    }
+        first_frame: bool,
+    },
+    Renaming {
+        og_path: PathBuf,
+        name: String,
+        first_frame: bool,
+    },
 }
 
 pub struct FileTree {
     tree: TreeViewState<PathBuf>,
-    new: NewKind,
+    state: State,
 }
 
 impl Default for FileTree {
@@ -32,15 +38,15 @@ pub enum FileTreeAction {
     CreateFile(PathBuf),
     CreateDir(PathBuf),
     Tree(Action<PathBuf>),
+    Rename(PathBuf, PathBuf),
 }
 
 fn tree_view_builder(
     builder: &mut TreeViewBuilder<'_, PathBuf>,
     files: &ProjectFiles,
-    new: &mut NewKind,
+    state: &mut State,
     ctx: &egui::Context,
 ) -> Vec<FileTreeAction> {
-    let mut first_frame_new = false;
     let mut actions = Vec::new();
     let mut count = 0;
     for (path, is_dir) in files.paths() {
@@ -75,18 +81,81 @@ fn tree_view_builder(
             .color(color)
         };
 
+        if let State::Renaming { og_path, name, first_frame } = state
+            && og_path == path
+        {
+            let mut lost_focus = false;
+            if is_dir {
+                builder.node(NodeBuilder::dir(path.clone()).label_ui(|ui| {
+                    let res = ui.text_edit_singleline(name);
+                    if *first_frame{
+                        res.request_focus();
+                        *first_frame = false;
+                    }
+                    lost_focus = res.lost_focus();
+                    if lost_focus {
+                        let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+
+                        if enter && og_path.file_name().and_then(OsStr::to_str) == Some(name.as_str()){
+                            actions.push(FileTreeAction::Rename(
+                                og_path.to_path_buf(),
+                                og_path.parent().unwrap_or("".as_ref()).join(name.as_str()),
+                            ));
+                        }
+                    }
+                }));
+            } else {
+                builder.node(NodeBuilder::leaf(path.clone()).label_ui(|ui| {
+                    let res = ui.text_edit_singleline(name);
+                    if *first_frame{
+                        res.request_focus();
+                        *first_frame = false;
+                    }
+                    lost_focus = res.lost_focus();
+                    if lost_focus {
+                        let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                        if enter && og_path.file_name().and_then(OsStr::to_str) == Some(name.as_str()){
+                            actions.push(FileTreeAction::Rename(
+                                og_path.to_path_buf(),
+                                og_path.parent().unwrap_or("".as_ref()).join(name.as_str()),
+                            ));
+                        }
+                    }
+                }));
+            }
+            if lost_focus {
+                *state = State::None;
+            }
+            continue;
+        }
+
         if is_dir {
             builder.node(
                 NodeBuilder::dir(path.clone())
                     .label(disp)
                     .context_menu(|ui| {
                         if ui.button("create file").clicked() {
-                            first_frame_new = true;
-                            *new = NewKind::Editing{creation_path: path.to_path_buf(), name: String::new(), dir: false}
+                            *state = State::Creating {
+                                creation_path: path.to_path_buf(),
+                                name: String::new(),
+                                dir: false,
+                                first_frame: true,
+                            }
                         }
                         if ui.button("create dir").clicked() {
-                            first_frame_new = true;
-                            *new = NewKind::Editing{creation_path: path.to_path_buf(), name: String::new(), dir: true}
+                            *state = State::Creating {
+                                creation_path: path.to_path_buf(),
+                                name: String::new(),
+                                dir: true,
+                                first_frame: true,
+                            }
+                        }
+                        if ui.button("rename").clicked(){
+                            *state = State::Renaming {
+                                og_path: path.to_path_buf(),
+                                name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                                first_frame: true,
+                            }
                         }
                         if ui.button("delete").clicked() {
                             actions.push(FileTreeAction::Delete(path.to_path_buf()));
@@ -98,6 +167,13 @@ fn tree_view_builder(
                 NodeBuilder::leaf(path.clone())
                     .label(disp)
                     .context_menu(|ui| {
+                        if ui.button("rename").clicked() {
+                            *state = State::Renaming {
+                                og_path: path.to_path_buf(),
+                                name: path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                                first_frame: true,
+                            }
+                        }
                         if ui.button("delete").clicked() {
                             actions.push(FileTreeAction::Delete(path.to_path_buf()));
                         }
@@ -105,26 +181,35 @@ fn tree_view_builder(
             );
         }
 
-        if let NewKind::Editing{creation_path, dir, name} = new && path == creation_path{
-            let enter = ctx.input(|i|i.key_pressed(egui::Key::Enter));
-            let mut lost_focus = false;
-            builder.node(NodeBuilder::leaf(path.join("#new#")).label_ui(|ui|{
-                let res = ui.text_edit_singleline(name);
-                if first_frame_new {
-                    res.request_focus();
-                }
-                lost_focus = res.lost_focus();
-            }));
-            if lost_focus{
-                if enter{
-                    if *dir{
-                        actions.push(FileTreeAction::CreateDir(creation_path.join(name)));
-                    }else{
-                        actions.push(FileTreeAction::CreateFile(creation_path.join(name)));
+        match state {
+            State::Creating {
+                creation_path,
+                dir,
+                name,
+                first_frame,
+            } if path == creation_path => {
+                let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                let mut lost_focus = false;
+                builder.node(NodeBuilder::leaf(path.join("#new#")).label_ui(|ui| {
+                    let res = ui.text_edit_singleline(name);
+                    if *first_frame {
+                        res.request_focus();
+                        *first_frame = false;
                     }
+                    lost_focus = res.lost_focus();
+                }));
+                if lost_focus {
+                    if enter {
+                        if *dir {
+                            actions.push(FileTreeAction::CreateDir(creation_path.join(name)));
+                        } else {
+                            actions.push(FileTreeAction::CreateFile(creation_path.join(name)));
+                        }
+                    }
+                    *state = State::None;
                 }
-                *new = NewKind::None;
             }
+            _ => {}
         }
     }
     for _ in 0..count {
@@ -137,7 +222,7 @@ impl FileTree {
     pub fn new() -> Self {
         Self {
             tree: TreeViewState::default(),
-            new: NewKind::None,
+            state: State::None,
         }
     }
 
@@ -151,7 +236,7 @@ impl FileTree {
         let (res, mut act) = TreeView::new(ui.make_persistent_id("file_tree")).show_state(
             ui,
             &mut self.tree,
-            |builder| actions = tree_view_builder(builder, files, &mut self.new, &ctx),
+            |builder| actions = tree_view_builder(builder, files, &mut self.state, &ctx),
         );
         act.drain(..)
             .map(FileTreeAction::Tree)

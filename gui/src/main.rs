@@ -6,9 +6,6 @@ pub mod log;
 pub mod tabs;
 pub mod tree;
 
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-
 use crate::context::Context;
 use crate::files::Contents;
 use crate::tabs::Tab;
@@ -17,7 +14,7 @@ use eframe::{NativeOptions, egui};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{CollapsingHeader, RichText, ScrollArea};
 use egui_dock::{DockArea, DockState};
-use egui_ltreeview::{Action, NodeBuilder, TreeView, TreeViewState};
+use egui_ltreeview::Action;
 use riscv_asm::RiscvAssembler;
 use riscv_asm::assembler::source::Sources;
 
@@ -133,9 +130,11 @@ impl eframe::App for MyApp {
                             tree::FileTreeAction::CreateDir(path) => {
                                 self.context.files.create_dir(path)
                             }
+
+                            tree::FileTreeAction::Rename(_, _) => {}
                             tree::FileTreeAction::Tree(action) => match action {
                                 Action::SetSelected(_) => {}
-                                Action::Move(action) => {}
+                                Action::Move(_) => {}
                                 Action::Drag(_) => {}
                                 Action::Activate(s) => {
                                     for tab in s.selected {
@@ -164,6 +163,7 @@ impl eframe::App for MyApp {
 
         egui::TopBottomPanel::bottom("logger")
             .resizable(true)
+            .default_height(ctx.available_rect().height() / 3.0)
             .show(ctx, |ui| {
                 CollapsingHeader::new("logs")
                     .default_open(true)
