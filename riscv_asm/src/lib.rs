@@ -51,6 +51,8 @@ impl<'a> SimpleAssemblyLanguage<'a> for RiscvAssembler<'a> {
     type Isize = i32;
     type Uptr = u32;
     type Iptr = i32;
+    type Ufunc = u32;
+    type Ifunc = i32;
 
     fn parse_ident(
         &mut self,
